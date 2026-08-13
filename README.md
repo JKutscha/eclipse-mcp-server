@@ -80,7 +80,10 @@ Authorization: Bearer <token>
 ```
 
 Requests without it are answered with `401`.
+This is a plain bearer token, not the MCP authorization specification, so there is no OAuth flow and nothing to discover: a client that can send a static header is enough.
+
 The socket is bound to `127.0.0.1`, so it is not reachable from another machine.
+The `Host` header is additionally checked against `127.0.0.1` and `localhost`, which keeps a browser on the same machine from reaching the server through a rebound DNS name.
 
 For Claude Code:
 
@@ -88,6 +91,22 @@ For Claude Code:
 claude mcp add --transport http eclipse http://127.0.0.1:8642/mcp \
   --header "Authorization: Bearer $(jq -r .token <workspace>/.metadata/.plugins/com.vogella.eclipse.mcp.server/endpoint.json)"
 ```
+
+## MCP capabilities
+
+The server offers tools and nothing else.
+It declares the `tools` capability with `listChanged: false`, which means it answers exactly these methods:
+
+| Method | Notes |
+|---|---|
+| `initialize` | reports the server as `eclipse-mcp` 0.1.0, with an instructions string |
+| `ping` | |
+| `tools/list` | the five tools below |
+| `tools/call` | arguments are validated against the tool's input schema before the tool runs |
+| `notifications/initialized`, `notifications/roots/list_changed` | accepted and ignored |
+
+Everything else, `resources/list`, `prompts/list`, `logging/setLevel` and `completion/complete` among them, is answered with method not found.
+Sessions are carried in the `mcp-session-id` header, a `GET` opens the server-to-client SSE stream and a `DELETE` ends the session.
 
 ## Tools
 
