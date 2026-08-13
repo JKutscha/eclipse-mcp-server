@@ -65,6 +65,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          archive=$(find update-site/com.vogella.eclipse.mcp.repository/target -maxdepth 1 -name '*.zip' | head -1)
+          built=$(find update-site/com.vogella.eclipse.mcp.repository/target -maxdepth 1 -name '*.zip' | head -1)
+          # the built name carries the Maven -SNAPSHOT suffix, which is misleading on a release
+          archive="com.vogella.eclipse.mcp.repository-${{ steps.version.outputs.value }}.zip"
+          cp "$built" "$archive"
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes || true
           gh release upload "$GITHUB_REF_NAME" "$archive" --clobber

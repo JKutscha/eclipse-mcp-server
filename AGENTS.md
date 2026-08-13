@@ -123,6 +123,10 @@ If the branch grows uncomfortably, either drop old releases from the composite o
 
 Pushing anything under `.github/workflows/` needs a token with the `workflow` scope, or an SSH remote.
 
+When verifying a freshly published release against the live site, remember that Tycho caches remote p2 repositories for 60 minutes under `~/.m2/repository/.cache/tycho`.
+A resolve that returns the previous version right after a release is almost always that cache, not a broken publish.
+`-Dtycho.p2.transport.min-cache-minutes=0` is not enough; delete the cache directory for the host.
+
 ## Conventions
 
 Java 25, tabs for indentation, the Eclipse formatter defaults.
