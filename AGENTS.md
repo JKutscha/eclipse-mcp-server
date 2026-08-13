@@ -78,6 +78,11 @@ The target platform already contains `junit-jupiter-api` 6.1.0 through the SDK f
 Adding a Maven location for JUnit is redundant, and the resulting 5.x bundles lose to the SDK's 6.x ones anyway.
 Note the bundle symbolic names are `junit-jupiter-api` and so on, not the `org.junit.jupiter.api` that older Orbit builds used.
 
+**The bearer token is persisted, the port is not negotiated.**
+`TokenStore` keeps the token in `<state>/token` with owner-only permissions so that client configurations survive restarts.
+The server never falls back to a different port when the configured one is taken; it stays down and records the reason in `McpServerService.getLastError()`, which the preference page shows.
+Silently moving to another port would break every configured client, which is worse than not starting.
+
 **`BundleJsonSchemaValidator` clears the context class loader on purpose.**
 The networknt schema library reads its bundled meta-schemas through the context class loader and only falls back to its own when there is none.
 Inside Equinox the context class loader cannot see them, so without this the server fails to start with `FileNotFoundException: classpath:draft/2020-12/schema`.

@@ -3,8 +3,12 @@ package com.vogella.eclipse.mcp.ui.internal;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.IJobChangeEvent;
+import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.core.runtime.jobs.JobChangeAdapter;
+import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.preference.BooleanFieldEditor;
 import org.eclipse.jface.preference.FieldEditorPreferencePage;
 import org.eclipse.jface.preference.IntegerFieldEditor;
@@ -26,6 +30,7 @@ import org.eclipse.ui.PlatformUI;
 
 import com.vogella.eclipse.mcp.server.McpEndpoint;
 import com.vogella.eclipse.mcp.server.McpPreferences;
+import com.vogella.eclipse.mcp.server.McpServerException;
 import com.vogella.eclipse.mcp.server.McpServerService;
 
 /**
@@ -92,11 +97,38 @@ public class McpPreferencePage extends FieldEditorPreferencePage implements IWor
 		token = addCopyableField(group, "&Token:", true);
 		addCopyableField(group, "&File:", false).setText(McpServerService.getEndpointFile().toString());
 
+		Button regenerate = new Button(group, SWT.PUSH);
+		regenerate.setText("&Regenerate token");
+		regenerate.setLayoutData(new GridData(SWT.END, SWT.BEGINNING, true, false, 3, 1));
+		regenerate.addListener(SWT.Selection, event -> regenerateToken());
+
 		Label hint = new Label(group, SWT.WRAP);
-		hint.setText("Send the token as an Authorization: Bearer header. It changes with every IDE restart.");
+		hint.setText("Send the token as an Authorization: Bearer header. It is kept across IDE restarts, so a client has to be configured only once. Regenerating it invalidates every configured client.");
 		GridData hintLayout = new GridData(SWT.FILL, SWT.BEGINNING, true, false, 3, 1);
 		hintLayout.widthHint = FIELD_WIDTH_HINT;
 		hint.setLayoutData(hintLayout);
+	}
+
+	private void regenerateToken() {
+		if (!MessageDialog.openConfirm(getShell(), "Regenerate token",
+				"Every MCP client configured with the current token will be rejected until it is updated. Continue?")) {
+			return;
+		}
+		Job job = Job.create("Regenerating the MCP token", monitor -> {
+			try {
+				McpServerService.getInstance().regenerateToken();
+			} catch (McpServerException e) {
+				ILog.get().error(e.getMessage(), e.getCause() == null ? e : e.getCause());
+			}
+			return Status.OK_STATUS;
+		});
+		job.addJobChangeListener(new JobChangeAdapter() {
+			@Override
+			public void done(IJobChangeEvent event) {
+				refreshLater();
+			}
+		});
+		job.schedule();
 	}
 
 	/**
@@ -151,8 +183,9 @@ public class McpPreferencePage extends FieldEditorPreferencePage implements IWor
 	private void refresh() {
 		McpEndpoint endpoint = McpServerService.getInstance().getEndpoint();
 		boolean running = endpoint != null;
+		String error = McpServerService.getInstance().getLastError();
 		status.setText(running ? "The server is listening."
-				: "The server is not running. Enable it above and press Apply.");
+				: error != null ? error : "The server is not running. Enable it above and press Apply.");
 		url.setText(running ? endpoint.url() : "");
 		token.setText(running ? endpoint.token() : "");
 		copyButtons.forEach(button -> button.setEnabled(running));

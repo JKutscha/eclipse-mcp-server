@@ -1,10 +1,8 @@
 package com.vogella.eclipse.mcp.server.internal;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermissions;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.Platform;
@@ -21,8 +19,6 @@ public final class EndpointFile {
 
 	private static final String FILE_NAME = "endpoint.json"; //$NON-NLS-1$
 
-	private static final String OWNER_ONLY = "rw-------"; //$NON-NLS-1$
-
 	private EndpointFile() {
 	}
 
@@ -36,15 +32,7 @@ public final class EndpointFile {
 		Path path = location();
 		String json = new JsonObject().put("url", endpoint.url()).put("token", endpoint.token()).toString(); //$NON-NLS-1$ //$NON-NLS-2$
 		try {
-			Files.deleteIfExists(path);
-			try {
-				Files.createFile(path,
-						PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString(OWNER_ONLY)));
-			} catch (UnsupportedOperationException e) {
-				// no POSIX permissions on this platform, the file inherits the state location's access rights
-				Files.createFile(path);
-			}
-			Files.writeString(path, json, StandardCharsets.UTF_8);
+			PrivateFiles.write(path, json);
 		} catch (IOException e) {
 			ILog.get().error("Could not write the MCP endpoint file " + path, e); //$NON-NLS-1$
 		}

@@ -2,6 +2,7 @@ package com.vogella.eclipse.mcp.server.tests;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -44,14 +45,21 @@ class McpServerServiceTest {
 	/** A port unlikely to collide with a developer's IDE running the same server. */
 	private static final int TEST_PORT = 18642;
 
-	private static McpEndpoint endpoint;
+	/** An initialize request answers 200 without a session, which makes it a usable probe. */
+	private static final String INITIALIZE = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":"
+			+ "{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},"
+			+ "\"clientInfo\":{\"name\":\"probe\",\"version\":\"1\"}}}";
 
 	@BeforeAll
 	static void startServer() throws Exception {
 		InstanceScope.INSTANCE.getNode(McpPreferences.QUALIFIER).putInt(McpPreferences.KEY_PORT, TEST_PORT);
 		McpServerService.getInstance().start();
-		endpoint = McpServerService.getInstance().getEndpoint();
-		assertNotNull(endpoint, "The server did not report an endpoint");
+		assertNotNull(endpoint(), "The server did not report an endpoint");
+	}
+
+	/** Read live, because regenerating the token replaces it. */
+	private static McpEndpoint endpoint() {
+		return McpServerService.getInstance().getEndpoint();
 	}
 
 	@AfterAll
@@ -65,14 +73,14 @@ class McpServerServiceTest {
 	void listensOnTheConfiguredLoopbackPort() {
 		assertTrue(McpServerService.getInstance().isRunning());
 		assertEquals(TEST_PORT, McpServerService.getInstance().getPort());
-		assertEquals("http://127.0.0.1:%d/mcp".formatted(TEST_PORT), endpoint.url());
+		assertEquals("http://127.0.0.1:%d/mcp".formatted(TEST_PORT), endpoint().url());
 	}
 
 	@Test
 	void writesTheDiscoveryFile() throws Exception {
 		String content = Files.readString(McpServerService.getEndpointFile());
-		assertTrue(content.contains(endpoint.url()), "The endpoint file should carry the URL: " + content);
-		assertTrue(content.contains(endpoint.token()), "The endpoint file should carry the token");
+		assertTrue(content.contains(endpoint().url()), "The endpoint file should carry the URL: " + content);
+		assertTrue(content.contains(endpoint().token()), "The endpoint file should carry the token");
 	}
 
 	@Test
@@ -105,6 +113,24 @@ class McpServerServiceTest {
 		}
 	}
 
+	@Test
+	void keepsTheTokenAcrossRestarts() throws Exception {
+		String before = endpoint().token();
+		McpServerService.getInstance().stop();
+		McpServerService.getInstance().start();
+		assertEquals(before, endpoint().token(), "The token should survive a restart of the server");
+	}
+
+	@Test
+	void regeneratingTheTokenReplacesItAndKeepsTheServerRunning() throws Exception {
+		String before = endpoint().token();
+		McpServerService.getInstance().regenerateToken();
+		assertNotEquals(before, endpoint().token(), "The token should have changed");
+		assertTrue(McpServerService.getInstance().isRunning(), "The server should still be running");
+		assertEquals(401, post("Bearer " + before), "The old token should no longer be accepted");
+		assertEquals(200, post("Bearer " + endpoint().token()), "The new token should be accepted");
+	}
+
 	/** Arguments that let every tool produce a result rather than a "missing argument" error. */
 	private static Map<String, Object> arguments(String toolName) {
 		return switch (toolName) {
@@ -118,7 +144,7 @@ class McpServerServiceTest {
 				.builder("http://127.0.0.1:%d".formatted(TEST_PORT)).endpoint("/mcp")
 				.jsonMapper(new JacksonMcpJsonMapperSupplier().get())
 				.httpRequestCustomizer((builder, method, uri, body, context) -> builder.header("Authorization",
-						"Bearer " + endpoint.token()))
+						"Bearer " + endpoint().token()))
 				.build();
 		return McpClient.sync(transport).jsonSchemaValidator(schemaValidator()).build();
 	}
@@ -139,9 +165,9 @@ class McpServerServiceTest {
 	}
 
 	private static int post(String authorization) throws Exception {
-		HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(endpoint.url()))
+		HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(endpoint().url()))
 				.header("Content-Type", "application/json").header("Accept", "application/json, text/event-stream")
-				.POST(HttpRequest.BodyPublishers.ofString("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"));
+				.POST(HttpRequest.BodyPublishers.ofString(INITIALIZE));
 		if (authorization != null) {
 			request.header("Authorization", authorization);
 		}

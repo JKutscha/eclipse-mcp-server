@@ -53,7 +53,8 @@ Pushing a `v<version>` tag runs `.github/workflows/release.yml`, which builds th
 
 The setting takes effect immediately, and the server also starts on the next IDE startup while it stays enabled.
 
-The same preference page shows the endpoint once the server is listening: the URL, the bearer token and the path of the discovery file, each with a *Copy* button.
+The same preference page shows the endpoint once the server is listening: the URL, the bearer token and the path of the discovery file, each with a *Copy* button, plus a *Regenerate token* button.
+When the port is already in use the server does not fall back to another one, it stays down and the page says why, so the URL never changes behind a client's back.
 That it is listening, and on which port, is also written to the Error Log view.
 
 ## Connecting a client
@@ -72,7 +73,9 @@ On startup the server writes a discovery file so that no value has to be copied 
 ```
 
 The file is created with owner-only permissions and deleted when the server stops.
-The token is generated once per IDE session, so it survives enabling and disabling the server but changes on every IDE restart.
+
+The token is generated on first use and kept in `token` next to the discovery file, also with owner-only permissions, so it survives IDE restarts and a client has to be configured only once.
+*Regenerate token* on the preference page replaces it and restarts the server, which rejects every client still using the old one.
 
 The transport is Streamable HTTP.
 Every request has to carry the token:

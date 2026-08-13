@@ -3,7 +3,6 @@ package com.vogella.eclipse.mcp.server;
 import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -20,6 +19,7 @@ import com.vogella.eclipse.mcp.server.internal.BearerTokenFilter;
 import com.vogella.eclipse.mcp.server.internal.BundleJsonSchemaValidator;
 import com.vogella.eclipse.mcp.server.internal.EndpointFile;
 import com.vogella.eclipse.mcp.server.internal.McpToolAdapter;
+import com.vogella.eclipse.mcp.server.internal.TokenStore;
 
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapperSupplier;
@@ -44,9 +44,6 @@ public final class McpServerService {
 
 	private static final McpServerService INSTANCE = new McpServerService();
 
-	/** One token per IDE session, so that a restart of the server keeps client configurations valid. */
-	private final String token = UUID.randomUUID().toString();
-
 	private Server jetty;
 
 	private McpSyncServer mcpServer;
@@ -58,6 +55,8 @@ public final class McpServerService {
 	private McpEndpoint endpoint;
 
 	private int runningPort = -1;
+
+	private String lastError;
 
 	private McpServerService() {
 	}
@@ -86,6 +85,26 @@ public final class McpServerService {
 	}
 
 	/**
+	 * The message of the last failed {@link #start()}, or {@code null} when the server
+	 * started or was never asked to. Typically a port that is already in use.
+	 */
+	public synchronized String getLastError() {
+		return lastError;
+	}
+
+	/**
+	 * Replaces the bearer token and restarts the server when it is running, so that the
+	 * new token takes effect. Every configured client has to be updated afterwards.
+	 */
+	public synchronized void regenerateToken() throws McpServerException {
+		TokenStore.regenerate();
+		if (isRunning()) {
+			stop();
+			start();
+		}
+	}
+
+	/**
 	 * Starts the server on the configured port. Does nothing when it is already running.
 	 * Never call this on the UI thread, starting Jetty takes a moment.
 	 */
@@ -94,6 +113,7 @@ public final class McpServerService {
 			return;
 		}
 		int port = McpPreferences.getPort();
+		String token = TokenStore.get();
 		McpJsonMapper jsonMapper = new JacksonMcpJsonMapperSupplier().get();
 		toolExecutor = Executors.newCachedThreadPool(runnable -> {
 			Thread thread = new Thread(runnable, "MCP tool call"); //$NON-NLS-1$
@@ -116,12 +136,15 @@ public final class McpServerService {
 				.jsonSchemaValidator(new BundleJsonSchemaValidator()).tools(specifications).build();
 
 		try {
-			jetty = createJetty(port);
+			jetty = createJetty(port, token);
 			jetty.start();
 		} catch (Exception e) {
 			stopQuietly();
+			lastError = "Could not listen on %s:%d. %s".formatted(LOOPBACK, port, //$NON-NLS-1$
+					e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
 			throw new McpServerException("Could not start the MCP server on %s:%d".formatted(LOOPBACK, port), e); //$NON-NLS-1$
 		}
+		lastError = null;
 
 		runningPort = port;
 		endpoint = new McpEndpoint("http://%s:%d%s".formatted(LOOPBACK, port, ENDPOINT_PATH), token); //$NON-NLS-1$
@@ -138,7 +161,7 @@ public final class McpServerService {
 		ILog.get().info("MCP server stopped"); //$NON-NLS-1$
 	}
 
-	private Server createJetty(int port) {
+	private Server createJetty(int port, String token) {
 		QueuedThreadPool threadPool = new QueuedThreadPool(16, 2);
 		threadPool.setName("mcp-jetty"); //$NON-NLS-1$
 		threadPool.setDaemon(true);
