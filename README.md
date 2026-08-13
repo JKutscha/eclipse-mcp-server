@@ -22,7 +22,22 @@ It produces a p2 repository under `update-site/com.vogella.eclipse.mcp.repositor
 
 ## Installing
 
-In Eclipse, choose *Help > Install New Software*, add the `update-site/com.vogella.eclipse.mcp.repository/target/repository` directory as a local site and install the **Eclipse MCP Server** feature.
+In Eclipse, choose *Help > Install New Software*, add
+
+```
+https://vogellacompany.github.io/com.vogella.eclipse.mcp/
+```
+
+as an update site and install the **Eclipse MCP Server** feature.
+That URL is a composite repository which always offers the newest version.
+To pin a version, point at its own site instead, for example `https://vogellacompany.github.io/com.vogella.eclipse.mcp/releases/0.1.0/`.
+
+Each release also carries the repository as a zip, for offline installs through *Add > Archive*.
+When building from source, the same repository is produced under `update-site/com.vogella.eclipse.mcp.repository/target/repository` and can be added as a local site.
+
+## Releasing
+
+Pushing a `v<version>` tag runs `.github/workflows/release.yml`, which builds the tag, copies the p2 repository into `releases/<version>/` on the `gh-pages` branch, regenerates the composite metadata with `releng/update-composite-site.sh` and attaches the repository archive to the GitHub release.
 
 ## Developing in the IDE
 
