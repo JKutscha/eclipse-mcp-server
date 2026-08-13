@@ -3,6 +3,7 @@ package com.vogella.eclipse.mcp.core.tests;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +12,7 @@ import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IProjectDescription;
+import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.IncrementalProjectBuilder;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
@@ -96,6 +98,14 @@ final class TestFixture {
 		IPackageFragment fragment = root.createPackageFragment(packageName, false, new NullProgressMonitor());
 		return (IFile) fragment.createCompilationUnit(typeName + ".java", source, false, new NullProgressMonitor())
 				.getResource();
+	}
+
+	/** Reads the file from disk, refreshing first so that IDE-side writes are visible. */
+	static String read(IFile file) throws CoreException, IOException {
+		file.refreshLocal(IResource.DEPTH_ZERO, new NullProgressMonitor());
+		try (InputStream in = file.getContents(true)) {
+			return new String(in.readAllBytes(), file.getCharset());
+		}
 	}
 
 	static void build(IProject project) throws CoreException {

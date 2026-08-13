@@ -32,6 +32,18 @@ public final class ToolArguments {
 		return value == null ? fallback : value;
 	}
 
+	public boolean getBoolean(String name, boolean fallback) {
+		Object value = arguments.get(name);
+		if (value instanceof Boolean bool) {
+			return bool.booleanValue();
+		}
+		if (value == null) {
+			return fallback;
+		}
+		String text = String.valueOf(value).trim();
+		return "true".equalsIgnoreCase(text) || "false".equalsIgnoreCase(text) ? Boolean.parseBoolean(text) : fallback; //$NON-NLS-1$ //$NON-NLS-2$
+	}
+
 	/** Returns the value clamped into {@code [min, max]}, or {@code fallback} when absent or unparsable. */
 	public int getInt(String name, int fallback, int min, int max) {
 		Object value = arguments.get(name);

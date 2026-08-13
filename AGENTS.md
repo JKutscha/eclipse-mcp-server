@@ -45,9 +45,10 @@ No reference to the MCP SDK, to Jetty or to any UI bundle.
 The bundle is meant to stay a candidate for contribution to the Eclipse Platform, and the split exists only for that reason.
 It also has no JSON library, which is why it carries the small writer in `com.vogella.eclipse.mcp.core.json`.
 
-**Tools are read-only.**
-No workspace writes, no refactorings, no builds, no dialogs.
-This is a product decision for this iteration, not an oversight.
+**Most tools are read-only, and the exceptions are deliberate.**
+`eclipse_organize_imports` and `eclipse_format` modify the file they are given, and `eclipse_get_problems` triggers a build when auto-build is off.
+Everything else must not write, and no tool may open a dialog or perform a refactoring.
+A new tool that writes has to say so in its own description, because that is the only place the model sees it.
 
 **Threading.**
 Tool calls arrive on Jetty worker threads.
@@ -57,6 +58,11 @@ The server aborts any call that has not finished after 30 seconds.
 
 **Every list-returning tool honours `maxResults` and reports `total` and `truncated`.**
 A new tool that returns a list without those fields is incomplete.
+
+**Anything derived from files must refresh first.**
+A client edits through its own shell, so the workspace does not know about those edits until `WorkspaceSync.refresh` runs.
+`eclipse_get_problems` does it by default and reports `upToDate`; the two editing tools refresh the file they touch.
+Reporting stale markers as if they were current is worse than returning nothing.
 
 ## Adding a tool
 
@@ -82,6 +88,11 @@ Note the bundle symbolic names are `junit-jupiter-api` and so on, not the `org.j
 `TokenStore` keeps the token in `<state>/token` with owner-only permissions so that client configurations survive restarts.
 The server never falls back to a different port when the configured one is taken; it stays down and records the reason in `McpServerService.getLastError()`, which the preference page shows.
 Silently moving to another port would break every configured client, which is worse than not starting.
+
+**`OrganizeImportsTool` seeds JDT UI preferences.**
+JDT reads the import order, the on-demand thresholds and the type filter from the `org.eclipse.jdt.ui` preference node, which only that plug-in registers.
+Headless, or before the UI plug-in has started, the lookup returns null and the operation fails with a `NullPointerException` deep inside `CodeStyleConfiguration` or `TypeNameMatchCollector`.
+`ensureCodeStylePreferences` sets the node id and fills the default scope only where nothing is set, so a user or project setting always wins.
 
 **`BundleJsonSchemaValidator` clears the context class loader on purpose.**
 The networknt schema library reads its bundled meta-schemas through the context class loader and only falls back to its own when there is none.

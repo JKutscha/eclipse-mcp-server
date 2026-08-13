@@ -12,11 +12,13 @@ import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.OperationCanceledException;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolException;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.ToolArguments;
+import com.vogella.eclipse.mcp.core.WorkspaceSync;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
@@ -39,7 +41,7 @@ public final class GetProblemsTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Returns compilation errors and warnings from the Eclipse workspace, as computed by the incremental builder. Reflects the state of the last build."; //$NON-NLS-1$
+		return "Returns compilation errors and warnings from the Eclipse workspace, as computed by the incremental builder. By default the workspace is first refreshed from disk and the build is allowed to finish, so that edits made outside the IDE are taken into account."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -51,7 +53,8 @@ public final class GetProblemsTool implements IMcpTool {
 				    "severity":   {"type":"string","enum":["error","warning","info","all"],"default":"error","description":"Only return problems of exactly this severity. Use 'all' for every severity."},
 				    "project":    {"type":"string","description":"Restrict to this project name."},
 				    "pathPrefix": {"type":"string","description":"Restrict to workspace paths starting with this prefix."},
-				    "maxResults": {"type":"integer","default":200,"minimum":1,"maximum":2000}
+				    "maxResults": {"type":"integer","default":200,"minimum":1,"maximum":2000},
+				    "refresh":    {"type":"boolean","default":true,"description":"Refresh the workspace from disk and wait for the build before reading the markers. Set to false for a faster answer that may be stale."}
 				  },
 				  "additionalProperties": false
 				}"""; //$NON-NLS-1$
@@ -68,6 +71,21 @@ public final class GetProblemsTool implements IMcpTool {
 		String projectName = args.getString("project"); //$NON-NLS-1$
 		String pathPrefix = args.getString("pathPrefix"); //$NON-NLS-1$
 		int maxResults = args.getInt("maxResults", DEFAULT_MAX_RESULTS, 1, 2000); //$NON-NLS-1$
+		boolean refresh = args.getBoolean("refresh", true); //$NON-NLS-1$
+
+		boolean upToDate = false;
+		if (refresh) {
+			IResource scope = projectName == null ? ResourcesPlugin.getWorkspace().getRoot()
+					: ResourcesPlugin.getWorkspace().getRoot().getProject(projectName);
+			try {
+				WorkspaceSync.refresh(scope, monitor);
+				upToDate = WorkspaceSync.build(monitor);
+			} catch (CoreException e) {
+				throw new McpToolException("Could not refresh and build the workspace", e); //$NON-NLS-1$
+			} catch (OperationCanceledException e) {
+				upToDate = false;
+			}
+		}
 
 		IMarker[] markers;
 		try {
@@ -101,6 +119,8 @@ public final class GetProblemsTool implements IMcpTool {
 		}
 		JsonObject result = new JsonObject().put("total", problems.size()) //$NON-NLS-1$
 				.put("truncated", problems.size() > reported.size()) //$NON-NLS-1$
+				.put("upToDate", upToDate) //$NON-NLS-1$
+				.put("autoBuild", WorkspaceSync.isAutoBuilding()) //$NON-NLS-1$
 				.put("problems", reported); //$NON-NLS-1$
 		return McpToolResult.of(result.toString());
 	}

@@ -5,6 +5,10 @@
    <extension point="com.vogella.eclipse.mcp.core.tools">
       <tool class="com.vogella.eclipse.mcp.jdt.internal.FindReferencesTool"/>
       <tool class="com.vogella.eclipse.mcp.jdt.internal.GetTypeHierarchyTool"/>
+      <tool class="com.vogella.eclipse.mcp.jdt.internal.GetSourceTool"/>
+      <tool class="com.vogella.eclipse.mcp.jdt.internal.SearchTypesTool"/>
+      <tool class="com.vogella.eclipse.mcp.jdt.internal.OrganizeImportsTool"/>
+      <tool class="com.vogella.eclipse.mcp.jdt.internal.FormatTool"/>
    </extension>
 
 </plugin>

@@ -6,7 +6,8 @@ An agent with a shell already has files, grep and git.
 What it does not have is the resolved Java model, the incremental builder's problem markers and the user's current editor context.
 Those are the capabilities exposed here.
 
-This first iteration is **read-only**: no file writes, no refactorings, no terminal, no debugger control.
+Most tools are read-only. Two of them, `eclipse_organize_imports` and `eclipse_format`, modify the file they are pointed at; they are marked as such below.
+There is no general file writing, no refactoring, no terminal and no debugger control.
 The server is **disabled by default**, listens on the loopback interface only, and rejects every request that does not carry a bearer token.
 
 ## Building
@@ -106,7 +107,7 @@ It declares the `tools` capability with `listChanged: false`, which means it ans
 |---|---|
 | `initialize` | reports the server as `eclipse-mcp` 0.1.0, with an instructions string |
 | `ping` | |
-| `tools/list` | the five tools below |
+| `tools/list` | the nine tools below |
 | `tools/call` | arguments are validated against the tool's input schema before the tool runs |
 | `notifications/initialized`, `notifications/roots/list_changed` | accepted and ignored |
 
@@ -115,8 +116,9 @@ Sessions are carried in the `mcp-session-id` header, a `GET` opens the server-to
 
 ## Tools
 
-All five tools are read-only and return a single text block containing pretty-printed JSON.
+Every tool returns a single text block containing pretty-printed JSON.
 Every list-returning tool honours `maxResults` and reports `total` and `truncated`, so the model can tell when it is seeing a partial answer.
+All tools are read-only except `eclipse_organize_imports` and `eclipse_format`.
 
 ### `eclipse_list_projects`
 
@@ -131,7 +133,7 @@ No arguments.
 
 ### `eclipse_get_problems`
 
-Returns the compilation errors and warnings computed by the incremental builder, reflecting the state of the last build.
+Returns the compilation errors and warnings computed by the incremental builder.
 
 | Argument | Type | Default | Meaning |
 |---|---|---|---|
@@ -139,15 +141,21 @@ Returns the compilation errors and warnings computed by the incremental builder,
 | `project` | string | all projects | Restrict to this project name. |
 | `pathPrefix` | string | all paths | Restrict to workspace paths starting with this prefix. |
 | `maxResults` | integer, 1 to 2000 | 200 | |
+| `refresh` | boolean | `true` | Refresh from disk and wait for the build before reading the markers. |
 
 Errors sort before warnings before infos, so truncation keeps the most important entries.
 
 ```json
-{"total":3,"truncated":false,"problems":[
+{"total":3,"truncated":false,"upToDate":true,"autoBuild":true,"problems":[
   {"path":"/app/src/com/example/Main.java","project":"app","line":42,
    "severity":"error","message":"Foo cannot be resolved to a type",
    "type":"org.eclipse.jdt.core.problem"}]}
 ```
+
+A client that edits files through its own shell is invisible to the IDE until the workspace is refreshed, so without `refresh` the markers describe the state before those edits.
+That is why it defaults to `true`.
+`upToDate` says whether the refresh and the build actually completed, and `autoBuild` reports whether the workspace builds on its own; when `upToDate` is `false` the problems may be stale.
+Set `refresh` to `false` for a faster answer when nothing has changed on disk.
 
 ### `eclipse_find_references`
 
@@ -186,6 +194,75 @@ Returns the supertypes and subtypes of a Java type as known to JDT, including ty
  "supertypes":["org.eclipse.jface.viewers.AbstractTreeViewer"],
  "subtypes":["org.eclipse.jface.viewers.CheckboxTreeViewer"],
  "truncated":false}
+```
+
+### `eclipse_get_source`
+
+Returns the Java source and Javadoc of a type or of its members, resolved through the project classpath.
+Works for types in libraries as well, as long as a source attachment exists, which is the part a shell cannot do.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `typeName` | string, required | | Fully qualified type name. |
+| `memberName` | string | the whole type | Method or field name. All overloads are returned. |
+| `project` | string | whole workspace | Project used to resolve the type. |
+| `maxLength` | integer, 100 to 200000 | 40000 | Maximum characters per returned element. |
+
+```json
+{"type":"org.eclipse.jface.viewers.TreeViewer","binary":true,
+ "path":"/home/user/.p2/.../org.eclipse.jface_3.35.0.jar","sourceAvailable":true,
+ "elements":[{"element":"org.eclipse.jface.viewers.TreeViewer.setInput(Object)",
+              "line":812,"source":"/** ... */\npublic void setInput(Object input) { ... }",
+              "truncated":false}]}
+```
+
+When no source is attached, `sourceAvailable` is `false` and a `hint` explains why.
+
+### `eclipse_search_types`
+
+Finds Java types by name across the workspace and everything on the project classpaths, jars included.
+Use it to turn a simple name into a fully qualified one.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `pattern` | string, required | | Simple or qualified name, case insensitive, `*` and `?` allowed. |
+| `project` | string | whole workspace | Project whose classpath is searched. |
+| `maxResults` | integer, 1 to 2000 | 200 | |
+
+```json
+{"total":2,"truncated":false,"types":[
+  {"fullyQualifiedName":"org.eclipse.jface.viewers.TreeViewer","simpleName":"TreeViewer",
+   "packageName":"org.eclipse.jface.viewers","path":"/.../org.eclipse.jface_3.35.0.jar","binary":true}]}
+```
+
+### `eclipse_organize_imports`
+
+**Modifies the file.**
+Organizes imports the way JDT does, with the project's own import order and on-demand thresholds, and saves.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `path` | string, required | | Workspace path of the Java file, e.g. `/app/src/com/example/Main.java`. |
+| `resolveAmbiguous` | boolean | `false` | Take the first candidate when a simple name matches several types. |
+
+```json
+{"path":"/app/src/com/example/Main.java","importsAdded":2,"importsRemoved":1,
+ "changed":true,"ambiguous":[]}
+```
+
+By default an ambiguous name, `List` matching both `java.util` and `java.awt` say, aborts the operation with an error naming the candidates rather than guessing, and the file is left untouched.
+
+### `eclipse_format`
+
+**Modifies the file.**
+Formats a Java file with the formatter settings of its own project and saves it.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `path` | string, required | | Workspace path of the Java file. |
+
+```json
+{"path":"/app/src/com/example/Main.java","changed":true}
 ```
 
 ### `eclipse_get_editor_context`
@@ -234,4 +311,4 @@ The contract for an implementation:
 
 ## Not in this iteration
 
-Writes, edits, refactorings and build triggering; debugger inspection; MCP resources and prompts; a stdio transport.
+General file writing, refactorings such as rename; debugger inspection; MCP resources and prompts; a stdio transport.

@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -11,6 +13,7 @@ import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IMarker;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.NullProgressMonitor;
+import org.eclipse.jdt.core.IJavaProject;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -84,6 +87,34 @@ class GetProblemsToolTest {
 		assertEquals(Integer.valueOf(3), result.get("total"));
 		assertEquals(Boolean.TRUE, result.get("truncated"));
 		assertEquals(1, ((List<Map<String, Object>>) result.get("problems")).size());
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void refreshPicksUpAFileWrittenOutsideTheIde() throws Exception {
+		IJavaProject javaProject = fixture.createJavaProject(PROJECT);
+		Path packageDirectory = javaProject.getProject().getFolder("src").getLocation().toFile().toPath()
+				.resolve("example");
+		Files.createDirectories(packageDirectory);
+		Files.writeString(packageDirectory.resolve("Broken.java"), """
+				package example;
+
+				public class Broken {
+					Missing field;
+				}
+				""");
+
+		Map<String, Object> stale = TestFixture.callAndParse("eclipse_get_problems",
+				Map.of("project", PROJECT, "refresh", Boolean.FALSE));
+		assertEquals(Integer.valueOf(0), stale.get("total"), "The IDE cannot know about the file yet");
+		assertEquals(Boolean.FALSE, stale.get("upToDate"), "An unrefreshed answer must say so");
+
+		Map<String, Object> fresh = TestFixture.callAndParse("eclipse_get_problems", Map.of("project", PROJECT));
+
+		assertEquals(Boolean.TRUE, fresh.get("upToDate"));
+		List<Map<String, Object>> problems = (List<Map<String, Object>>) fresh.get("problems");
+		assertTrue(problems.stream().anyMatch(problem -> "/%s/src/example/Broken.java".formatted(PROJECT)
+				.equals(problem.get("path"))), "The compile error was not picked up, got " + problems);
 	}
 
 	@Test

@@ -4,14 +4,19 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.StringJoiner;
 
+import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IMethod;
+import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.JavaModelException;
@@ -110,6 +115,64 @@ final class JavaModelSupport {
 					available.isEmpty() ? "none" : String.join(", ", available.stream().distinct().sorted().toList()))); //$NON-NLS-1$ //$NON-NLS-2$
 		}
 		return members;
+	}
+
+	/**
+	 * Resolves a workspace path such as {@code /app/src/com/example/Main.java} to a Java
+	 * source file on a project's build path.
+	 */
+	static ICompilationUnit compilationUnit(String path) throws ToolInputException {
+		IResource resource = ResourcesPlugin.getWorkspace().getRoot().findMember(IPath.fromPortableString(path));
+		if (!(resource instanceof IFile file)) {
+			throw new ToolInputException(
+					"There is no file at the workspace path '%s'. Paths look like /project/src/com/example/Main.java." //$NON-NLS-1$
+							.formatted(path));
+		}
+		if (!(JavaCore.create(file) instanceof ICompilationUnit unit) || !unit.exists()) {
+			throw new ToolInputException(
+					"'%s' is not a Java source file on the build path of its project.".formatted(path)); //$NON-NLS-1$
+		}
+		return unit;
+	}
+
+	/**
+	 * Returns the source of a member including its Javadoc, or {@code null} when no source
+	 * is attached.
+	 */
+	static String sourceOf(IMember member) throws McpToolException {
+		try {
+			String all = member.getTypeRoot().getSource();
+			ISourceRange range = member.getSourceRange();
+			if (all == null || range == null || range.getOffset() < 0) {
+				return null;
+			}
+			ISourceRange javadoc = member.getJavadocRange();
+			int start = javadoc != null && javadoc.getOffset() >= 0 ? javadoc.getOffset() : range.getOffset();
+			int end = Math.min(range.getOffset() + range.getLength(), all.length());
+			return start >= end ? null : all.substring(start, end);
+		} catch (JavaModelException e) {
+			throw new McpToolException("Could not read the source of " + member.getElementName(), e); //$NON-NLS-1$
+		}
+	}
+
+	/** Returns the one-based line the member starts on, or {@code -1} when unknown. */
+	static int lineOf(IMember member) {
+		try {
+			String all = member.getTypeRoot().getSource();
+			ISourceRange range = member.getSourceRange();
+			if (all == null || range == null || range.getOffset() < 0) {
+				return -1;
+			}
+			int line = 1;
+			for (int i = 0; i < range.getOffset() && i < all.length(); i++) {
+				if (all.charAt(i) == '\n') {
+					line++;
+				}
+			}
+			return line;
+		} catch (JavaModelException e) {
+			return -1;
+		}
 	}
 
 	/** Returns a readable label such as {@code com.example.View.createPartControl(Composite)}. */
