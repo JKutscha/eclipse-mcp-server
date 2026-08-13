@@ -1,0 +1,190 @@
+package com.vogella.eclipse.mcp.server;
+
+import java.nio.file.Path;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import org.eclipse.core.runtime.ILog;
+import org.eclipse.jetty.ee11.servlet.FilterHolder;
+import org.eclipse.jetty.ee11.servlet.ServletContextHandler;
+import org.eclipse.jetty.ee11.servlet.ServletHolder;
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.jetty.util.thread.QueuedThreadPool;
+
+import com.vogella.eclipse.mcp.core.McpToolRegistry;
+import com.vogella.eclipse.mcp.server.internal.BearerTokenFilter;
+import com.vogella.eclipse.mcp.server.internal.BundleJsonSchemaValidator;
+import com.vogella.eclipse.mcp.server.internal.EndpointFile;
+import com.vogella.eclipse.mcp.server.internal.McpToolAdapter;
+
+import io.modelcontextprotocol.json.McpJsonMapper;
+import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapperSupplier;
+import io.modelcontextprotocol.server.McpServer;
+import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
+import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.server.transport.DefaultServerTransportSecurityValidator;
+import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
+import io.modelcontextprotocol.spec.McpSchema.ServerCapabilities;
+
+import jakarta.servlet.DispatcherType;
+
+/**
+ * The embedded MCP server: an HTTP endpoint on the loopback interface that exposes every
+ * tool of the {@link McpToolRegistry} over the Streamable HTTP transport.
+ */
+public final class McpServerService {
+
+	private static final String ENDPOINT_PATH = "/mcp"; //$NON-NLS-1$
+
+	private static final String LOOPBACK = "127.0.0.1"; //$NON-NLS-1$
+
+	private static final McpServerService INSTANCE = new McpServerService();
+
+	/** One token per IDE session, so that a restart of the server keeps client configurations valid. */
+	private final String token = UUID.randomUUID().toString();
+
+	private Server jetty;
+
+	private McpSyncServer mcpServer;
+
+	private HttpServletStreamableServerTransportProvider transport;
+
+	private ExecutorService toolExecutor;
+
+	private McpEndpoint endpoint;
+
+	private int runningPort = -1;
+
+	private McpServerService() {
+	}
+
+	public static McpServerService getInstance() {
+		return INSTANCE;
+	}
+
+	public synchronized boolean isRunning() {
+		return jetty != null && jetty.isRunning();
+	}
+
+	/** The port the server is listening on, or {@code -1} while it is stopped. */
+	public synchronized int getPort() {
+		return runningPort;
+	}
+
+	/** The endpoint clients have to talk to, or {@code null} while the server is stopped. */
+	public synchronized McpEndpoint getEndpoint() {
+		return endpoint;
+	}
+
+	/** The discovery file holding the URL and the token, whether or not the server is running. */
+	public static Path getEndpointFile() {
+		return EndpointFile.location();
+	}
+
+	/**
+	 * Starts the server on the configured port. Does nothing when it is already running.
+	 * Never call this on the UI thread, starting Jetty takes a moment.
+	 */
+	public synchronized void start() throws McpServerException {
+		if (isRunning()) {
+			return;
+		}
+		int port = McpPreferences.getPort();
+		McpJsonMapper jsonMapper = new JacksonMcpJsonMapperSupplier().get();
+		toolExecutor = Executors.newCachedThreadPool(runnable -> {
+			Thread thread = new Thread(runnable, "MCP tool call"); //$NON-NLS-1$
+			thread.setDaemon(true);
+			return thread;
+		});
+
+		List<SyncToolSpecification> specifications = McpToolRegistry.getInstance().getTools().stream()
+				.map(tool -> McpToolAdapter.toSpecification(tool, jsonMapper, toolExecutor)).toList();
+
+		transport = HttpServletStreamableServerTransportProvider.builder().jsonMapper(jsonMapper)
+				.mcpEndpoint(ENDPOINT_PATH)
+				.securityValidator(DefaultServerTransportSecurityValidator.builder().allowedHost(LOOPBACK + ":*") //$NON-NLS-1$
+						.allowedHost("localhost:*").build()) //$NON-NLS-1$
+				.build();
+
+		mcpServer = McpServer.sync(transport).serverInfo("eclipse-mcp", "0.1.0") //$NON-NLS-1$ //$NON-NLS-2$
+				.instructions("Read-only access to the Java model, the problem markers and the editor context of a running Eclipse IDE.") //$NON-NLS-1$
+				.capabilities(ServerCapabilities.builder().tools(false).build()).jsonMapper(jsonMapper)
+				.jsonSchemaValidator(new BundleJsonSchemaValidator()).tools(specifications).build();
+
+		try {
+			jetty = createJetty(port);
+			jetty.start();
+		} catch (Exception e) {
+			stopQuietly();
+			throw new McpServerException("Could not start the MCP server on %s:%d".formatted(LOOPBACK, port), e); //$NON-NLS-1$
+		}
+
+		runningPort = port;
+		endpoint = new McpEndpoint("http://%s:%d%s".formatted(LOOPBACK, port, ENDPOINT_PATH), token); //$NON-NLS-1$
+		EndpointFile.write(endpoint);
+		ILog.get().info("MCP server listening on %s with %d tool(s)".formatted(endpoint.url(), specifications.size())); //$NON-NLS-1$
+	}
+
+	/** Stops the server and removes the discovery file. Does nothing when it is not running. */
+	public synchronized void stop() {
+		if (jetty == null) {
+			return;
+		}
+		stopQuietly();
+		ILog.get().info("MCP server stopped"); //$NON-NLS-1$
+	}
+
+	private Server createJetty(int port) {
+		QueuedThreadPool threadPool = new QueuedThreadPool(16, 2);
+		threadPool.setName("mcp-jetty"); //$NON-NLS-1$
+		threadPool.setDaemon(true);
+		Server server = new Server(threadPool);
+
+		ServerConnector connector = new ServerConnector(server);
+		// binds to 127.0.0.1 only, so the socket is not reachable from another machine
+		connector.setHost(LOOPBACK);
+		connector.setPort(port);
+		server.addConnector(connector);
+
+		ServletContextHandler context = new ServletContextHandler("/"); //$NON-NLS-1$
+		ServletHolder servlet = new ServletHolder(transport);
+		servlet.setAsyncSupported(true);
+		context.addServlet(servlet, ENDPOINT_PATH + "/*"); //$NON-NLS-1$
+		FilterHolder filter = new FilterHolder(new BearerTokenFilter(token));
+		filter.setAsyncSupported(true);
+		context.addFilter(filter, ENDPOINT_PATH + "/*", EnumSet.of(DispatcherType.REQUEST)); //$NON-NLS-1$
+		server.setHandler(context);
+		return server;
+	}
+
+	private void stopQuietly() {
+		EndpointFile.delete();
+		endpoint = null;
+		runningPort = -1;
+		if (mcpServer != null) {
+			try {
+				mcpServer.closeGracefully();
+			} catch (RuntimeException e) {
+				ILog.get().warn("Could not close the MCP server gracefully", e); //$NON-NLS-1$
+			}
+			mcpServer = null;
+		}
+		if (jetty != null) {
+			try {
+				jetty.stop();
+			} catch (Exception e) {
+				ILog.get().error("Could not stop the embedded Jetty server", e); //$NON-NLS-1$
+			}
+			jetty = null;
+		}
+		transport = null;
+		if (toolExecutor != null) {
+			toolExecutor.shutdownNow();
+			toolExecutor = null;
+		}
+	}
+}

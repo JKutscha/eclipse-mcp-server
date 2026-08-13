@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<site>
+   <feature id="com.vogella.eclipse.mcp.feature" version="0.0.0">
+      <category name="com.vogella.eclipse.mcp"/>
+   </feature>
+   <category-def name="com.vogella.eclipse.mcp" label="Eclipse MCP Server">
+      <description>
+         Read-only MCP server capabilities for the Eclipse IDE.
+      </description>
+   </category-def>
+</site>

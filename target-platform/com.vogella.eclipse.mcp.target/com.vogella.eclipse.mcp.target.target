@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?pde version="3.8"?>
+<target name="com.vogella.eclipse.mcp.target" sequenceNumber="1">
+  <locations>
+    <location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
+      <unit id="org.eclipse.sdk.feature.group" version="0.0.0"/>
+      <repository location="https://download.eclipse.org/releases/2026-06/"/>
+    </location>
+    <location includeDependencyDepth="infinite" includeDependencyScopes="compile" includeSource="true"
+              label="MCP Java SDK" missingManifest="generate" type="Maven">
+      <dependencies>
+        <dependency>
+          <groupId>io.modelcontextprotocol.sdk</groupId>
+          <artifactId>mcp</artifactId>
+          <version>2.0.0</version>
+          <type>jar</type>
+        </dependency>
+      </dependencies>
+    </location>
+    <location includeDependencyDepth="infinite" includeDependencyScopes="compile" includeSource="true"
+              label="Jetty" missingManifest="generate" type="Maven">
+      <dependencies>
+        <dependency>
+          <groupId>org.eclipse.jetty.ee11</groupId>
+          <artifactId>jetty-ee11-servlet</artifactId>
+          <version>12.1.12</version>
+          <type>jar</type>
+        </dependency>
+        <dependency>
+          <groupId>jakarta.servlet</groupId>
+          <artifactId>jakarta.servlet-api</artifactId>
+          <version>6.1.0</version>
+          <type>jar</type>
+        </dependency>
+      </dependencies>
+    </location>
+  </locations>
+</target>

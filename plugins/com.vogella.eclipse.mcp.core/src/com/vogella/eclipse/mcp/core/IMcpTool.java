@@ -1,0 +1,32 @@
+package com.vogella.eclipse.mcp.core;
+
+import java.util.Map;
+
+import org.eclipse.core.runtime.IProgressMonitor;
+
+/**
+ * A single read-only capability that an MCP client can invoke.
+ * <p>
+ * Implementations are contributed through the {@code com.vogella.eclipse.mcp.core.tools}
+ * extension point. They are called on arbitrary worker threads, never on the UI thread,
+ * and must not modify the workspace or open a dialog.
+ */
+public interface IMcpTool {
+
+	/** Stable, unique tool name, for example {@code eclipse_get_problems}. */
+	String getName();
+
+	/** Human readable description handed to the model. */
+	String getDescription();
+
+	/** JSON Schema for the tool arguments, as a JSON string. */
+	String getInputSchema();
+
+	/**
+	 * Executes the tool.
+	 *
+	 * @param arguments the arguments sent by the client, never {@code null}
+	 * @param monitor cancelled when the caller gave up waiting
+	 */
+	McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) throws McpToolException;
+}

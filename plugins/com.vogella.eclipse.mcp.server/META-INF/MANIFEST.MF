@@ -1,0 +1,26 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: Eclipse MCP Server
+Bundle-SymbolicName: com.vogella.eclipse.mcp.server;singleton:=true
+Bundle-Version: 0.1.0.qualifier
+Bundle-Vendor: vogella GmbH
+Bundle-RequiredExecutionEnvironment: JavaSE-25
+Bundle-Activator: com.vogella.eclipse.mcp.server.internal.McpServerActivator
+Bundle-ActivationPolicy: lazy
+Automatic-Module-Name: com.vogella.eclipse.mcp.server
+Require-Bundle: org.eclipse.core.runtime;bundle-version="3.31.0",
+ com.vogella.eclipse.mcp.core;bundle-version="0.1.0"
+Import-Package: io.modelcontextprotocol.json;version="[2.0,3)",
+ io.modelcontextprotocol.json.jackson3;version="[2.0,3)",
+ io.modelcontextprotocol.json.schema;version="[2.0,3)",
+ io.modelcontextprotocol.json.schema.jackson3;version="[2.0,3)",
+ io.modelcontextprotocol.server;version="[2.0,3)",
+ io.modelcontextprotocol.server.transport;version="[2.0,3)",
+ io.modelcontextprotocol.spec;version="[2.0,3)",
+ jakarta.servlet;version="[6.1,7)",
+ jakarta.servlet.http;version="[6.1,7)",
+ org.eclipse.jetty.ee11.servlet;version="[12.1.12,13)",
+ org.eclipse.jetty.server;version="[12.1.12,13)",
+ org.eclipse.jetty.util.thread;version="[12.1.12,13)",
+ org.osgi.framework;version="[1.10,2)"
+Export-Package: com.vogella.eclipse.mcp.server
