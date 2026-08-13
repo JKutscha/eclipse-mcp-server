@@ -52,7 +52,9 @@ Pushing a `v<version>` tag runs `.github/workflows/release.yml`, which builds th
 * **Port**, `8642` by default
 
 The setting takes effect immediately, and the server also starts on the next IDE startup while it stays enabled.
-That it is listening, and on which port, is written to the Error Log view.
+
+The same preference page shows the endpoint once the server is listening: the URL, the bearer token and the path of the discovery file, each with a *Copy* button.
+That it is listening, and on which port, is also written to the Error Log view.
 
 ## Connecting a client
 

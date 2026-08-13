@@ -20,8 +20,11 @@ final class McpServerJob extends Job {
 		setSystem(true);
 	}
 
-	static void reconcile() {
-		new McpServerJob().schedule();
+	/** Schedules the reconciliation and returns the job, so that callers can react when it is done. */
+	static Job reconcile() {
+		Job job = new McpServerJob();
+		job.schedule();
+		return job;
 	}
 
 	@Override
