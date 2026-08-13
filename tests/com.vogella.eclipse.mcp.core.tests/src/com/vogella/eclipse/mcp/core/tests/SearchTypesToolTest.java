@@ -65,6 +65,18 @@ class SearchTypesToolTest {
 		assertEquals(1, ((List<Object>) result.get("types")).size());
 	}
 
+	@Test
+	void reportsNoMatchesAsAnEmptyResult() throws Exception {
+		createFixtureProject();
+
+		Map<String, Object> result = TestFixture.callAndParse("eclipse_search_types",
+				Map.of("pattern", "ThereIsNoSuchTypeAnywhere", "project", PROJECT));
+
+		assertEquals(Integer.valueOf(0), result.get("total"));
+		assertEquals(Boolean.FALSE, result.get("truncated"));
+		assertTrue(names(result).isEmpty());
+	}
+
 	@SuppressWarnings("unchecked")
 	private static List<String> names(Map<String, Object> result) {
 		return ((List<Map<String, Object>>) result.get("types")).stream()

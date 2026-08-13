@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 
@@ -77,8 +78,8 @@ class SourceEditingToolsTest {
 				import java.io.File;
 
 				public class Imports {
-					public java.util.ArrayList<String> create() {
-						return new java.util.ArrayList<>();
+					public ArrayList<String> create() {
+						return new ArrayList<>();
 					}
 				}
 				""");
@@ -89,8 +90,10 @@ class SourceEditingToolsTest {
 
 		assertEquals(Boolean.TRUE, result.get("changed"));
 		assertEquals(Integer.valueOf(1), result.get("importsRemoved"), "The unused java.io.File import should go");
+		assertEquals(Integer.valueOf(1), result.get("importsAdded"), "java.util.ArrayList should be imported");
 		String source = TestFixture.read(file);
 		assertFalse(source.contains("import java.io.File;"), "Unused import still there: " + source);
+		assertTrue(source.contains("import java.util.ArrayList;"), "Import not added: " + source);
 	}
 
 	@Test
@@ -136,6 +139,49 @@ class SourceEditingToolsTest {
 		assertTrue(TestFixture.read(file).contains("import one.Duplicated;")
 				|| TestFixture.read(file).contains("import two.Duplicated;"),
 				"One of the candidates should have been imported: " + TestFixture.read(file));
+	}
+
+	@Test
+	void formatsAFileChangedOnDiskBehindTheIde() throws Exception {
+		IJavaProject javaProject = fixture.createJavaProject(PROJECT);
+		IFile file = TestFixture.addType(javaProject, "example", "External", """
+				package example;
+
+				public class External {
+				}
+				""");
+		TestFixture.build(javaProject.getProject());
+		Files.writeString(file.getLocation().toFile().toPath(), """
+				package example;
+				public class External {
+				public   int value(){return 2;}
+				}
+				""");
+
+		Map<String, Object> result = TestFixture.callAndParse("eclipse_format",
+				Map.of("path", file.getFullPath().toString()));
+
+		assertEquals(Boolean.TRUE, result.get("changed"), "The tool must refresh before it formats");
+		assertTrue(TestFixture.read(file).contains("public int value() {"), "Not formatted: " + TestFixture.read(file));
+	}
+
+	@Test
+	void leavesAFileThatDoesNotParseUnchanged() throws Exception {
+		IJavaProject javaProject = fixture.createJavaProject(PROJECT);
+		IFile file = TestFixture.addType(javaProject, "example", "Unparsable", """
+				package example;
+
+				public class Unparsable {
+				""");
+		TestFixture.build(javaProject.getProject());
+		String before = TestFixture.read(file);
+
+		Map<String, Object> result = TestFixture.callAndParse("eclipse_format",
+				Map.of("path", file.getFullPath().toString()));
+
+		// the formatter produces no edits rather than failing, so the file is reported as unchanged
+		assertEquals(Boolean.FALSE, result.get("changed"));
+		assertEquals(before, TestFixture.read(file));
 	}
 
 	@Test

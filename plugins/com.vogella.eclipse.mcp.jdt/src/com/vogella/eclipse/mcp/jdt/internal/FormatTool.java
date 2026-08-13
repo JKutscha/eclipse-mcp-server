@@ -30,7 +30,7 @@ public final class FormatTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Formats a Java source file with the formatter settings of its own project, and saves it. This modifies the file. Use it after writing Java so that the result matches the project's conventions rather than the model's."; //$NON-NLS-1$
+		return "Formats a Java source file with the formatter settings of its own project, and saves it. This modifies the file. Use it after writing Java so that the result matches the project's conventions rather than the model's. A file that does not parse produces no edits and is reported as unchanged, so check eclipse_get_problems when nothing happens."; //$NON-NLS-1$
 	}
 
 	@Override

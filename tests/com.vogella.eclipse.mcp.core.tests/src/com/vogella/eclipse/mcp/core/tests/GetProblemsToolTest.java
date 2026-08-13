@@ -12,6 +12,9 @@ import java.util.Map;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IMarker;
 import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IWorkspace;
+import org.eclipse.core.resources.IWorkspaceDescription;
+import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.IJavaProject;
 import org.junit.jupiter.api.AfterEach;
@@ -115,6 +118,39 @@ class GetProblemsToolTest {
 		List<Map<String, Object>> problems = (List<Map<String, Object>>) fresh.get("problems");
 		assertTrue(problems.stream().anyMatch(problem -> "/%s/src/example/Broken.java".formatted(PROJECT)
 				.equals(problem.get("path"))), "The compile error was not picked up, got " + problems);
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void refreshBuildsExplicitlyWhenAutoBuildIsOff() throws Exception {
+		IWorkspace workspace = ResourcesPlugin.getWorkspace();
+		IWorkspaceDescription description = workspace.getDescription();
+		boolean autoBuilding = description.isAutoBuilding();
+		description.setAutoBuilding(false);
+		workspace.setDescription(description);
+		try {
+			IJavaProject javaProject = fixture.createJavaProject(PROJECT);
+			Path packageDirectory = javaProject.getProject().getFolder("src").getLocation().toFile().toPath()
+					.resolve("example");
+			Files.createDirectories(packageDirectory);
+			Files.writeString(packageDirectory.resolve("AlsoBroken.java"), """
+					package example;
+
+					public class AlsoBroken {
+						Missing field;
+					}
+					""");
+
+			Map<String, Object> result = TestFixture.callAndParse("eclipse_get_problems", Map.of("project", PROJECT));
+
+			assertEquals(Boolean.FALSE, result.get("autoBuild"), "The fixture turned auto-build off");
+			List<Map<String, Object>> problems = (List<Map<String, Object>>) result.get("problems");
+			assertTrue(problems.stream().anyMatch(problem -> "/%s/src/example/AlsoBroken.java".formatted(PROJECT)
+					.equals(problem.get("path"))), "The tool has to build itself when auto-build is off, got " + problems);
+		} finally {
+			description.setAutoBuilding(autoBuilding);
+			workspace.setDescription(description);
+		}
 	}
 
 	@Test
