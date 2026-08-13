@@ -2,7 +2,7 @@
 <feature
       id="com.vogella.eclipse.mcp.feature"
       label="Eclipse MCP Server"
-      version="0.1.0.qualifier"
+      version="0.2.0.qualifier"
       provider-name="vogella GmbH">
 
    <description>

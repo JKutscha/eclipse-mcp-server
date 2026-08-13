@@ -2,7 +2,7 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: Eclipse MCP UI
 Bundle-SymbolicName: com.vogella.eclipse.mcp.ui;singleton:=true
-Bundle-Version: 0.1.0.qualifier
+Bundle-Version: 0.2.0.qualifier
 Bundle-Vendor: vogella GmbH
 Bundle-RequiredExecutionEnvironment: JavaSE-25
 Bundle-Activator: com.vogella.eclipse.mcp.ui.internal.McpUiPlugin
@@ -15,5 +15,5 @@ Require-Bundle: org.eclipse.core.runtime;bundle-version="3.31.0",
  org.eclipse.jface.text;bundle-version="3.26.0",
  org.eclipse.ui;bundle-version="3.205.0",
  org.eclipse.ui.workbench.texteditor;bundle-version="3.17.0",
- com.vogella.eclipse.mcp.core;bundle-version="0.1.0",
- com.vogella.eclipse.mcp.server;bundle-version="0.1.0"
+ com.vogella.eclipse.mcp.core;bundle-version="0.2.0",
+ com.vogella.eclipse.mcp.server;bundle-version="0.2.0"

@@ -31,7 +31,7 @@ https://vogellacompany.github.io/com.vogella.eclipse.mcp/
 
 as an update site and install the **Eclipse MCP Server** feature.
 That URL is a composite repository which always offers the newest version.
-To pin a version, point at its own site instead, for example `https://vogellacompany.github.io/com.vogella.eclipse.mcp/releases/0.1.0/`.
+To pin a version, point at its own site instead, for example `https://vogellacompany.github.io/com.vogella.eclipse.mcp/releases/0.2.0/`.
 
 Each release also carries the repository as a zip, for offline installs through *Add > Archive*.
 When building from source, the same repository is produced under `update-site/com.vogella.eclipse.mcp.repository/target/repository` and can be added as a local site.
@@ -105,7 +105,7 @@ It declares the `tools` capability with `listChanged: false`, which means it ans
 
 | Method | Notes |
 |---|---|
-| `initialize` | reports the server as `eclipse-mcp` 0.1.0, with an instructions string |
+| `initialize` | reports the server as `eclipse-mcp` with the bundle version, plus an instructions string |
 | `ping` | |
 | `tools/list` | the nine tools below |
 | `tools/call` | arguments are validated against the tool's input schema before the tool runs |

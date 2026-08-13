@@ -13,6 +13,9 @@ import org.eclipse.jetty.ee11.servlet.ServletHolder;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
+import org.osgi.framework.Bundle;
+import org.osgi.framework.FrameworkUtil;
+import org.osgi.framework.Version;
 
 import com.vogella.eclipse.mcp.core.McpToolRegistry;
 import com.vogella.eclipse.mcp.server.internal.BearerTokenFilter;
@@ -130,7 +133,7 @@ public final class McpServerService {
 						.allowedHost("localhost:*").build()) //$NON-NLS-1$
 				.build();
 
-		mcpServer = McpServer.sync(transport).serverInfo("eclipse-mcp", "0.1.0") //$NON-NLS-1$ //$NON-NLS-2$
+		mcpServer = McpServer.sync(transport).serverInfo("eclipse-mcp", version()) //$NON-NLS-1$
 				.instructions("Read-only access to the Java model, the problem markers and the editor context of a running Eclipse IDE.") //$NON-NLS-1$
 				.capabilities(ServerCapabilities.builder().tools(false).build()).jsonMapper(jsonMapper)
 				.jsonSchemaValidator(new BundleJsonSchemaValidator()).tools(specifications).build();
@@ -159,6 +162,16 @@ public final class McpServerService {
 		}
 		stopQuietly();
 		ILog.get().info("MCP server stopped"); //$NON-NLS-1$
+	}
+
+	/** Read from the bundle, so that the version a client sees cannot drift from the build. */
+	private static String version() {
+		Bundle bundle = FrameworkUtil.getBundle(McpServerService.class);
+		if (bundle == null) {
+			return "0.0.0"; //$NON-NLS-1$
+		}
+		Version version = bundle.getVersion();
+		return "%d.%d.%d".formatted(version.getMajor(), version.getMinor(), version.getMicro()); //$NON-NLS-1$
 	}
 
 	private Server createJetty(int port, String token) {
