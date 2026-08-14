@@ -89,6 +89,11 @@ Note the bundle symbolic names are `junit-jupiter-api` and so on, not the `org.j
 The server never falls back to a different port when the configured one is taken; it stays down and records the reason in `McpServerService.getLastError()`, which the preference page shows.
 Silently moving to another port would break every configured client, which is worse than not starting.
 
+**Field reads and writes are counted from separate searches, and the counts do not sum to `total`.**
+`eclipse_find_references` runs `READ_ACCESSES` and `WRITE_ACCESSES` in addition to `REFERENCES` when the target is a field, and matches them up by path and offset.
+A field initializer is a write access but not a reference, so it appears in `byKind` and never in `matches`; a compound assignment is both, and is tagged `readWrite`.
+Do not "fix" the mismatch by making the numbers agree, it is the truth of what JDT reports.
+
 **`OrganizeImportsTool` seeds JDT UI preferences.**
 JDT reads the import order, the on-demand thresholds and the type filter from the `org.eclipse.jdt.ui` preference node, which only that plug-in registers.
 Headless, or before the UI plug-in has started, the lookup returns null and the operation fails with a `NullPointerException` deep inside `CodeStyleConfiguration` or `TypeNameMatchCollector`.

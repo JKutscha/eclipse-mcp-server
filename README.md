@@ -168,15 +168,32 @@ Far more accurate than a text search, because it resolves overloads and inherita
 | `memberName` | string | the type itself | Method or field name. All overloads of a method name are searched. |
 | `project` | string | whole workspace | Project used to resolve the type and to scope the search. |
 | `maxResults` | integer, 1 to 2000 | 200 | |
+| `accessKind` | `all` \| `read` \| `write` | `all` | Restrict to read or write accesses. Fields only. |
 
 ```json
-{"resolved":"org.eclipse.jface.viewers.TreeViewer#setInput","total":17,"truncated":false,
+{"resolved":"org.eclipse.jface.viewers.TreeViewer#setInput","accessKind":"all",
+ "total":17,"truncated":false,
  "matches":[{"path":"/app/src/com/example/View.java","project":"app","line":88,
-             "offset":2451,"length":8,
+             "offset":2451,"length":8,"kind":null,
              "enclosingElement":"com.example.View.createPartControl(Composite)"}]}
 ```
 
 An unresolvable type name comes back as an error result naming the type, not as a protocol error.
+
+**Reads and writes.**
+When the member resolves to a field, the answer also carries a `byKind` summary and a `kind` on every match, without a second call:
+
+```json
+{"resolved":"com.example.Cache#lastSelection","accessKind":"all","total":4,
+ "byKind":{"read":0,"write":4},"truncated":false,"matches":[...]}
+```
+
+This is the one thing a text search cannot approximate: a field written in four places and read in none is dead, while every text tool sees four live occurrences.
+`kind` is `read`, `write`, `readWrite` for a compound assignment such as `count += 1`, or `null` for anything that is not a field.
+
+Two details that matter if you act on the numbers.
+A field initializer is a write access but a declaration rather than a reference, so it is counted in `byKind` while being absent from `total` and from `matches`; the counts need not sum.
+And `read` or `write` on a type or a method is an error rather than an empty answer, because only fields are read and written.
 
 ### `eclipse_get_type_hierarchy`
 
