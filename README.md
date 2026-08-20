@@ -8,7 +8,7 @@ An agent with a shell already has files, grep and git.
 What it does not have is the resolved Java model, the incremental builder's problem markers and the user's current editor context.
 Those are the capabilities exposed here.
 
-Most tools are read-only. Two of them, `eclipse_organize_imports` and `eclipse_format`, modify the file they are pointed at; they are marked as such below.
+Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, and `eclipse_build` runs the project's builders.
 There is no general file writing, no refactoring, no terminal and no debugger control.
 The server is **disabled by default**, listens on the loopback interface only, and rejects every request that does not carry a bearer token.
 
@@ -56,8 +56,12 @@ Pushing a `v<version>` tag runs the same workflow and additionally creates the G
 
 * **Enable MCP server**, off by default
 * **Port**, `8642` by default
+* **Tool call timeout**, `30` seconds by default, between 5 and 3600
 
 The setting takes effect immediately, and the server also starts on the next IDE startup while it stays enabled.
+
+The timeout bounds a single tool call. It is read per call, so raising it does not need a restart.
+Raise it when a workspace is large enough that a refreshing `eclipse_get_problems` or a build does not finish in 30 seconds.
 
 The same preference page shows the endpoint once the server is listening: the URL, the bearer token and the path of the discovery file, each with a *Copy* button, plus a *Regenerate token* button.
 When the port is already in use the server does not fall back to another one, it stays down and the page says why, so the URL never changes behind a client's back.
@@ -112,7 +116,7 @@ It declares the `tools` capability with `listChanged: false`, which means it ans
 |---|---|
 | `initialize` | reports the server as `eclipse-mcp` with the bundle version, plus an instructions string |
 | `ping` | |
-| `tools/list` | the ten tools below |
+| `tools/list` | the tools below |
 | `tools/call` | arguments are validated against the tool's input schema before the tool runs |
 | `notifications/initialized`, `notifications/roots/list_changed` | accepted and ignored |
 
@@ -123,7 +127,7 @@ Sessions are carried in the `mcp-session-id` header, a `GET` opens the server-to
 
 Every tool returns a single text block containing pretty-printed JSON.
 Every list-returning tool honours `maxResults` and reports `total` and `truncated`, so the model can tell when it is seeing a partial answer.
-All tools are read-only except `eclipse_organize_imports` and `eclipse_format`.
+Read-only except `eclipse_organize_imports` and `eclipse_format`, which rewrite the file they are pointed at, and `eclipse_build`, which runs builders.
 
 ### `eclipse_list_projects`
 
@@ -196,6 +200,63 @@ A UI freeze is a multi status whose children carry the sampled thread stacks, an
 Stack traces are never truncated either, which means a handful of freezes can amount to megabytes; `maxResults`, `plugin` and `includeStackTraces: false` are the levers for keeping an answer small.
 
 The entries are read from the log file rather than from a listener registered at startup, so entries from before the server started, and from previous sessions still present in the file, are included.
+
+### `eclipse_get_preferences`
+
+Reads preferences for a qualifier and reports which scope each value comes from.
+Use it to find out what has actually been customized here, auto-build being the common case: qualifier `org.eclipse.core.resources`, key `description.autobuilding`.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `qualifier` | string, required | | Preference qualifier, usually a bundle symbolic name. |
+| `key` | string | all keys | Exact preference key. |
+| `keyPattern` | string | no filter | Glob over keys, `*` and `?`, case insensitive. |
+| `scope` | `instance` \| `project` \| `configuration` \| `default` \| `all` | `instance` | Only keys set in this scope. |
+| `project` | string | | Required for the project scope. |
+| `includeDefaults` | boolean | `false` | Also list keys only set in the default scope. |
+| `maxResults` | integer, 1 to 2000 | 200 | |
+
+```json
+{"qualifier":"org.eclipse.jdt.core","project":null,"scope":"instance","total":1,"truncated":false,
+ "preferences":[{"key":"org.eclipse.jdt.core.compiler.source","effective":"25","effectiveScope":"instance",
+                 "values":{"instance":"25","default":"21"}}]}
+```
+
+`values` holds every scope that sets the key, in lookup order, and `effectiveScope` names the one that won.
+An effective value without its origin cannot explain why one project behaves unlike its neighbours, which is the question this tool exists to answer.
+The default value of a listed key is always reported; `includeDefaults` only controls whether keys that are *only* set in the default scope are listed at all, because for a qualifier like `org.eclipse.jdt.core` that is several hundred entries of noise.
+
+### `eclipse_build`
+
+**Runs builders.**
+Builds the workspace or named projects.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `kind` | `incremental` \| `full` \| `clean` | `incremental` | |
+| `project` | string | whole workspace | Single project to build. |
+| `projects` | array of strings | | Several projects, instead of `project`. |
+| `wait` | boolean | `true` | Wait for the build before answering. |
+| `timeoutSeconds` | integer, 1 to 3600 | 25 | How long to wait before answering with `running`. |
+| `returnProblems` | boolean | `true` | Count errors and warnings once the build ended. |
+| `refresh` | boolean | `true` | Refresh from disk first. |
+
+```json
+{"buildId":"build-3","kind":"full","state":"done","scope":"projects","projects":["app"],
+ "elapsedMillis":8412,"errors":2,"warnings":17,"builderFailures":[]}
+```
+
+The build runs as a job, so a build longer than `timeoutSeconds` comes back as `state: "running"` with a `buildId` rather than holding the request open until the server's call timeout kills it.
+Keep `timeoutSeconds` below that timeout; the default 25 fits under the default 30.
+
+`builderFailures` carries the exceptions the builders threw, flattened out of the multi status they arrive in.
+Those never become problem markers, so a build whose `JavaBuilder` threw would otherwise report `errors: 0` and read as a success. That is the misleading case this field exists to prevent.
+
+### `eclipse_get_build_status`
+
+Reports a build started through `eclipse_build`, by `buildId`, or the most recent one when that is omitted.
+The answer has the same shape as the one above.
+The last 20 builds are kept; asking for an older id is an error, while asking before anything has been built returns `{"state":"none"}` rather than an error.
 
 ### `eclipse_find_references`
 

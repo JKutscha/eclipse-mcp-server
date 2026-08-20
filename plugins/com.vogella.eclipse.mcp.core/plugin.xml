@@ -8,6 +8,9 @@
       <tool class="com.vogella.eclipse.mcp.core.internal.ListProjectsTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.GetProblemsTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.GetLogEntriesTool"/>
+      <tool class="com.vogella.eclipse.mcp.core.internal.GetPreferencesTool"/>
+      <tool class="com.vogella.eclipse.mcp.core.internal.BuildTool"/>
+      <tool class="com.vogella.eclipse.mcp.core.internal.GetBuildStatusTool"/>
    </extension>
 
 </plugin>

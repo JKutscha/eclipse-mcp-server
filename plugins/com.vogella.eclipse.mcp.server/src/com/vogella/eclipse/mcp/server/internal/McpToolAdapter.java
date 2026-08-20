@@ -13,6 +13,7 @@ import org.eclipse.core.runtime.NullProgressMonitor;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolResult;
+import com.vogella.eclipse.mcp.server.McpPreferences;
 
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
@@ -23,8 +24,6 @@ import io.modelcontextprotocol.spec.McpSchema.Tool;
  * Presents an {@link IMcpTool} as an MCP tool, under a hard call timeout.
  */
 public final class McpToolAdapter {
-
-	static final Duration CALL_TIMEOUT = Duration.ofSeconds(30);
 
 	private McpToolAdapter() {
 	}
@@ -38,17 +37,20 @@ public final class McpToolAdapter {
 	}
 
 	private static CallToolResult call(IMcpTool tool, Map<String, Object> arguments, ExecutorService executor) {
+		// read per call, so that changing the preference takes effect without a restart
+		Duration timeout = McpPreferences.getCallTimeout();
 		NullProgressMonitor monitor = new NullProgressMonitor();
 		Future<McpToolResult> pending = executor
 				.submit(() -> tool.call(arguments == null ? Map.of() : arguments, monitor));
 		try {
-			McpToolResult result = pending.get(CALL_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+			McpToolResult result = pending.get(timeout.toSeconds(), TimeUnit.SECONDS);
 			return CallToolResult.builder().addTextContent(result.text()).isError(result.isError()).build();
 		} catch (TimeoutException e) {
 			monitor.setCanceled(true);
 			pending.cancel(true);
-			return error("The tool '%s' did not finish within %d seconds.".formatted(tool.getName(), //$NON-NLS-1$
-					CALL_TIMEOUT.toSeconds()));
+			return error(
+					"The tool '%s' did not finish within %d seconds. Raise the timeout in Preferences > General > MCP Server if the operation is expected to take longer." //$NON-NLS-1$
+							.formatted(tool.getName(), timeout.toSeconds()));
 		} catch (InterruptedException e) {
 			pending.cancel(true);
 			Thread.currentThread().interrupt();

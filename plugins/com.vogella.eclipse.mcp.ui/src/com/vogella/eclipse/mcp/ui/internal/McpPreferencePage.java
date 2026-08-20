@@ -66,6 +66,10 @@ public class McpPreferencePage extends FieldEditorPreferencePage implements IWor
 		IntegerFieldEditor port = new IntegerFieldEditor(McpPreferences.KEY_PORT, "&Port:", getFieldEditorParent());
 		port.setValidRange(1024, 65535);
 		addField(port);
+		IntegerFieldEditor timeout = new IntegerFieldEditor(McpPreferences.KEY_CALL_TIMEOUT_SECONDS,
+				"&Tool call timeout (seconds):", getFieldEditorParent());
+		timeout.setValidRange(McpPreferences.MIN_CALL_TIMEOUT_SECONDS, McpPreferences.MAX_CALL_TIMEOUT_SECONDS);
+		addField(timeout);
 	}
 
 	@Override

@@ -46,7 +46,7 @@ The bundle is meant to stay a candidate for contribution to the Eclipse Platform
 It also has no JSON library, which is why it carries the small writer in `com.vogella.eclipse.mcp.core.json`.
 
 **Most tools are read-only, and the exceptions are deliberate.**
-`eclipse_organize_imports` and `eclipse_format` modify the file they are given, and `eclipse_get_problems` triggers a build when auto-build is off.
+`eclipse_organize_imports` and `eclipse_format` modify the file they are given, `eclipse_build` runs builders, and `eclipse_get_problems` triggers a build when auto-build is off.
 Everything else must not write, and no tool may open a dialog or perform a refactoring.
 A new tool that writes has to say so in its own description, because that is the only place the model sees it.
 
@@ -54,7 +54,9 @@ A new tool that writes has to say so in its own description, because that is the
 Tool calls arrive on Jetty worker threads.
 Never call `Display.syncExec` from one; hand work to `asyncExec` and wait on a future with a short timeout, the way `GetEditorContextTool` does.
 Marker reads and JDT searches are safe off the UI thread and need no workspace lock.
-The server aborts any call that has not finished after 30 seconds.
+The server aborts any call that has not finished within the configured call timeout, 30 seconds by default.
+`McpToolAdapter` reads `McpPreferences.getCallTimeout()` per call, so a changed preference applies without a restart.
+A tool that can outlast that timeout must not block on it; start a job and hand back a handle, the way `eclipse_build` and `eclipse_get_build_status` do.
 
 **Every list-returning tool honours `maxResults` and reports `total` and `truncated`.**
 A new tool that returns a list without those fields is incomplete.
@@ -115,6 +117,14 @@ The file is the complete record and its `!ENTRY` / `!SUBENTRY` / `!MESSAGE` / `!
 **A UI freeze is logged at severity WARNING, not ERROR.**
 `org.eclipse.ui.monitoring` uses `IStatus.WARNING`, so `eclipse_get_log_entries` defaults to `severity: all` while `eclipse_get_problems` defaults to `error`.
 The two defaults differ on purpose; do not align them.
+
+**`eclipse_build` returns a handle rather than blocking to completion.**
+`BuildRegistry` runs the build as a job under the workspace build rule and keeps the last 20 outcomes, so a build longer than the call timeout is polled through `eclipse_get_build_status` instead of dying with the request.
+`timeoutSeconds` defaults to 25 to sit under the default 30 second call timeout; core cannot read the server bundle's preference without breaking the layering, so the two numbers are kept in step by hand.
+
+**`builderFailures` exists because a thrown builder produces no markers.**
+`workspace.build` reports builder exceptions as a multi status, which `BuildRegistry.collect` flattens.
+Without it a project whose `JavaBuilder` threw reports `errors: 0`, which reads as success and is the single most misleading thing this tool could do.
 
 **The feature lists third party bundles the Eclipse SDK does not ship.**
 Jetty ee11, the MCP SDK, Jackson 3, networknt and reactor are included so that the p2 repository is installable.

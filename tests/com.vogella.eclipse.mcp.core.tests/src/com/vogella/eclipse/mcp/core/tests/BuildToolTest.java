@@ -1,0 +1,124 @@
+package com.vogella.eclipse.mcp.core.tests;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import java.util.Map;
+
+import org.eclipse.jdt.core.IJavaProject;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+import com.vogella.eclipse.mcp.core.McpToolResult;
+
+class BuildToolTest {
+
+	private static final String TOOL = "eclipse_build";
+
+	private static final String STATUS_TOOL = "eclipse_get_build_status";
+
+	private static final String PROJECT = "mcp-build-test";
+
+	private final TestFixture fixture = new TestFixture();
+
+	@AfterEach
+	void deleteTestProjects() throws Exception {
+		fixture.dispose();
+	}
+
+	@Test
+	void buildsAProjectAndReportsTheOutcome() throws Exception {
+		fixture.createProject(PROJECT);
+
+		Map<String, Object> result = TestFixture.callAndParse(TOOL, Map.of("project", PROJECT));
+
+		assertEquals("done", result.get("state"));
+		assertEquals("incremental", result.get("kind"));
+		assertEquals("projects", result.get("scope"));
+		assertEquals(List.of(PROJECT), result.get("projects"));
+		assertNotNull(result.get("buildId"));
+		assertEquals(List.of(), result.get("builderFailures"));
+	}
+
+	@Test
+	void countsTheProblemsThatFollowedTheBuild() throws Exception {
+		IJavaProject project = fixture.createJavaProject(PROJECT);
+		TestFixture.addType(project, "broken", "Broken", "package broken;\npublic class Broken { Missing field; }\n");
+
+		Map<String, Object> result = TestFixture.callAndParse(TOOL, Map.of("project", PROJECT, "kind", "full"));
+
+		assertEquals("done", result.get("state"));
+		assertTrue(((Number) result.get("errors")).intValue() > 0, "expected the broken type to produce an error");
+	}
+
+	@Test
+	void omitsTheCountsWhenNotAskedFor() throws Exception {
+		fixture.createProject(PROJECT);
+
+		Map<String, Object> result = TestFixture.callAndParse(TOOL,
+				Map.of("project", PROJECT, "returnProblems", Boolean.FALSE));
+
+		assertEquals("done", result.get("state"));
+		assertEquals(null, result.get("errors"));
+		assertEquals(null, result.get("warnings"));
+	}
+
+	@Test
+	void theStatusToolFindsTheBuildAgain() throws Exception {
+		fixture.createProject(PROJECT);
+		Map<String, Object> started = TestFixture.callAndParse(TOOL, Map.of("project", PROJECT));
+		String buildId = (String) started.get("buildId");
+
+		Map<String, Object> polled = TestFixture.callAndParse(STATUS_TOOL, Map.of("buildId", buildId));
+
+		assertEquals(buildId, polled.get("buildId"));
+		assertEquals("done", polled.get("state"));
+	}
+
+	@Test
+	void theStatusToolWithoutAnIdReportsTheLatestBuild() throws Exception {
+		fixture.createProject(PROJECT);
+		Map<String, Object> started = TestFixture.callAndParse(TOOL, Map.of("project", PROJECT));
+
+		Map<String, Object> latest = TestFixture.callAndParse(STATUS_TOOL, Map.of());
+
+		assertEquals(started.get("buildId"), latest.get("buildId"));
+	}
+
+	@Test
+	void rejectsAnUnknownBuildId() throws Exception {
+		McpToolResult result = TestFixture.call(STATUS_TOOL, Map.of("buildId", "build-does-not-exist"));
+
+		assertTrue(result.isError());
+		assertTrue(result.text().contains("build-does-not-exist"), result.text());
+	}
+
+	@Test
+	void rejectsAnUnknownProject() throws Exception {
+		McpToolResult result = TestFixture.call(TOOL, Map.of("project", "no-such-project"));
+
+		assertTrue(result.isError());
+		assertTrue(result.text().contains("no-such-project"), result.text());
+	}
+
+	@Test
+	void rejectsAnUnknownKind() throws Exception {
+		McpToolResult result = TestFixture.call(TOOL, Map.of("kind", "rebuild"));
+
+		assertTrue(result.isError());
+		assertTrue(result.text().contains("rebuild"), result.text());
+	}
+
+	@Test
+	void returnsRunningWhenTheWaitIsTooShort() throws Exception {
+		fixture.createProject(PROJECT);
+
+		Map<String, Object> result = TestFixture.callAndParse(TOOL, Map.of("project", PROJECT, "wait", Boolean.FALSE));
+
+		// not waiting at all means the job may or may not have finished, but the handle must be usable either way
+		assertNotNull(result.get("buildId"));
+		assertTrue(List.of("running", "done").contains(result.get("state")), String.valueOf(result.get("state")));
+	}
+}

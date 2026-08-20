@@ -44,6 +44,8 @@ public class McpUiPlugin extends AbstractUIPlugin {
 					McpPreferences.DEFAULT_ENABLED);
 			DefaultScope.INSTANCE.getNode(McpPreferences.QUALIFIER).putInt(McpPreferences.KEY_PORT,
 					McpPreferences.DEFAULT_PORT);
+			DefaultScope.INSTANCE.getNode(McpPreferences.QUALIFIER).putInt(McpPreferences.KEY_CALL_TIMEOUT_SECONDS,
+					McpPreferences.DEFAULT_CALL_TIMEOUT_SECONDS);
 			serverPreferences = new ScopedPreferenceStore(InstanceScope.INSTANCE, McpPreferences.QUALIFIER);
 		}
 		return serverPreferences;
