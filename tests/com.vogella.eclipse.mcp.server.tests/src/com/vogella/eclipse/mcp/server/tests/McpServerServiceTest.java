@@ -94,6 +94,8 @@ class McpServerServiceTest {
 						package example;
 
 						public class Sample {
+							void run() {
+							}
 						}
 						""", false, new NullProgressMonitor());
 		project.build(IncrementalProjectBuilder.FULL_BUILD, new NullProgressMonitor());
@@ -206,7 +208,10 @@ class McpServerServiceTest {
 		case "eclipse_open" -> Map.of("path", SAMPLE);
 		// headless, so there is no part to capture; a named one keeps the refusal specific
 		case "eclipse_screenshot" -> Map.of("target", "part", "part", "org.eclipse.ui.views.ProblemView");
-		case "eclipse_get_call_hierarchy" -> Map.of("typeName", "java.lang.Object", "methodName", "toString");
+		// scoped to the fixture: an unscoped search for a JDK method walks the whole
+		// workspace and outruns the client timeout on a slow machine
+		case "eclipse_get_call_hierarchy" ->
+			Map.of("typeName", "example.Sample", "methodName", "run", "project", PROJECT, "depth", 1);
 		// a dry run against the sample type, so the smoke test renames nothing
 		case "eclipse_rename" -> Map.of("typeName", "example.Sample", "newName", "Renamed");
 		case "eclipse_set_preference" ->
