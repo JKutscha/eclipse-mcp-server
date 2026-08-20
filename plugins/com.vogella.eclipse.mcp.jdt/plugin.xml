@@ -10,6 +10,7 @@
       <tool class="com.vogella.eclipse.mcp.jdt.internal.OrganizeImportsTool"/>
       <tool class="com.vogella.eclipse.mcp.jdt.internal.FormatTool"/>
       <tool class="com.vogella.eclipse.mcp.jdt.internal.GetClasspathTool"/>
+      <tool class="com.vogella.eclipse.mcp.jdt.internal.GetCallHierarchyTool"/>
    </extension>
 
 </plugin>

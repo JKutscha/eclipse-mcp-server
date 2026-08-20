@@ -245,6 +245,24 @@ The asymmetry is deliberate. Preferences span the whole `org.eclipse.*` key spac
 
 Auto-build is special cased. Setting `org.eclipse.core.resources` / `description.autobuilding` goes through `IWorkspaceDescription.setAutoBuilding` rather than writing the raw key, which is the usual way to get this subtly wrong, and the answer says so in `appliedThrough`.
 
+### `eclipse_get_bundle_info`
+
+Reports OSGi bundles as PDE resolved them against the active target platform.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `symbolicName` | string | | Exact bundle symbolic name. |
+| `namePattern` | string | | Glob over symbolic names. |
+| `workspaceOnly` | boolean | `true` | With `false`, target platform bundles are included. |
+| `unresolvedOnly` | boolean | `false` | Only bundles that did not resolve. |
+| `includeConstraints` | boolean | `true` | List `Require-Bundle` and `Import-Package` with resolution status. |
+| `maxResults` | integer, 1 to 2000 | 100 | |
+
+Every `Require-Bundle` and `Import-Package` entry carries `resolved` and, when it resolved, `boundTo`, the bundle or package that actually satisfied it.
+That is the difference between this and reading `MANIFEST.MF`: the manifest shows what was asked for and never what was found, so *Cannot resolve plug-in: org.eclipse.opengl* stays a guess until something tells you nothing supplies it.
+
+`platformFilter` and `fragmentHost` come from the resolver rather than from a regex over the manifest, which is also what `eclipse_set_project_state` uses for `platformMismatch`.
+
 ### `eclipse_set_bree`
 
 **Rewrites `META-INF/MANIFEST.MF` and `.classpath`.**
@@ -406,6 +424,25 @@ This is the one thing a text search cannot approximate: a field written in four 
 Two details that matter if you act on the numbers.
 A field initializer is a write access but a declaration rather than a reference, so it is counted in `byKind` while being absent from `total` and from `matches`; the counts need not sum.
 And `read` or `write` on a type or a method is an error rather than an empty answer, because only fields are read and written.
+
+### `eclipse_get_call_hierarchy`
+
+Returns the callers of a Java method, to the requested depth.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `typeName` | string, required | | Fully qualified type declaring the method. |
+| `methodName` | string, required | | All overloads are followed. |
+| `project` | string | whole workspace | |
+| `direction` | `callers` \| `callees` \| `both` | `callers` | Only `callers` is implemented, see below. |
+| `depth` | integer, 1 to 5 | 2 | Each level costs another search. |
+| `maxResults` | integer, 1 to 2000 | 200 | Bounds the whole tree, not each level. |
+
+For dead code the useful question is not whether something is referenced but whether it is reachable from anything that is itself reachable, and `eclipse_find_references` cannot answer that: a method whose only callers are themselves uncalled is still dead.
+
+Callers already in the tree are not expanded again, so mutual recursion terminates instead of looping.
+
+`callees` is **not implemented** and says so rather than returning an empty answer. Callers come from the search index; callees would need the AST of every method body, which is a different and far more expensive traversal.
 
 ### `eclipse_get_type_hierarchy`
 
