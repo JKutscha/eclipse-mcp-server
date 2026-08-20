@@ -1,13 +1,18 @@
 package com.vogella.eclipse.mcp.core.tests;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.jdt.core.IJavaProject;
+import org.osgi.framework.FrameworkUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -109,6 +114,21 @@ class BuildToolTest {
 
 		assertTrue(result.isError());
 		assertTrue(result.text().contains("rebuild"), result.text());
+	}
+
+	@Test
+	void doesNotReportLogEntriesFromBeforeTheBuild() throws Exception {
+		fixture.createProject(PROJECT);
+		String message = "mcp stale log marker " + System.nanoTime();
+		Platform.getLog(FrameworkUtil.getBundle(BuildToolTest.class))
+				.log(new Status(IStatus.ERROR, "com.vogella.eclipse.mcp.core.tests", message));
+		// the log timestamp has second resolution, so make sure the build starts in a later one
+		Thread.sleep(1100);
+
+		Map<String, Object> result = TestFixture.callAndParse(TOOL, Map.of("project", PROJECT));
+
+		assertFalse(String.valueOf(result.get("builderFailures")).contains(message),
+				"an entry logged before the build must not be reported as a build failure");
 	}
 
 	@Test

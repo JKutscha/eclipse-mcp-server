@@ -300,8 +300,10 @@ Builds the workspace or named projects.
 The build runs as a job, so a build longer than `timeoutSeconds` comes back as `state: "running"` with a `buildId` rather than holding the request open until the server's call timeout kills it.
 Keep `timeoutSeconds` below that timeout; the default 25 fits under the default 30.
 
-`builderFailures` carries the exceptions the builders threw, flattened out of the multi status they arrive in.
-Those never become problem markers, so a build whose `JavaBuilder` threw would otherwise report `errors: 0` and read as a success. That is the misleading case this field exists to prevent.
+`builderFailures` carries what went wrong without becoming a problem marker, so that a build whose `JavaBuilder` threw is not reported as a clean one.
+It has two sources. Exceptions that reach `IProject.build` are flattened out of the multi status they arrive in. But most builder failures never get that far: `BuildManager` runs builders inside a `SafeRunner`, which catches the exception and writes it to the Error Log, so the build returns normally and there is nothing to catch. Those are picked up by reading the platform log for errors and warnings logged while the build ran.
+
+The second source is correlated by time, not by causation, so anything else the IDE logged during the same window is included too. Over-reporting was the deliberate choice: calling a broken build clean is the worse failure.
 
 ### `eclipse_get_build_status`
 

@@ -160,6 +160,7 @@ public final class BuildRegistry {
 		} catch (OperationCanceledException e) {
 			state = "cancelled"; //$NON-NLS-1$
 		}
+		collectLogged(build, failures);
 		build.builderFailures = List.copyOf(failures);
 		if (countProblems) {
 			countProblems(build, projectNames);
@@ -167,6 +168,40 @@ public final class BuildRegistry {
 		build.endedAt = System.currentTimeMillis();
 		build.state = state;
 		build.finished.countDown();
+	}
+
+	/**
+	 * Adds the errors and warnings the platform logged while the build ran.
+	 * <p>
+	 * A builder that throws does not fail the build: {@code BuildManager} runs
+	 * builders inside a {@code SafeRunner}, which catches the exception and logs it,
+	 * so {@code IProject.build} returns normally and there is nothing to catch. The
+	 * failure only exists in the log, and without this a project whose
+	 * {@code JavaBuilder} threw reports a clean build.
+	 * <p>
+	 * The entries are correlated by time, not by causation, so anything else logged
+	 * during the same window is included too. That is the honest trade: over-report
+	 * rather than call a broken build clean.
+	 */
+	private static void collectLogged(Build build, List<String> into) {
+		var location = org.eclipse.core.runtime.Platform.getLogFileLocation();
+		if (location == null) {
+			return;
+		}
+		java.time.LocalDateTime since = java.time.Instant.ofEpochMilli(build.startedAt)
+				.atZone(java.time.ZoneId.systemDefault()).toLocalDateTime();
+		try {
+			for (PlatformLogFile.Entry entry : PlatformLogFile.read(location.toFile().toPath())) {
+				if (entry.time() == null || entry.time().isBefore(since)) {
+					continue;
+				}
+				if (entry.severity() == IStatus.ERROR || entry.severity() == IStatus.WARNING) {
+					into.add("%s logged: %s".formatted(entry.plugin(), entry.message())); //$NON-NLS-1$
+				}
+			}
+		} catch (java.io.IOException e) {
+			// the log is a diagnostic aid here, not the result; a build that ran still ran
+		}
 	}
 
 	/** Flattens a build's status tree, because builder failures arrive as a multi status. */

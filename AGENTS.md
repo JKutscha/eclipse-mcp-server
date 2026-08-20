@@ -122,9 +122,12 @@ The two defaults differ on purpose; do not align them.
 `BuildRegistry` runs the build as a job under the workspace build rule and keeps the last 20 outcomes, so a build longer than the call timeout is polled through `eclipse_get_build_status` instead of dying with the request.
 `timeoutSeconds` defaults to 25 to sit under the default 30 second call timeout; core cannot read the server bundle's preference without breaking the layering, so the two numbers are kept in step by hand.
 
-**`builderFailures` exists because a thrown builder produces no markers.**
-`workspace.build` reports builder exceptions as a multi status, which `BuildRegistry.collect` flattens.
-Without it a project whose `JavaBuilder` threw reports `errors: 0`, which reads as success and is the single most misleading thing this tool could do.
+**A builder that throws does not fail the build, so `builderFailures` reads the log.**
+`BuildManager` runs builders inside a `SafeRunner`: the exception is caught and logged, `IProject.build` returns normally, and `BuildRegistry.collect` finds nothing.
+This was shipped broken once and caught only against a real workspace, where a clean build of `JavaEclipseProject` reported `builderFailures: []` while logging `JavaBuilder handling CoreException` in the same second.
+`collectLogged` therefore also reports platform log errors and warnings from the build's time window.
+It over-reports by design, because anything logged during the window is included; calling a broken build clean is worse.
+The unit tests can only check that entries from before the build are excluded, since making a builder throw on demand is not worth the fixture. The positive case is verified against a real workspace.
 
 **`eclipse_set_preference` writes an allowlist, `eclipse_get_preferences` reads anything.**
 The asymmetry is the point: a wrongly set compiler or formatter preference is invisible and long-lived, so the writable qualifiers are the four in `SetPreferenceTool.ALLOWED_QUALIFIERS`.
