@@ -58,6 +58,8 @@ final class Provisioning {
 		private volatile String message;
 		private volatile JsonArray changes = new JsonArray();
 		private volatile String previousConfiguration;
+		private volatile JsonArray refusedTrust = new JsonArray();
+		private volatile boolean trustedUnsigned;
 
 		Operation(String id, String kind) {
 			this.id = id;
@@ -75,7 +77,13 @@ final class Provisioning {
 					.put("elapsedMillis", (endedAt == 0 ? System.currentTimeMillis() : endedAt) - startedAt)
 					.put("changes", changes) //$NON-NLS-1$
 					.put("message", message) //$NON-NLS-1$
-					.put("previousConfiguration", previousConfiguration); //$NON-NLS-1$
+					.put("previousConfiguration", previousConfiguration) //$NON-NLS-1$
+					.put("trustedUnsigned", trustedUnsigned) //$NON-NLS-1$
+					.put("refusedTrust", refusedTrust); //$NON-NLS-1$
+			if (refusedTrust.size() > 0 && !trustedUnsigned) {
+				json.put("blockedBy", //$NON-NLS-1$
+						"p2 asked whether to trust content that is unsigned or signed by an untrusted certificate, and this server answered no rather than raising a dialog nobody may be there to click. Pass trustUnsigned to accept it for this one call, after checking what refusedTrust names. Signing the artifacts on the update site removes the question for every consumer instead."); //$NON-NLS-1$
+			}
 			if ("done".equals(state)) { //$NON-NLS-1$
 				json.put("restartRequired", true) //$NON-NLS-1$
 						.put("note", //$NON-NLS-1$
@@ -126,6 +134,20 @@ final class Provisioning {
 		return operation;
 	}
 
+	/** Runs {@code after} once the operation's job has finished, however it ended. */
+	static void onFinished(Operation operation, Runnable after) {
+		Thread waiter = new Thread(() -> {
+			try {
+				operation.finished.await();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+			after.run();
+		}, "MCP provisioning cleanup " + operation.id); //$NON-NLS-1$
+		waiter.setDaemon(true);
+		waiter.start();
+	}
+
 	static synchronized Operation find(String id) {
 		return OPERATIONS.get(id);
 	}
@@ -136,6 +158,14 @@ final class Provisioning {
 
 	static void setChanges(Operation operation, JsonArray changes) {
 		operation.changes = changes;
+	}
+
+	/** Records what p2 asked about, so a refusal is visible instead of looking like a slow download. */
+	static void setTrust(Operation operation, HeadlessTrust trust, boolean trustUnsigned) {
+		JsonArray refused = new JsonArray();
+		trust.refused().forEach(refused::add);
+		operation.refusedTrust = refused;
+		operation.trustedUnsigned = trustUnsigned && trust.prompted();
 	}
 
 	static IProvisioningAgent agent() {

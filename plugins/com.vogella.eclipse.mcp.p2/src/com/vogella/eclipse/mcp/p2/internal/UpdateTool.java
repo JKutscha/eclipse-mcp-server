@@ -36,6 +36,7 @@ public final class UpdateTool implements IMcpTool {
 				  "type": "object",
 				  "properties": {
 				    "units":          {"type":"array","items":{"type":"string"},"description":"Unit ids to update. Omit to update everything that has an update."},
+				    "trustUnsigned":  {"type":"boolean","default":false,"description":"Accept unsigned content, or content signed by a certificate this IDE does not trust, for this one call. Refused by default: the repository allowlist restricts where code comes from, and trusting unsigned artifacts removes the remaining check on what that code is."},
 				    "wait":           {"type":"boolean","default":false,"description":"Wait for the job. Updates are slow, so this is off by default."},
 				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":3600}
 				  },
@@ -68,13 +69,21 @@ public final class UpdateTool implements IMcpTool {
 					.put("fromVersion", update.toUpdate.getVersion().toString()) //$NON-NLS-1$
 					.put("toVersion", update.replacement.getVersion().toString())); //$NON-NLS-1$
 		}
+		boolean trustUnsigned = args.getBoolean("trustUnsigned", false); //$NON-NLS-1$
+		HeadlessTrust trust = new HeadlessTrust(trustUnsigned);
+		Object previousTrust = HeadlessTrust.install(agent, trust);
 		ProvisioningJob job = operation.getProvisioningJob(null);
 		if (job == null) {
+			HeadlessTrust.restore(agent, previousTrust);
 			return McpToolResult.error("p2 produced no provisioning job for the resolved update."); //$NON-NLS-1$
 		}
 		Provisioning.Operation handle = Provisioning.start("update", tracked -> { //$NON-NLS-1$
 			Provisioning.setChanges(tracked, changes);
 			return job;
+		});
+		Provisioning.onFinished(handle, () -> {
+			Provisioning.setTrust(handle, trust, trustUnsigned);
+			HeadlessTrust.restore(agent, previousTrust);
 		});
 		if (args.getBoolean("wait", false)) { //$NON-NLS-1$
 			try {

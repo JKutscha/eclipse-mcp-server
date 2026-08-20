@@ -49,6 +49,7 @@ public final class InstallTool implements IMcpTool {
 				    "unit":           {"type":"string","description":"Installable unit id, usually a feature id ending in .feature.group."},
 				    "repository":     {"type":"string","description":"Repository URL to install from. Must already be configured in this IDE. Omit to search every configured repository."},
 				    "version":        {"type":"string","description":"Exact version. Omit for the newest available."},
+				    "trustUnsigned":  {"type":"boolean","default":false,"description":"Accept unsigned content, or content signed by a certificate this IDE does not trust, for this one call. Refused by default: the repository allowlist restricts where code comes from, and trusting unsigned artifacts removes the remaining check on what that code is."},
 				    "wait":           {"type":"boolean","default":false},
 				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":3600}
 				  },
@@ -130,13 +131,21 @@ public final class InstallTool implements IMcpTool {
 			changes.add(new JsonObject().put("unit", unit.getId()) //$NON-NLS-1$
 					.put("toVersion", unit.getVersion().toString())); //$NON-NLS-1$
 		}
+		boolean trustUnsigned = args.getBoolean("trustUnsigned", false); //$NON-NLS-1$
+		HeadlessTrust trust = new HeadlessTrust(trustUnsigned);
+		Object previousTrust = HeadlessTrust.install(agent, trust);
 		ProvisioningJob job = operation.getProvisioningJob(null);
 		if (job == null) {
+			HeadlessTrust.restore(agent, previousTrust);
 			return McpToolResult.error("p2 produced no provisioning job for the resolved install."); //$NON-NLS-1$
 		}
 		Provisioning.Operation handle = Provisioning.start("install", tracked -> { //$NON-NLS-1$
 			Provisioning.setChanges(tracked, changes);
 			return job;
+		});
+		Provisioning.onFinished(handle, () -> {
+			Provisioning.setTrust(handle, trust, trustUnsigned);
+			HeadlessTrust.restore(agent, previousTrust);
 		});
 		if (args.getBoolean("wait", false)) { //$NON-NLS-1$
 			try {

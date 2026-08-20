@@ -671,6 +671,8 @@ The uniform-pixel check is what makes this safe rather than quietly wrong: SWT r
 `eclipse_update` applies updates to units that are already installed, from repositories already configured. `eclipse_install` adds a new unit.
 Both run as jobs and return an `operationId` polled through `eclipse_get_provisioning_status`, because p2 resolution can take minutes on a slow mirror.
 
+Both take `trustUnsigned`, which is **refused by default**. p2 asks whether to trust unsigned content or content signed by an untrusted certificate, and the IDE answers that with a modal dialog. During these calls that dialog is replaced by an answer, because a job blocked on a prompt is indistinguishable from a slow download and an unattended update would otherwise hang until the call timed out. The refusal is reported in `refusedTrust` and `blockedBy`, naming what would have to be trusted. Signing the artifacts on the update site removes the question for every consumer instead of teaching one client to click through it.
+
 `eclipse_install` **refuses a repository the IDE is not already configured with**, and lists the ones that are. Installing fetches and runs code from the network, which is a larger step than any other tool here takes, and adding a new source is a decision for the person at the IDE. Add it under *Preferences > Install/Update > Available Software Sites* first.
 
 This is self-updating machinery, and the descriptions say so: if a bad build lands, the tools that would fix it are the tools that just broke. Two things make that recoverable. `eclipse_restart` is in a different bundle and does not depend on the provisioning tools, so a half-applied update can still be restarted out of. And every result carries `previousConfiguration`, the timestamp to revert to from *Help > About > Installation Details > Installation History*, which works with no server at all.
@@ -686,6 +688,8 @@ The tool answers first and restarts two seconds later, so a dropped connection i
 | `force` | boolean | `false` | Restart anyway, discarding unsaved work. |
 
 It refuses when editors have unsaved changes or a modal dialog is open, listing them, since restarting under an open dialog loses whatever is in it.
+
+The answer names the `workspace` the IDE will return to. If it comes back asking which workspace to use, the relaunch lost its arguments, which is what `IWorkbench.restart()` does; `restart(true)` is what preserves `-data`.
 
 ## Contributing a tool
 

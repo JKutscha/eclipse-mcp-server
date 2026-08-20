@@ -173,6 +173,14 @@ The tool falls back to PDE's own context and then to a readable error, rather th
 `com.vogella.eclipse.mcp.server.tests` requires only core, server and jdt, so the ui, pde and p2 tools are not registered in that headless run and the smoke test cannot see them.
 That is deliberate for `eclipse_restart`, which must never be invoked by a test, but do not read a green smoke test as protocol level coverage of the other bundles.
 
+**`IWorkbench.restart()` relaunches without the original command line.**
+Use `restart(true)`. The no argument form drops `-data`, so the IDE comes back up showing the workspace chooser and waits for a person, which is exactly what an unattended restart must not do.
+
+**p2 prompts block a provisioning job, and a blocked job looks like a slow download.**
+The IDE's `UIServices` raises a modal dialog for unsigned content, and from a client that is indistinguishable from a slow mirror until the call times out.
+`HeadlessTrust` replaces it for the duration of a provisioning call: it answers rather than prompting, refuses by default, and records what it refused so the result says why.
+Do not make `trustUnsigned` default to true. The repository allowlist restricts where code comes from; trusting unsigned artifacts removes the remaining check on what that code is.
+
 **The provisioning tools update the IDE that is running them.**
 If a bad build lands, the tools that would fix it are the tools that just broke.
 `eclipse_restart` therefore lives in the ui bundle and does not depend on the p2 bundle, so a half applied update can still be recovered, and every provisioning result carries the previous configuration timestamp so a human can revert from Installation History without the server.

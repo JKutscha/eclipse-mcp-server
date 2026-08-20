@@ -38,7 +38,7 @@ public final class RestartTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Restarts the Eclipse IDE, which is what makes an installed or updated feature active. THE CONNECTION WILL DROP BY DESIGN: this tool answers first and restarts a couple of seconds later, so a dropped connection right after a successful result is the expected outcome and not a failure. Reconnect with the same bearer token, which survives restarts and updates. Refuses when editors have unsaved changes or a modal dialog is open, unless save or force is passed. It works independently of eclipse_update, so a half applied update can still be recovered by restarting."; //$NON-NLS-1$
+		return "Restarts the Eclipse IDE into the same workspace, which is what makes an installed or updated feature active. The answer names the workspace it will return to. THE CONNECTION WILL DROP BY DESIGN: this tool answers first and restarts a couple of seconds later, so a dropped connection right after a successful result is the expected outcome and not a failure. Reconnect with the same bearer token, which survives restarts and updates. Refuses when editors have unsaved changes or a modal dialog is open, unless save or force is passed. It works independently of eclipse_update, so a half applied update can still be recovered by restarting."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -120,11 +120,20 @@ public final class RestartTool implements IMcpTool {
 		// answer first, restart after: the server dies with the IDE, so restarting
 		// inside the call gives the caller a dropped connection instead of a result
 		Display display = PlatformUI.getWorkbench().getDisplay();
-		display.timerExec(RESTART_DELAY_MILLIS, () -> PlatformUI.getWorkbench().restart());
+		// restart(true), not restart(): the no argument form relaunches without -data,
+		// so the IDE comes back up asking for a workspace and waits for a human
+		display.timerExec(RESTART_DELAY_MILLIS, () -> PlatformUI.getWorkbench().restart(true));
 		return new JsonObject().put("restarting", Boolean.TRUE) //$NON-NLS-1$
 				.put("inMillis", RESTART_DELAY_MILLIS) //$NON-NLS-1$
+				.put("workspace", workspaceLocation()) //$NON-NLS-1$
 				.put("savedEditors", save) //$NON-NLS-1$
 				.put("note", //$NON-NLS-1$
-						"The connection will drop when the IDE goes down. Reconnect with the same bearer token, which is kept in the bundle state location and survives restarts and updates."); //$NON-NLS-1$
+						"The connection will drop when the IDE goes down. Reconnect with the same bearer token, which is kept in the bundle state location and survives restarts and updates. The IDE is relaunched into the workspace named above; if it comes back asking which workspace to use, the relaunch lost its arguments and a human has to answer the chooser."); //$NON-NLS-1$
+	}
+
+	/** The workspace the IDE is expected to come back into. */
+	private static String workspaceLocation() {
+		var location = org.eclipse.core.runtime.Platform.getInstanceLocation();
+		return location == null || location.getURL() == null ? null : location.getURL().toString();
 	}
 }
