@@ -111,6 +111,11 @@ Letting the SDK fall back to `McpJsonDefaults` makes it depend on `ServiceLoader
 Jetty ee11, the MCP SDK, Jackson 3, networknt and reactor are included so that the p2 repository is installable.
 `slf4j.api` and `jakarta.servlet-api` are deliberately left out, because the host IDE ships satisfying versions.
 
+**`com.vogella.eclipse.mcp.ui` is the branding plugin of the feature.**
+`feature.xml` names it in its `plugin` attribute, and its `about.ini` and `about.properties` are what *Help > About Eclipse IDE > Installation Details > Features* shows.
+`featureImage` has to be 32x32; the larger source of that icon is `icons/eclipse-mcp-server.png` in the repository root.
+No `about.mappings`, because its `{0}` build id token is substituted by PDE build and not by Tycho, so it would show up literally.
+
 **Versions in `META-INF/MANIFEST.MF` and the Jetty imports are pinned to `[12.1.12,13)`.**
 `jetty-ee11-servlet` requires the Jetty core packages at that exact floor, and the IDE ships an older 12.1.x that would not satisfy it.
 

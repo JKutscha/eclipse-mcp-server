@@ -1,3 +1,5 @@
+<img src="icons/eclipse-mcp-server.png" alt="" width="128" align="right">
+
 # Eclipse MCP Server
 
 Turns a running Eclipse IDE into an [MCP](https://modelcontextprotocol.io) server, so that external LLM clients (Claude Code, Cursor, any MCP-capable agent) can ask the IDE for information they cannot cheaply reconstruct from files alone.
