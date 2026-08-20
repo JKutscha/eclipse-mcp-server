@@ -1,4 +1,4 @@
-package com.vogella.eclipse.mcp.core.internal;
+package com.vogella.eclipse.mcp.core;
 
 import java.util.regex.Pattern;
 

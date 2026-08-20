@@ -8,7 +8,7 @@ An agent with a shell already has files, grep and git.
 What it does not have is the resolved Java model, the incremental builder's problem markers and the user's current editor context.
 Those are the capabilities exposed here.
 
-Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration within an allowlist, and `eclipse_set_project_state` opens and closes projects.
+Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration within an allowlist, `eclipse_set_project_state` opens and closes projects, and `eclipse_set_bree` rewrites plug-in manifests.
 There is no general file writing, no refactoring, no terminal and no debugger control.
 The server is **disabled by default**, listens on the loopback interface only, and rejects every request that does not carry a bearer token.
 
@@ -244,6 +244,41 @@ Reading is not restricted: `eclipse_get_preferences` takes any qualifier.
 The asymmetry is deliberate. Preferences span the whole `org.eclipse.*` key space, and a wrongly set compiler or formatter option is invisible in the IDE while producing confusing results for a long time afterwards, so the writable set starts from what is defensible rather than from everything.
 
 Auto-build is special cased. Setting `org.eclipse.core.resources` / `description.autobuilding` goes through `IWorkspaceDescription.setAutoBuilding` rather than writing the raw key, which is the usual way to get this subtly wrong, and the answer says so in `appliedThrough`.
+
+### `eclipse_set_bree`
+
+**Rewrites `META-INF/MANIFEST.MF` and `.classpath`.**
+Sets the `Bundle-RequiredExecutionEnvironment` of plug-in projects and the JDT compiler settings that have to agree with it, in one operation.
+Runs as a dry run unless `dryRun` is set to `false`.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `bree` | string, required | | Execution environment id, e.g. `JavaSE-21`. Must be one the IDE knows. |
+| `projects` | array of strings | | Plug-in project names to act on. |
+| `namePattern` | string | | Glob over project names, `*` and `?`, case insensitive. |
+| `currentBree` | string | any | Only projects currently declaring this environment. |
+| `updateCompliance` | boolean | `true` | Also set compiler compliance, source and target. |
+| `dryRun` | boolean | `true` | |
+| `maxResults` | integer, 1 to 2000 | 200 | |
+
+```json
+{"bree":"JavaSE-21","dryRun":false,"total":1,"changed":1,"skipped":0,"truncated":false,"projects":[
+  {"name":"com.example.bundle","previousBree":"JavaSE-17","bree":"JavaSE-21",
+   "previousJreContainer":"org.eclipse.jdt.launching.JRE_CONTAINER/.../JavaSE-17",
+   "compliance":{"compliance":{"from":"17","to":"21"},"source":{"from":"17","to":"21"},
+                 "target":{"from":"17","to":"21"}},
+   "jreContainer":"org.eclipse.jdt.launching.JRE_CONTAINER/.../JavaSE-21",
+   "changed":true,"skippedBecause":null}]}
+```
+
+The manifest header is written through PDE's `IBundleProjectDescription`, which is public API.
+The JRE container in `.classpath` is then pointed at the new environment explicitly, because `apply()` writes the header and leaves the classpath alone.
+
+The compiler settings come from `IExecutionEnvironment.getComplianceOptions()` rather than from a version table, and only compliance, source and target are written. Setting the header without them leaves a project whose manifest and compiler disagree, which is the state PDE raises a marker for; doing both together is the point of the tool.
+
+Non plug-in projects in the selection are ignored rather than reported as failures. `currentBree` is how you move a whole set off one version. At least one of `projects` or `namePattern` is required.
+
+Note that BREE is the older mechanism: OSGi R7 replaced it with `Require-Capability: osgi.ee`. Eclipse's own bundles still use BREE almost everywhere, which is why this tool writes it, but it is not the modern spelling.
 
 ### `eclipse_set_project_state`
 

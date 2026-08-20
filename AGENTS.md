@@ -30,6 +30,7 @@ plugins/com.vogella.eclipse.mcp.core     tool API, registry, extension point, wo
 plugins/com.vogella.eclipse.mcp.server   MCP protocol, embedded Jetty, bearer token
 plugins/com.vogella.eclipse.mcp.jdt      Java model tools
 plugins/com.vogella.eclipse.mcp.ui       editor context tool, preference page, startup hook
+plugins/com.vogella.eclipse.mcp.pde      PDE tools
 features/com.vogella.eclipse.mcp.feature
 tests/com.vogella.eclipse.mcp.core.tests    the tools, headless
 tests/com.vogella.eclipse.mcp.server.tests  the HTTP endpoint, driven by a real MCP client
@@ -142,6 +143,18 @@ Do not promote the heuristic to the primary signal; it works for Eclipse's own n
 **Closing a project that others reference creates errors instead of removing them.**
 `SetProjectStateTool` reports `openDependents` from `IProject.getReferencingProjects()`, which covers both the JDT build path and PDE required bundles, and refuses without `force`.
 It also defaults to `dryRun`, and requires an explicit selection, so that no call can close the whole workspace by omission.
+
+**`IBundleProjectDescription.apply()` does not touch `.classpath`.**
+It writes the manifest header and nothing else, so `eclipse_set_bree` points the JRE container at the new environment itself with `JavaRuntime.newJREContainerPath`.
+This was assumed to be automatic and the test caught it; do not remove `setJreContainer` on the belief that PDE reconciles the project.
+
+**Only compliance, source and target are written, though the environment offers more.**
+`IExecutionEnvironment.getComplianceOptions()` returns further options whose values do not round-trip through `IJavaProject.getOption`, so comparing all of them meant a project could never be seen as up to date and every run reported a change.
+Write and compare exactly `COMPLIANCE_KEYS`.
+
+**`com.vogella.eclipse.mcp.pde` needs `Bundle-ActivationPolicy: lazy`.**
+It looks up `IBundleProjectService` from its own `BundleContext`, which is null while the bundle is merely resolved.
+The tool falls back to PDE's own context and then to a readable error, rather than a `NullPointerException`.
 
 **The feature lists third party bundles the Eclipse SDK does not ship.**
 Jetty ee11, the MCP SDK, Jackson 3, networknt and reactor are included so that the p2 repository is installable.
