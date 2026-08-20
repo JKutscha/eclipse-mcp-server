@@ -494,6 +494,48 @@ Formats a Java file with the formatter settings of its own project and saves it.
 {"path":"/app/src/com/example/Main.java","changed":true}
 ```
 
+### `eclipse_get_project_dependencies`
+
+Reports the projects a project references and the open projects that reference it, as Eclipse resolves them.
+This covers JDT build path project entries and the dynamic references PDE computes from `Require-Bundle`, so it answers what `.project` and `.classpath` cannot by inspection.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `project` | string | every open project | |
+| `direction` | `references` \| `referencedBy` \| `both` | `both` | |
+| `transitive` | boolean | `false` | Follow the graph instead of direct neighbours only. |
+| `maxResults` | integer, 1 to 2000 | 200 | |
+
+`referencedBy` only ever reports open projects, because that is all `IProject.getReferencingProjects()` sees, and it is also all the builder sees. Use it before closing a project, and to find the leaves of a graph.
+
+### `eclipse_get_classpath`
+
+Reports the build path of a Java project as JDT resolved it.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `project` | string, required | | |
+| `resolved` | boolean | `true` | Expand containers and variables. |
+| `maxResults` | integer, 1 to 5000 | 500 | |
+
+`rawEntries` mirrors `.classpath`, but each container also carries its description and, for the JRE container, `boundJre` with the name, type and install location of the JDK actually bound to it.
+That binding is the point of the tool. A `JavaSE-1.8` container says nothing about which JDK the IDE chose for it, and that choice decides whether a `--release` compile works. Nothing outside the IDE knows it.
+
+`resolvedEntries` is the expansion: the jars behind each container, source attachments, access rules and classpath attributes.
+
+### `eclipse_open`
+
+**Changes what the IDE shows**, writes nothing.
+Opens a workspace file in an editor and optionally reveals a line, so the person at the IDE is looking at what you are talking about instead of copying a path.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `path` | string, required | | Workspace path of the file. |
+| `line` | integer | | Line to reveal, 1 based. |
+| `activate` | boolean | `true` | Bring the editor to the front. |
+
+`revealedLine` reports the line actually revealed, which is clamped to the end of the file.
+
 ### `eclipse_get_editor_context`
 
 Returns the file in the active editor, the cursor position and the current selection.
@@ -505,6 +547,8 @@ No arguments.
  "project":"app","dirty":false,"cursorLine":42,"cursorOffset":1187,
  "selectionLength":12,"selectedText":"doSomething()","selectedTextTruncated":false}
 ```
+
+`openEditors` lists every open editor with its `dirty` flag. A file read from disk while its editor is dirty is not the file the user is looking at, and nothing outside the IDE can tell, so this is worth checking before drawing conclusions from file contents.
 
 `selectedText` is capped at 2000 characters.
 When there is no workbench, no window or no file-backed editor, the answer is `{"hasActiveEditor":false}`.

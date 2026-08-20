@@ -202,7 +202,8 @@ class McpServerServiceTest {
 			Map.of("typeName", "java.lang.Object");
 		case "eclipse_search_types" -> Map.of("pattern", "java.lang.Object");
 		case "eclipse_get_preferences" -> Map.of("qualifier", "org.eclipse.core.resources");
-		case "eclipse_refresh" -> Map.of("project", PROJECT);
+		case "eclipse_refresh", "eclipse_get_classpath" -> Map.of("project", PROJECT);
+		case "eclipse_open" -> Map.of("path", SAMPLE);
 		case "eclipse_set_preference" ->
 			Map.of("qualifier", "org.eclipse.core.runtime", "key", "mcp.server.smoke.test", "value", "yes");
 		// a dry run against a name that matches nothing, so the smoke test changes nothing

@@ -12,6 +12,7 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jface.text.ITextSelection;
 import org.eclipse.jface.viewers.ISelectionProvider;
 import org.eclipse.ui.IEditorPart;
+import org.eclipse.ui.IEditorReference;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PlatformUI;
@@ -20,6 +21,7 @@ import org.eclipse.ui.texteditor.ITextEditor;
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolException;
 import com.vogella.eclipse.mcp.core.McpToolResult;
+import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
 /**
@@ -38,7 +40,7 @@ public final class GetEditorContextTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Returns the file currently open in the active Eclipse editor, the cursor position and the current selection. Use this to resolve vague references such as \"this method\" or \"the file I am looking at\"."; //$NON-NLS-1$
+		return "Returns the file currently open in the active Eclipse editor, the cursor position and the current selection, plus every open editor with its dirty flag. Use it to resolve vague references such as \"this method\" or \"the file I am looking at\", and to find out whether a file you are about to read from disk has unsaved changes in the IDE."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -89,7 +91,25 @@ public final class GetEditorContextTool implements IMcpTool {
 				.put("project", file == null ? null : file.getProject().getName()) //$NON-NLS-1$
 				.put("dirty", editor.isDirty()); //$NON-NLS-1$
 		addSelection(editor, context);
+		context.put("openEditors", openEditors(page)); //$NON-NLS-1$
 		return context;
+	}
+
+	/**
+	 * Every open editor with its dirty flag. A file read from disk while its editor
+	 * is dirty is not the file the user is looking at, and nothing outside the IDE
+	 * can tell.
+	 */
+	private static JsonArray openEditors(IWorkbenchPage page) {
+		JsonArray editors = new JsonArray();
+		for (IEditorReference reference : page.getEditorReferences()) {
+			IEditorPart part = reference.getEditor(false);
+			IFile file = part == null ? null : Adapters.adapt(part.getEditorInput(), IFile.class);
+			editors.add(new JsonObject().put("title", reference.getTitle()) //$NON-NLS-1$
+					.put("path", file == null ? null : file.getFullPath().toString()) //$NON-NLS-1$
+					.put("dirty", reference.isDirty())); //$NON-NLS-1$
+		}
+		return editors;
 	}
 
 	private static void addSelection(IEditorPart editor, JsonObject context) {

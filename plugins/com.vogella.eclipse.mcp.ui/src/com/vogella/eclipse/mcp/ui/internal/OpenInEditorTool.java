@@ -1,0 +1,135 @@
+package com.vogella.eclipse.mcp.ui.internal;
+
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.Path;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.jface.text.IDocument;
+import org.eclipse.jface.text.BadLocationException;
+import org.eclipse.ui.IEditorPart;
+import org.eclipse.ui.IWorkbenchPage;
+import org.eclipse.ui.IWorkbenchWindow;
+import org.eclipse.ui.PlatformUI;
+import org.eclipse.ui.ide.IDE;
+import org.eclipse.ui.texteditor.ITextEditor;
+
+import com.vogella.eclipse.mcp.core.IMcpTool;
+import com.vogella.eclipse.mcp.core.McpToolException;
+import com.vogella.eclipse.mcp.core.McpToolResult;
+import com.vogella.eclipse.mcp.core.ToolArguments;
+import com.vogella.eclipse.mcp.core.json.JsonObject;
+
+/**
+ * Opens a file in the IDE and puts the cursor on a line.
+ */
+public final class OpenInEditorTool implements IMcpTool {
+
+	private static final long UI_TIMEOUT_SECONDS = 10;
+
+	@Override
+	public String getName() {
+		return "eclipse_open"; //$NON-NLS-1$
+	}
+
+	@Override
+	public String getDescription() {
+		return "Opens a workspace file in an Eclipse editor and optionally reveals a line, so that the person at the IDE is looking at what you are talking about instead of copying a path. CHANGES WHAT THE IDE SHOWS but writes nothing."; //$NON-NLS-1$
+	}
+
+	@Override
+	public String getInputSchema() {
+		return """
+				{
+				  "type": "object",
+				  "required": ["path"],
+				  "properties": {
+				    "path": {"type":"string","description":"Workspace path of the file, e.g. /app/src/com/example/Main.java"},
+				    "line": {"type":"integer","minimum":1,"description":"Line to reveal, 1 based."},
+				    "activate": {"type":"boolean","default":true,"description":"Bring the editor to the front."}
+				  },
+				  "additionalProperties": false
+				}"""; //$NON-NLS-1$
+	}
+
+	@Override
+	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) throws McpToolException {
+		ToolArguments args = ToolArguments.of(arguments);
+		String path = args.getString("path"); //$NON-NLS-1$
+		if (path == null) {
+			return McpToolResult.error("The argument 'path' is required."); //$NON-NLS-1$
+		}
+		if (!PlatformUI.isWorkbenchRunning()) {
+			return McpToolResult.error("There is no running workbench, so nothing can be opened."); //$NON-NLS-1$
+		}
+		IFile file = ResourcesPlugin.getWorkspace().getRoot().getFile(new Path(path));
+		if (!file.exists()) {
+			return McpToolResult.error("No file at the workspace path '%s'.".formatted(path)); //$NON-NLS-1$
+		}
+		int line = args.getInt("line", -1, -1, Integer.MAX_VALUE); //$NON-NLS-1$
+		boolean activate = args.getBoolean("activate", true); //$NON-NLS-1$
+
+		CompletableFuture<JsonObject> pending = new CompletableFuture<>();
+		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
+			try {
+				pending.complete(open(file, line, activate));
+			} catch (RuntimeException e) {
+				pending.completeExceptionally(e);
+			}
+		});
+		try {
+			return McpToolResult.of(pending.get(UI_TIMEOUT_SECONDS, TimeUnit.SECONDS).toString());
+		} catch (TimeoutException e) {
+			pending.cancel(false);
+			return McpToolResult.error("The Eclipse UI is busy, try again"); //$NON-NLS-1$
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return McpToolResult.error("The request was interrupted."); //$NON-NLS-1$
+		} catch (ExecutionException e) {
+			throw new McpToolException("Could not open " + path, e.getCause() == null ? e : e.getCause());
+		}
+	}
+
+	private static JsonObject open(IFile file, int line, boolean activate) {
+		IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
+		IWorkbenchPage page = window == null ? null : window.getActivePage();
+		if (page == null) {
+			return new JsonObject().put("opened", false) //$NON-NLS-1$
+					.put("reason", "The workbench has no active page."); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		try {
+			IEditorPart editor = IDE.openEditor(page, file, activate);
+			JsonObject result = new JsonObject().put("opened", true) //$NON-NLS-1$
+					.put("path", file.getFullPath().toString()) //$NON-NLS-1$
+					.put("editor", editor.getTitle()); //$NON-NLS-1$
+			result.put("revealedLine", line > 0 ? Integer.valueOf(reveal(editor, line)) : null); //$NON-NLS-1$
+			return result;
+		} catch (org.eclipse.ui.PartInitException e) {
+			return new JsonObject().put("opened", false) //$NON-NLS-1$
+					.put("reason", e.getMessage()); //$NON-NLS-1$
+		}
+	}
+
+	/** Returns the line actually revealed, which is clamped to the end of the file. */
+	private static int reveal(IEditorPart editor, int line) {
+		if (!(editor instanceof ITextEditor textEditor)) {
+			return -1;
+		}
+		IDocument document = textEditor.getDocumentProvider().getDocument(textEditor.getEditorInput());
+		if (document == null) {
+			return -1;
+		}
+		int zeroBased = Math.min(line - 1, document.getNumberOfLines() - 1);
+		try {
+			textEditor.selectAndReveal(document.getLineOffset(zeroBased), 0);
+			return zeroBased + 1;
+		} catch (BadLocationException e) {
+			return -1;
+		}
+	}
+}

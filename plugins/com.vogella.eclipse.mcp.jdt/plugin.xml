@@ -9,6 +9,7 @@
       <tool class="com.vogella.eclipse.mcp.jdt.internal.SearchTypesTool"/>
       <tool class="com.vogella.eclipse.mcp.jdt.internal.OrganizeImportsTool"/>
       <tool class="com.vogella.eclipse.mcp.jdt.internal.FormatTool"/>
+      <tool class="com.vogella.eclipse.mcp.jdt.internal.GetClasspathTool"/>
    </extension>
 
 </plugin>
