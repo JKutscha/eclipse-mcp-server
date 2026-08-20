@@ -4,7 +4,6 @@ import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -58,11 +57,11 @@ public final class ScreenshotTools {
 		if (gtk4 != null && !"0".equals(gtk4) && !"false".equalsIgnoreCase(gtk4)) { //$NON-NLS-1$ //$NON-NLS-2$
 			return "SWT is running on GTK4, where capturing a window produces a blank image rather than an error."; //$NON-NLS-1$
 		}
-		String backend = System.getenv("GDK_BACKEND"); //$NON-NLS-1$
-		boolean wayland = System.getenv("WAYLAND_DISPLAY") != null; //$NON-NLS-1$
-		if (wayland && (backend == null || !backend.toLowerCase(Locale.ROOT).contains("x11"))) { //$NON-NLS-1$
-			return "GTK is talking Wayland rather than X11, where root window capture does not work. Start Eclipse with GDK_BACKEND=x11 to capture through XWayland."; //$NON-NLS-1$
-		}
+		// Deliberately no Wayland check. WAYLAND_DISPLAY and XDG_SESSION_TYPE stay set
+		// even when GDK_BACKEND=x11 binds the X11 backend through XWayland, where
+		// capture works, so the environment cannot answer the question and sniffing it
+		// refused on machines that were fine. The uniform-image check after the capture
+		// is the real backstop, so this can afford to be permissive.
 		return null;
 	}
 
@@ -247,7 +246,7 @@ public final class ScreenshotTools {
 				ImageData data = image.getImageData();
 				if (isBlank(data)) {
 					return failure(
-							"The capture came back blank, which means this platform silently produces empty images. Do not trust screenshots here."); //$NON-NLS-1$
+							"The capture came back uniform, which is what a silently failing capture produces on GTK4 or a native Wayland backend. Nothing was written; do not trust screenshots on this display."); //$NON-NLS-1$
 				}
 				return write(display, image, data, area, maxWidth, outputPath, includeBase64);
 			} finally {

@@ -169,9 +169,18 @@ Write and compare exactly `COMPLIANCE_KEYS`.
 It looks up `IBundleProjectService` from its own `BundleContext`, which is null while the bundle is merely resolved.
 The tool falls back to PDE's own context and then to a readable error, rather than a `NullPointerException`.
 
-**A GTK4 or Wayland capture returns a blank image rather than an error.**
+**Unscoped type resolution finds build output before source.**
+`IJavaProject.findType` happily returns a class file from a product jar under `target/`, whose `getCompilationUnit()` is null.
+`JavaModelSupport.findType` now prefers a source type and only falls back to a binary one, and `RenameTool` refuses a binary element outright, because `RenameTypeProcessor.checkInitialConditions` dereferences the compilation unit without checking and dies on a raw `NullPointerException`.
+
+**The sampler's budget counts ticks, not stacks.**
+Counting stacks meant that on an IDE with seventy live threads a budget of 200 was spent after three rounds, roughly 300 ms, so sampling stopped before the operation being profiled had started.
+Parked and waiting threads are also excluded by default, otherwise `Unsafe.park` is reported as the hot frame of an idle IDE.
+
+**A GTK4 capture returns a blank image rather than an error.**
 `GC.java` only calls `gdk_cairo_set_source_window` when `!GTK.GTK4`, so on GTK4 the group is pushed, painted empty, and handed back as a valid image.
-`ScreenshotTools.unsupportedReason` refuses up front, and the capture additionally rejects a uniform image, because the heuristic cannot cover every case and a silently empty screenshot is worse than a refusal.
+The capture rejects a uniform image for that reason, and that check is the real backstop.
+Do not add a Wayland check back to `unsupportedReason`: `WAYLAND_DISPLAY` and `XDG_SESSION_TYPE` stay set even when `GDK_BACKEND=x11` binds X11 through XWayland, where capture works, so sniffing the environment refused on machines that were fine.
 
 **The sampler must not need the UI thread or a workspace lock.**
 It exists to diagnose freezes, so anything that queues behind one is useless.

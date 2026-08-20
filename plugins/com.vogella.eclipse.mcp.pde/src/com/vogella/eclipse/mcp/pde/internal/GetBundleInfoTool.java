@@ -42,6 +42,7 @@ public final class GetBundleInfoTool implements IMcpTool {
 				  "type": "object",
 				  "properties": {
 				    "symbolicName":   {"type":"string","description":"Exact bundle symbolic name."},
+				    "project":        {"type":"string","description":"Workspace project name, for when you know the project rather than the bundle id."},
 				    "namePattern":    {"type":"string","description":"Glob over symbolic names, '*' and '?' allowed, case insensitive."},
 				    "workspaceOnly":  {"type":"boolean","default":true,"description":"Only bundles that are projects in this workspace. With false, target platform bundles are included too."},
 				    "unresolvedOnly": {"type":"boolean","default":false,"description":"Only bundles that did not resolve, which is the usual reason to ask."},
@@ -62,6 +63,7 @@ public final class GetBundleInfoTool implements IMcpTool {
 		} catch (PatternSyntaxException e) {
 			return McpToolResult.error("Could not read 'namePattern' as a glob: " + e.getMessage()); //$NON-NLS-1$
 		}
+		String projectName = args.getString("project"); //$NON-NLS-1$
 		boolean workspaceOnly = args.getBoolean("workspaceOnly", true); //$NON-NLS-1$
 		boolean unresolvedOnly = args.getBoolean("unresolvedOnly", false); //$NON-NLS-1$
 		boolean includeConstraints = args.getBoolean("includeConstraints", true); //$NON-NLS-1$
@@ -85,6 +87,12 @@ public final class GetBundleInfoTool implements IMcpTool {
 			}
 			if (symbolicName != null && !symbolicName.equals(name)) {
 				continue;
+			}
+			if (projectName != null) {
+				var resource = model.getUnderlyingResource();
+				if (resource == null || !projectName.equals(resource.getProject().getName())) {
+					continue;
+				}
 			}
 			if (namePattern != null && !namePattern.matcher(name).matches()) {
 				continue;

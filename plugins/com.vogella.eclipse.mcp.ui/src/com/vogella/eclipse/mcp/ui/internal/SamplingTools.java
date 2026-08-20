@@ -56,7 +56,7 @@ public final class SamplingTools {
 
 		@Override
 		public String getDescription() {
-			return "Starts sampling thread stacks at a fixed interval, so an operation can be profiled or a freeze diagnosed, and returns a sessionId to stop. Sampling runs on a daemon thread through ThreadMXBean, which needs neither the UI thread nor any workspace lock, so it keeps working while the IDE is frozen. Note that this is safepoint biased: tight loops without safepoint polls are under-represented, so treat it as 'where is the time going' rather than as an exact profiler."; //$NON-NLS-1$
+			return "Starts sampling thread stacks at a fixed interval, so an operation can be profiled or a freeze diagnosed, and returns a sessionId to stop. Sampling runs on a daemon thread through ThreadMXBean, which needs neither the UI thread nor any workspace lock, so it keeps working while the IDE is frozen. Prefer threads 'ui' unless you know you want everything: an IDE has upwards of seventy threads and most of them are parked in a pool. Note that this is safepoint biased: tight loops without safepoint polls are under-represented, so treat it as 'where is the time going' rather than as an exact profiler."; //$NON-NLS-1$
 		}
 
 		@Override
@@ -68,7 +68,7 @@ public final class SamplingTools {
 					    "threads":        {"type":"string","enum":["ui","all"],"default":"ui","description":"Which threads to sample. 'ui' is the workbench display thread."},
 					    "threadNames":    {"type":"array","items":{"type":"string"},"description":"Sample threads whose name contains one of these, instead of 'threads'."},
 					    "intervalMillis": {"type":"integer","default":100,"minimum":10,"maximum":10000},
-					    "maxSamples":     {"type":"integer","default":300,"minimum":1,"maximum":5000,"description":"Sampling stops on its own after this many samples."},
+					    "maxSamples":     {"type":"integer","default":300,"minimum":1,"maximum":5000,"description":"Sampling stops on its own after this many ticks. One tick samples every selected thread once, so with threads all this is rounds, not stacks."},
 					    "maxDepth":       {"type":"integer","default":80,"minimum":1,"maximum":512,"description":"Frames per sample."}
 					  },
 					  "additionalProperties": false
@@ -104,7 +104,7 @@ public final class SamplingTools {
 
 		@Override
 		public String getDescription() {
-			return "Stops a sampling session and returns the aggregated result: the frames where the time was actually spent, the frames most often present on the stack, and the samples merged into one call tree. The raw samples are not returned unless asked for, because a hundred samples of seventy frames is seven thousand lines."; //$NON-NLS-1$
+			return "Stops a sampling session and returns the aggregated result: the frames where the time was actually spent, the frames most often present on the stack, and the samples merged into one call tree. The raw samples are not returned unless asked for, because a hundred samples of seventy frames is seven thousand lines. Threads that were parked or waiting are excluded by default and counted in idleSamplesExcluded, and the answer says so if sampling stopped early because its tick budget ran out."; //$NON-NLS-1$
 		}
 
 		@Override
@@ -117,6 +117,7 @@ public final class SamplingTools {
 					    "topMethods":  {"type":"integer","default":15,"minimum":1,"maximum":200},
 					    "minSamples":  {"type":"integer","default":2,"minimum":1,"description":"Prune call tree branches seen fewer times than this."},
 					    "includeRawSamples": {"type":"boolean","default":false,"description":"Also return every sample. Large."},
+					    "includeIdleThreads": {"type":"boolean","default":false,"description":"Count threads parked or waiting. Off by default, because otherwise the pooled threads of an idle IDE dominate the result."},
 					    "keepRunning": {"type":"boolean","default":false,"description":"Report the aggregate so far without stopping."}
 					  },
 					  "additionalProperties": false
@@ -139,7 +140,8 @@ public final class SamplingTools {
 			return McpToolResult.of(SamplingRegistry
 					.aggregate(session, args.getInt("topMethods", 15, 1, 200), //$NON-NLS-1$
 							args.getInt("minSamples", 2, 1, 1000), //$NON-NLS-1$
-							args.getBoolean("includeRawSamples", false)) //$NON-NLS-1$
+							args.getBoolean("includeRawSamples", false), //$NON-NLS-1$
+							args.getBoolean("includeIdleThreads", false)) //$NON-NLS-1$
 					.toString());
 		}
 	}

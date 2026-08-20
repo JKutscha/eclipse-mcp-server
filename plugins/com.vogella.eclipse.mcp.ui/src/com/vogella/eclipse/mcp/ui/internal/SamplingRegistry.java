@@ -55,6 +55,8 @@ public final class SamplingRegistry {
 
 		private volatile boolean running = true;
 		private volatile long endedAt;
+		private volatile int ticks;
+		private volatile boolean stoppedByBudget;
 		private Thread sampler;
 
 		Session(String id, long[] threadIds, int intervalMillis, int maxSamples, int maxDepth) {
@@ -79,6 +81,15 @@ public final class SamplingRegistry {
 			}
 		}
 
+		/** Sampling rounds. One tick produces one stack per sampled thread. */
+		public int ticks() {
+			return ticks;
+		}
+
+		public boolean stoppedByBudget() {
+			return stoppedByBudget;
+		}
+
 		public long elapsedMillis() {
 			return (endedAt == 0 ? System.currentTimeMillis() : endedAt) - startedAt;
 		}
@@ -97,8 +108,13 @@ public final class SamplingRegistry {
 							samples.add(info.getStackTrace());
 						}
 					}
-					if (samples.size() >= maxSamples) {
+					ticks++;
+					// the budget counts rounds, not stacks. Counting stacks meant that
+					// with 70 live threads a 200 budget ended after three rounds, long
+					// before the operation being profiled had got going
+					if (ticks >= maxSamples) {
 						running = false;
+						stoppedByBudget = true;
 					}
 				}
 				try {
@@ -159,15 +175,37 @@ public final class SamplingRegistry {
 	 * A hundred samples of seventy frames is seven thousand lines, which is unusable
 	 * in a model context window and is the same mistake as an uncapped screenshot.
 	 */
-	public static JsonObject aggregate(Session session, int topMethods, int minSamples, boolean includeRaw) {
-		List<StackTraceElement[]> samples = session.snapshot();
+	public static JsonObject aggregate(Session session, int topMethods, int minSamples, boolean includeRaw,
+			boolean includeIdle) {
+		List<StackTraceElement[]> all = session.snapshot();
+		int idle = 0;
+		List<StackTraceElement[]> samples = new ArrayList<>();
+		for (StackTraceElement[] sample : all) {
+			if (isIdle(sample)) {
+				idle++;
+				if (includeIdle) {
+					samples.add(sample);
+				}
+			} else {
+				samples.add(sample);
+			}
+		}
 		JsonObject result = new JsonObject().put("sessionId", session.id()) //$NON-NLS-1$
 				.put("running", session.running()) //$NON-NLS-1$
+				.put("ticks", session.ticks()) //$NON-NLS-1$
 				.put("samples", samples.size()) //$NON-NLS-1$
+				.put("idleSamplesExcluded", includeIdle ? 0 : idle) //$NON-NLS-1$
 				.put("intervalMillis", session.intervalMillis()) //$NON-NLS-1$
 				.put("elapsedMillis", session.elapsedMillis());
+		if (session.stoppedByBudget()) {
+			result.put("note", //$NON-NLS-1$
+					"Sampling stopped on its own after %d ticks because maxSamples was reached, %d ms in. If that is shorter than the operation you meant to profile, raise maxSamples." //$NON-NLS-1$
+							.formatted(session.ticks(), session.elapsedMillis()));
+		}
 		if (samples.isEmpty()) {
-			return result.put("note", "No samples were taken. The threads may have been idle or already gone."); //$NON-NLS-1$ //$NON-NLS-2$
+			return result.put("note", idle > 0 //$NON-NLS-1$
+					? "Every sample was a thread parked or waiting. Nothing was running; sample the ui thread to profile UI work." //$NON-NLS-1$
+					: "No samples were taken. The threads may have been idle or already gone."); //$NON-NLS-1$
 		}
 
 		// self time: the innermost frame is where the thread actually was
@@ -197,6 +235,21 @@ public final class SamplingRegistry {
 			result.put("rawSamples", raw); //$NON-NLS-1$
 		}
 		return result;
+	}
+
+	/**
+	 * A stack parked in a pool is not where time is going. Without this, threads:all
+	 * on an IDE with seventy pooled threads reports Unsafe.park as the hot frame.
+	 */
+	private static boolean isIdle(StackTraceElement[] sample) {
+		String innermost = sample[0].getClassName() + '.' + sample[0].getMethodName();
+		return innermost.equals("jdk.internal.misc.Unsafe.park") //$NON-NLS-1$
+				|| innermost.equals("java.lang.Object.wait0") //$NON-NLS-1$
+				|| innermost.equals("java.lang.Object.wait") //$NON-NLS-1$
+				|| innermost.equals("java.lang.Thread.sleep0") //$NON-NLS-1$
+				|| innermost.equals("java.lang.Thread.sleep") //$NON-NLS-1$
+				|| innermost.startsWith("sun.nio.ch.EPoll.wait") //$NON-NLS-1$
+				|| innermost.startsWith("sun.nio.ch.Net.poll"); //$NON-NLS-1$
 	}
 
 	private static JsonArray top(Map<String, Integer> counts, int limit, int samples) {

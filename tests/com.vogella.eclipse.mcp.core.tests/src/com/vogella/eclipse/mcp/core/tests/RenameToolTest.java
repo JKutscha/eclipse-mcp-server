@@ -141,6 +141,34 @@ class RenameToolTest {
 	}
 
 	@Test
+	void refusesABinaryTypeInsteadOfDyingOnIt() throws Exception {
+		withTypes();
+
+		// a class file has no compilation unit, and RenameTypeProcessor dereferences it
+		// without checking, so this used to come back as a raw NullPointerException
+		McpToolResult result = TestFixture.call(TOOL, Map.of("typeName", "java.lang.String", "newName", "Text"));
+
+		assertTrue(result.isError());
+		assertTrue(result.text().contains("binary type"), result.text());
+		assertTrue(result.text().contains("project"), result.text());
+	}
+
+	@Test
+	void prefersASourceTypeOverACompiledOne() throws Exception {
+		IJavaProject project = withTypes();
+		// the project's own output folder holds Target.class after the build
+		assertTrue(project.getProject().getFolder("bin").exists());
+
+		Map<String, Object> result = TestFixture.callAndParse(TOOL,
+				Map.of("typeName", "sample.Target", "newName", "Renamed"));
+
+		assertEquals(Boolean.FALSE, result.get("applied"));
+		@SuppressWarnings("unchecked")
+		List<String> files = (List<String>) result.get("affectedFiles");
+		assertTrue(files.stream().anyMatch(f -> f.endsWith("Target.java")), files.toString());
+	}
+
+	@Test
 	void rejectsAnUnknownType() throws Exception {
 		withTypes();
 

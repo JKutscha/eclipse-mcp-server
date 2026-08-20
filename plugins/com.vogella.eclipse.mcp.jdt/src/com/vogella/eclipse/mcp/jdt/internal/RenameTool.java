@@ -97,6 +97,12 @@ public final class RenameTool implements IMcpTool {
 		} catch (ToolInputException e) {
 			return McpToolResult.error(e.getMessage());
 		}
+		// a binary type has no compilation unit, and the refactoring engine dereferences
+		// it without checking; refuse with the reason rather than dying on an NPE
+		String binary = binaryReason(element);
+		if (binary != null) {
+			return McpToolResult.error(binary);
+		}
 		String refactoringId = refactoringIdOf(element);
 		if (refactoringId == null) {
 			return McpToolResult.error("Renaming %s is not supported.".formatted(element.getClass().getSimpleName())); //$NON-NLS-1$
@@ -205,6 +211,18 @@ public final class RenameTool implements IMcpTool {
 							.formatted(typeName, memberName, members.size()));
 		}
 		return members.get(0);
+	}
+
+	/** Returns why the element cannot be renamed because it is compiled, or {@code null}. */
+	private static String binaryReason(IJavaElement element) {
+		IType type = element instanceof IType declared ? declared
+				: (IType) element.getAncestor(IJavaElement.TYPE);
+		if (type == null || !type.isBinary()) {
+			return null;
+		}
+		Object root = type.getAncestor(IJavaElement.PACKAGE_FRAGMENT_ROOT);
+		return "'%s' resolved to a binary type in %s, and renaming needs source. This usually means the name was found in build output rather than in a source project; pass 'project' to scope the resolution."
+				.formatted(type.getFullyQualifiedName(), root == null ? "a library" : root.toString());
 	}
 
 	private static String refactoringIdOf(IJavaElement element) {

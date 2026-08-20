@@ -68,16 +68,27 @@ final class JavaModelSupport {
 	 * @throws ToolInputException if no project resolves the name
 	 */
 	static IType findType(String typeName, List<IJavaProject> projects) throws ToolInputException, McpToolException {
+		IType binaryFallback = null;
 		for (IJavaProject project : projects) {
 			try {
 				IType type = project.findType(typeName);
 				if (type != null && type.exists()) {
-					return type;
+					// a workspace source type wins over the same type compiled into build
+					// output, which is otherwise found first and has no compilation unit
+					if (!type.isBinary()) {
+						return type;
+					}
+					if (binaryFallback == null) {
+						binaryFallback = type;
+					}
 				}
 			} catch (JavaModelException e) {
 				throw new McpToolException("Could not resolve type %s in project %s".formatted(typeName, //$NON-NLS-1$
 						project.getElementName()), e);
 			}
+		}
+		if (binaryFallback != null) {
+			return binaryFallback;
 		}
 		throw new ToolInputException(
 				"Could not resolve the type '%s' on the classpath of %s. Use a fully qualified name." //$NON-NLS-1$

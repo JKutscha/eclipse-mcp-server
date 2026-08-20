@@ -52,10 +52,11 @@ public final class GetCallHierarchyTool implements IMcpTool {
 		return """
 				{
 				  "type": "object",
-				  "required": ["typeName","methodName"],
+				  "required": ["typeName"],
 				  "properties": {
 				    "typeName":   {"type":"string","description":"Fully qualified type declaring the method."},
-				    "methodName": {"type":"string","description":"Method name. All overloads are followed."},
+				    "memberName": {"type":"string","description":"Method name. All overloads are followed. Same argument name as eclipse_find_references, which asks the same question the other way round."},
+				    "methodName": {"type":"string","description":"Deprecated alias for memberName."},
 				    "project":    {"type":"string","description":"Project used to resolve the type and to scope the search. Defaults to the whole workspace."},
 				    "direction":  {"type":"string","enum":["callers","callees","both"],"default":"callers"},
 				    "depth":      {"type":"integer","default":2,"minimum":1,"maximum":5,"description":"How many levels to follow. Each level costs another search, so keep it small."},
@@ -69,9 +70,10 @@ public final class GetCallHierarchyTool implements IMcpTool {
 	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) throws McpToolException {
 		ToolArguments args = ToolArguments.of(arguments);
 		String typeName = args.getString("typeName"); //$NON-NLS-1$
-		String methodName = args.getString("methodName"); //$NON-NLS-1$
+		// memberName matches eclipse_find_references; methodName stays accepted
+		String methodName = args.getString("memberName", args.getString("methodName")); //$NON-NLS-1$ //$NON-NLS-2$
 		if (typeName == null || methodName == null) {
-			return McpToolResult.error("The arguments 'typeName' and 'methodName' are both required."); //$NON-NLS-1$
+			return McpToolResult.error("The arguments 'typeName' and 'memberName' are both required."); //$NON-NLS-1$
 		}
 		String direction = args.getString("direction", "callers"); //$NON-NLS-1$ //$NON-NLS-2$
 		if (!DIRECTIONS.contains(direction)) {
