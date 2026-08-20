@@ -124,12 +124,14 @@ No `about.mappings`, because its `{0}` build id token is substituted by PDE buil
 Push a `v<version>` tag.
 `.github/workflows/release.yml` builds it, copies the p2 repository into `releases/<version>/` on the `gh-pages` branch, regenerates the composite metadata with `releng/update-composite-site.sh`, pushes the site and attaches the repository archive to the GitHub release.
 
-The published site is a p2 composite repository at `https://vogellacompany.github.io/eclipse-mcp-server/`, with one child per release.
+The published site is a p2 composite repository at `https://vogellacompany.github.io/eclipse-mcp-server/`.
+The workflow passes `--keep 1`, so publishing deletes every older `releases/<version>/` and the composite is left with a single child.
+Older versions stay reachable only as the repository zip attached to their GitHub release.
 Never edit `compositeContent.xml`, `compositeArtifacts.xml`, `p2.index` or `index.html` on `gh-pages` by hand; they are generated.
 Never overwrite an existing `releases/<version>/` with different content, because p2 caches repositories aggressively and a changed repository under an unchanged URL produces confusing install failures.
 
-Each release directory is a full copy at roughly 9 MB, most of it third party bundles that rarely change.
-If the branch grows uncomfortably, either drop old releases from the composite or move the third party bundles into their own child repository.
+Deleting a release directory does not shrink the branch: `gh-pages` keeps every published copy in its history, at roughly 9 MB each.
+Only a force-pushed orphan commit would reclaim that, and it would throw away the history of the site.
 
 Pushing anything under `.github/workflows/` needs a token with the `workflow` scope, or an SSH remote.
 

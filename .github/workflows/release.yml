@@ -49,7 +49,8 @@ jobs:
           rm -rf "gh-pages/releases/$version"
           mkdir -p "gh-pages/releases/$version"
           cp -r update-site/com.vogella.eclipse.mcp.repository/target/repository/. "gh-pages/releases/$version"
-          releng/update-composite-site.sh gh-pages
+          # the site carries the newest release only; older ones are dropped
+          releng/update-composite-site.sh --keep 1 gh-pages
 
       - name: Publish the update site
         working-directory: gh-pages

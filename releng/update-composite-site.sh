@@ -1,13 +1,38 @@
 #!/usr/bin/env bash
 #
 # Regenerates the p2 composite metadata at the root of the update site from the
-# directories present under <site>/releases.
+# directories present under <site>/releases, optionally dropping older releases
+# first.
 #
-# Usage: releng/update-composite-site.sh <site-directory>
+# Usage: releng/update-composite-site.sh [--keep <n>] <site-directory>
 
 set -euo pipefail
 
-site=${1:?Usage: $0 <site-directory>}
+usage="Usage: $0 [--keep <n>] <site-directory>"
+keep=
+
+while [ $# -gt 0 ]; do
+	case $1 in
+	--keep)
+		keep=${2:?$usage}
+		case $keep in
+		'' | *[!0-9]* | 0) echo "--keep needs a positive number, got '$keep'" >&2; exit 1 ;;
+		esac
+		shift 2
+		;;
+	-*)
+		echo "$usage" >&2
+		exit 1
+		;;
+	*)
+		[ -n "${site:-}" ] && { echo "$usage" >&2; exit 1; }
+		site=$1
+		shift
+		;;
+	esac
+done
+
+site=${site:?$usage}
 releases_dir="$site/releases"
 
 if [ ! -d "$releases_dir" ]; then
@@ -21,6 +46,15 @@ mapfile -t versions < <(find "$releases_dir" -mindepth 1 -maxdepth 1 -type d -pr
 if [ ${#versions[@]} -eq 0 ]; then
 	echo "No releases below $releases_dir" >&2
 	exit 1
+fi
+
+if [ -n "$keep" ] && [ ${#versions[@]} -gt "$keep" ]; then
+	drop=$(( ${#versions[@]} - keep ))
+	for version in "${versions[@]:0:$drop}"; do
+		echo "Dropping release $version"
+		rm -rf "${releases_dir:?}/$version"
+	done
+	versions=("${versions[@]:$drop}")
 fi
 
 # p2 expects milliseconds; %3N is not honoured by every coreutils implementation

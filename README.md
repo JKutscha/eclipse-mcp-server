@@ -33,9 +33,9 @@ https://vogellacompany.github.io/eclipse-mcp-server/
 
 as an update site and install the **Eclipse MCP Server** feature.
 That URL is a composite repository which always offers the newest version.
-To pin a version, point at its own site instead, for example `https://vogellacompany.github.io/eclipse-mcp-server/releases/0.2.0/`.
+The site carries that release alone; publishing a new one removes the previous directory under `releases/`, so there is no older version to point at.
 
-Each release also carries the repository as a zip, for offline installs through *Add > Archive*.
+To install or to pin an older version, use the repository zip attached to its GitHub release, through *Add > Archive*.
 When building from source, the same repository is produced under `update-site/com.vogella.eclipse.mcp.repository/target/repository` and can be added as a local site.
 
 ## Releasing
