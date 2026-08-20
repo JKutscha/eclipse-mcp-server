@@ -8,8 +8,9 @@
 
 set -euo pipefail
 
-usage="Usage: $0 [--keep <n>] <site-directory>"
+usage="Usage: $0 [--keep <n>] [--only <version>] <site-directory>"
 keep=
+only=
 
 while [ $# -gt 0 ]; do
 	case $1 in
@@ -18,6 +19,10 @@ while [ $# -gt 0 ]; do
 		case $keep in
 		'' | *[!0-9]* | 0) echo "--keep needs a positive number, got '$keep'" >&2; exit 1 ;;
 		esac
+		shift 2
+		;;
+	--only)
+		only=${2:?$usage}
 		shift 2
 		;;
 	-*)
@@ -46,6 +51,26 @@ mapfile -t versions < <(find "$releases_dir" -mindepth 1 -maxdepth 1 -type d -pr
 if [ ${#versions[@]} -eq 0 ]; then
 	echo "No releases below $releases_dir" >&2
 	exit 1
+fi
+
+if [ -n "$only" ]; then
+	found=
+	for version in "${versions[@]}"; do
+		if [ "$version" = "$only" ]; then
+			found=yes
+		fi
+	done
+	if [ -z "$found" ]; then
+		echo "No release '$only' below $releases_dir, refusing to delete the others" >&2
+		exit 1
+	fi
+	for version in "${versions[@]}"; do
+		if [ "$version" != "$only" ]; then
+			echo "Dropping release $version"
+			rm -rf "${releases_dir:?}/$version"
+		fi
+	done
+	versions=("$only")
 fi
 
 if [ -n "$keep" ] && [ ${#versions[@]} -gt "$keep" ]; then

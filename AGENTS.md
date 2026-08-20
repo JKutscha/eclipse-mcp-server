@@ -166,7 +166,8 @@ Pushing a `v<version>` tag runs the same workflow and additionally creates the G
 That is the only thing that produces a downloadable zip, so a version anyone else should be able to install deserves a tag.
 
 The published site is a p2 composite repository at `https://vogellacompany.github.io/eclipse-mcp-server/`.
-The workflow passes `--keep 1`, so publishing deletes every older `releases/<version>/` and the composite is left with a single child.
+The workflow passes `--only "$version"`, so publishing deletes every other `releases/<version>/` and the composite is left with a single child.
+It is `--only` and not `--keep 1` because "newest" under `sort -V` is not "the one just published": `0.2.1` sorts above `0.2.0.202608201136`, so `--keep 1` once deleted the build it had just published and kept a stale directory instead.
 Older builds stay reachable only as the repository zip attached to a tagged GitHub release.
 Never edit `compositeContent.xml`, `compositeArtifacts.xml`, `p2.index` or `index.html` on `gh-pages` by hand; they are generated.
 Never overwrite an existing `releases/<version>/` with different content, because p2 caches repositories aggressively and a changed repository under an unchanged URL produces confusing install failures.
