@@ -119,7 +119,7 @@ Jetty ee11, the MCP SDK, Jackson 3, networknt and reactor are included so that t
 Push a `v<version>` tag.
 `.github/workflows/release.yml` builds it, copies the p2 repository into `releases/<version>/` on the `gh-pages` branch, regenerates the composite metadata with `releng/update-composite-site.sh`, pushes the site and attaches the repository archive to the GitHub release.
 
-The published site is a p2 composite repository at `https://vogellacompany.github.io/com.vogella.eclipse.mcp/`, with one child per release.
+The published site is a p2 composite repository at `https://vogellacompany.github.io/eclipse-mcp-server/`, with one child per release.
 Never edit `compositeContent.xml`, `compositeArtifacts.xml`, `p2.index` or `index.html` on `gh-pages` by hand; they are generated.
 Never overwrite an existing `releases/<version>/` with different content, because p2 caches repositories aggressively and a changed repository under an unchanged URL produces confusing install failures.
 

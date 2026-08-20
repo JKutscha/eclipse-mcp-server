@@ -26,12 +26,12 @@ It produces a p2 repository under `update-site/com.vogella.eclipse.mcp.repositor
 In Eclipse, choose *Help > Install New Software*, add
 
 ```
-https://vogellacompany.github.io/com.vogella.eclipse.mcp/
+https://vogellacompany.github.io/eclipse-mcp-server/
 ```
 
 as an update site and install the **Eclipse MCP Server** feature.
 That URL is a composite repository which always offers the newest version.
-To pin a version, point at its own site instead, for example `https://vogellacompany.github.io/com.vogella.eclipse.mcp/releases/0.2.0/`.
+To pin a version, point at its own site instead, for example `https://vogellacompany.github.io/eclipse-mcp-server/releases/0.2.0/`.
 
 Each release also carries the repository as a zip, for offline installs through *Add > Archive*.
 When building from source, the same repository is produced under `update-site/com.vogella.eclipse.mcp.repository/target/repository` and can be added as a local site.

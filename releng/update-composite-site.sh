@@ -61,7 +61,7 @@ EOF
 # keeps GitHub Pages from running the content through Jekyll
 touch "$site/.nojekyll"
 
-base_url=https://vogellacompany.github.io/com.vogella.eclipse.mcp
+base_url=https://vogellacompany.github.io/eclipse-mcp-server
 {
 	cat <<EOF
 <!doctype html>
@@ -87,7 +87,7 @@ EOF
 	done
 	cat <<EOF
 </ul>
-<p>Sources and documentation: <a href="https://github.com/vogellacompany/com.vogella.eclipse.mcp">github.com/vogellacompany/com.vogella.eclipse.mcp</a></p>
+<p>Sources and documentation: <a href="https://github.com/vogellacompany/eclipse-mcp-server">github.com/vogellacompany/eclipse-mcp-server</a></p>
 </body>
 </html>
 EOF
