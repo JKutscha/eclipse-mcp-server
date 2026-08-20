@@ -9,6 +9,7 @@
       <tool class="com.vogella.eclipse.mcp.ui.internal.SamplingTools$Stop"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.ScreenshotTools$ListTargets"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.ScreenshotTools$Capture"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.RestartTool"/>
    </extension>
 
    <extension point="org.eclipse.ui.preferencePages">

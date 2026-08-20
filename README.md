@@ -660,6 +660,29 @@ A part behind another tab is not rendered at all, so capturing it would produce 
 
 Two things make this reliable rather than quietly wrong. The capture takes the real screen pixels for the area and crops, instead of `Control.print()`, which has GTK gaps that the widget on screen does not. And on GTK4 or native Wayland the SWT path that fills a GC from a window does nothing at all and returns a blank image with no error, so the tool refuses up front on those, and additionally checks the captured pixels and refuses if they came back uniform. A silently empty screenshot is the worst possible answer.
 
+### `eclipse_check_for_updates`, `eclipse_update`, `eclipse_install`, `eclipse_get_provisioning_status`
+
+**These modify the installation.**
+`eclipse_check_for_updates` changes nothing and reports which installed units have an update, from which version to which, and which repositories are configured.
+`eclipse_update` applies updates to units that are already installed, from repositories already configured. `eclipse_install` adds a new unit.
+Both run as jobs and return an `operationId` polled through `eclipse_get_provisioning_status`, because p2 resolution can take minutes on a slow mirror.
+
+`eclipse_install` **refuses a repository the IDE is not already configured with**, and lists the ones that are. Installing fetches and runs code from the network, which is a larger step than any other tool here takes, and adding a new source is a decision for the person at the IDE. Add it under *Preferences > Install/Update > Available Software Sites* first.
+
+This is self-updating machinery, and the descriptions say so: if a bad build lands, the tools that would fix it are the tools that just broke. Two things make that recoverable. `eclipse_restart` is in a different bundle and does not depend on the provisioning tools, so a half-applied update can still be restarted out of. And every result carries `previousConfiguration`, the timestamp to revert to from *Help > About > Installation Details > Installation History*, which works with no server at all.
+
+### `eclipse_restart`
+
+**Restarts the IDE. The connection will drop by design.**
+The tool answers first and restarts two seconds later, so a dropped connection immediately after a successful result is the expected outcome rather than a failure. Reconnect with the same bearer token: it lives in the bundle state location, which is keyed by symbolic name and survives both restarts and p2 updates.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `save` | boolean | `false` | Save dirty editors first. |
+| `force` | boolean | `false` | Restart anyway, discarding unsaved work. |
+
+It refuses when editors have unsaved changes or a modal dialog is open, listing them, since restarting under an open dialog loses whatever is in it.
+
 ## Contributing a tool
 
 Tools are contributed through the `com.vogella.eclipse.mcp.core.tools` extension point:

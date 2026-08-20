@@ -26,6 +26,7 @@
    <plugin id="com.vogella.eclipse.mcp.jdt" download-size="0" install-size="0" version="0.0.0" unpack="false"/>
    <plugin id="com.vogella.eclipse.mcp.ui" download-size="0" install-size="0" version="0.0.0" unpack="false"/>
    <plugin id="com.vogella.eclipse.mcp.pde" download-size="0" install-size="0" version="0.0.0" unpack="false"/>
+   <plugin id="com.vogella.eclipse.mcp.p2" download-size="0" install-size="0" version="0.0.0" unpack="false"/>
 
    <!-- third party bundles the Eclipse SDK does not ship -->
    <plugin id="io.modelcontextprotocol.sdk.mcp-core" download-size="0" install-size="0" version="0.0.0" unpack="false"/>

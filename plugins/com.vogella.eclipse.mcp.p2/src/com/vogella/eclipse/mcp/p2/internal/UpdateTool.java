@@ -1,0 +1,88 @@
+package com.vogella.eclipse.mcp.p2.internal;
+
+import java.util.Map;
+
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.equinox.p2.core.IProvisioningAgent;
+import org.eclipse.equinox.p2.operations.ProvisioningJob;
+import org.eclipse.equinox.p2.operations.ProvisioningSession;
+import org.eclipse.equinox.p2.operations.Update;
+import org.eclipse.equinox.p2.operations.UpdateOperation;
+
+import com.vogella.eclipse.mcp.core.IMcpTool;
+import com.vogella.eclipse.mcp.core.McpToolResult;
+import com.vogella.eclipse.mcp.core.ToolArguments;
+import com.vogella.eclipse.mcp.core.json.JsonArray;
+import com.vogella.eclipse.mcp.core.json.JsonObject;
+
+/** Applies available updates to the running IDE. */
+public final class UpdateTool implements IMcpTool {
+
+	@Override
+	public String getName() {
+		return "eclipse_update"; //$NON-NLS-1$
+	}
+
+	@Override
+	public String getDescription() {
+		return "Applies the available updates to this IDE. MODIFIES THE INSTALLATION. Only units that are already installed are updated, from the repositories already configured; it installs nothing new. Runs as a job and returns an operationId to poll through eclipse_get_provisioning_status, because resolution can take minutes. THIS IS SELF UPDATING MACHINERY: if a bad build lands, the tools that would fix it are the tools that just broke. The result names the previous configuration timestamp so the installation can be reverted from Help > About > Installation Details even when this path is dead, and eclipse_restart works independently of this tool."; //$NON-NLS-1$
+	}
+
+	@Override
+	public String getInputSchema() {
+		return """
+				{
+				  "type": "object",
+				  "properties": {
+				    "units":          {"type":"array","items":{"type":"string"},"description":"Unit ids to update. Omit to update everything that has an update."},
+				    "wait":           {"type":"boolean","default":false,"description":"Wait for the job. Updates are slow, so this is off by default."},
+				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":3600}
+				  },
+				  "additionalProperties": false
+				}"""; //$NON-NLS-1$
+	}
+
+	@Override
+	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
+		ToolArguments args = ToolArguments.of(arguments);
+		IProvisioningAgent agent = Provisioning.agent();
+		if (agent == null) {
+			return McpToolResult.error("No p2 provisioning agent is available, so this IDE cannot update itself."); //$NON-NLS-1$
+		}
+		UpdateOperation operation = new UpdateOperation(new ProvisioningSession(agent));
+		IStatus resolution = operation.resolveModal(monitor);
+		Update[] possible = operation.getPossibleUpdates();
+		if (possible == null || possible.length == 0) {
+			return McpToolResult.of(Provisioning
+					.record("update", "done", "Nothing to update; everything installed is already current.", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+							new JsonArray())
+					.toJson().toString());
+		}
+		if (!resolution.isOK() && resolution.getSeverity() == IStatus.ERROR) {
+			return McpToolResult.error("The update could not be resolved: " + resolution.getMessage()); //$NON-NLS-1$
+		}
+		JsonArray changes = new JsonArray();
+		for (Update update : possible) {
+			changes.add(new JsonObject().put("unit", update.toUpdate.getId()) //$NON-NLS-1$
+					.put("fromVersion", update.toUpdate.getVersion().toString()) //$NON-NLS-1$
+					.put("toVersion", update.replacement.getVersion().toString())); //$NON-NLS-1$
+		}
+		ProvisioningJob job = operation.getProvisioningJob(null);
+		if (job == null) {
+			return McpToolResult.error("p2 produced no provisioning job for the resolved update."); //$NON-NLS-1$
+		}
+		Provisioning.Operation handle = Provisioning.start("update", tracked -> { //$NON-NLS-1$
+			Provisioning.setChanges(tracked, changes);
+			return job;
+		});
+		if (args.getBoolean("wait", false)) { //$NON-NLS-1$
+			try {
+				handle.await(args.getInt("timeoutSeconds", 25, 1, 3600)); //$NON-NLS-1$
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		}
+		return McpToolResult.of(handle.toJson().toString());
+	}
+}

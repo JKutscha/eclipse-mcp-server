@@ -169,6 +169,16 @@ Write and compare exactly `COMPLIANCE_KEYS`.
 It looks up `IBundleProjectService` from its own `BundleContext`, which is null while the bundle is merely resolved.
 The tool falls back to PDE's own context and then to a readable error, rather than a `NullPointerException`.
 
+**`callsEveryRegisteredTool` does not call every tool.**
+`com.vogella.eclipse.mcp.server.tests` requires only core, server and jdt, so the ui, pde and p2 tools are not registered in that headless run and the smoke test cannot see them.
+That is deliberate for `eclipse_restart`, which must never be invoked by a test, but do not read a green smoke test as protocol level coverage of the other bundles.
+
+**The provisioning tools update the IDE that is running them.**
+If a bad build lands, the tools that would fix it are the tools that just broke.
+`eclipse_restart` therefore lives in the ui bundle and does not depend on the p2 bundle, so a half applied update can still be recovered, and every provisioning result carries the previous configuration timestamp so a human can revert from Installation History without the server.
+`eclipse_install` refuses repositories the IDE is not already configured with: adding one fetches and runs code from a new source, which is the user's decision and not the server's.
+Do not replace that allowlist with a single opt-in preference; a switch flipped once is never flipped back.
+
 **Unscoped type resolution finds build output before source.**
 `IJavaProject.findType` happily returns a class file from a product jar under `target/`, whose `getCompilationUnit()` is null.
 `JavaModelSupport.findType` now prefers a source type and only falls back to a binary one, and `RenameTool` refuses a binary element outright, because `RenameTypeProcessor.checkInitialConditions` dereferences the compilation unit without checking and dies on a raw `NullPointerException`.

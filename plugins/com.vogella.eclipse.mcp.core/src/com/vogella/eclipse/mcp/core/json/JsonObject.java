@@ -19,6 +19,11 @@ public final class JsonObject {
 		return this;
 	}
 
+	/** Removes a member and returns its value, for flags that must not reach the client. */
+	public Object remove(String name) {
+		return values.remove(name);
+	}
+
 	public boolean isEmpty() {
 		return values.isEmpty();
 	}
