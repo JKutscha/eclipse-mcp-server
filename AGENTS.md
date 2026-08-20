@@ -121,12 +121,20 @@ No `about.mappings`, because its `{0}` build id token is substituted by PDE buil
 
 ## Releasing
 
-Push a `v<version>` tag.
-`.github/workflows/release.yml` builds it, copies the p2 repository into `releases/<version>/` on the `gh-pages` branch, regenerates the composite metadata with `releng/update-composite-site.sh`, pushes the site and attaches the repository archive to the GitHub release.
+Run `gh workflow run release.yml`.
+`.github/workflows/release.yml` builds `main`, copies the p2 repository into `releases/<built version>/` on the `gh-pages` branch, regenerates the composite metadata with `releng/update-composite-site.sh` and pushes the site.
+It takes no version input: the directory is named after the feature jar the build produced, qualifier included, so publishing twice from the same source still lands on two different URLs.
+
+The version in the manifests is meant to stay put across ordinary changes.
+Tycho stamps every build with a fresh `yyyyMMddHHmm` qualifier, and p2 treats a higher qualifier under an unchanged version as an update, so *Check for Updates* picks up a new build without any version being bumped.
+Bump `Bundle-Version`, `feature.xml` and `pom.xml` together when something worth naming lands, not per change.
+
+Pushing a `v<version>` tag runs the same workflow and additionally creates the GitHub release with the repository archive attached.
+That is the only thing that produces a downloadable zip, so a version anyone else should be able to install deserves a tag.
 
 The published site is a p2 composite repository at `https://vogellacompany.github.io/eclipse-mcp-server/`.
 The workflow passes `--keep 1`, so publishing deletes every older `releases/<version>/` and the composite is left with a single child.
-Older versions stay reachable only as the repository zip attached to their GitHub release.
+Older builds stay reachable only as the repository zip attached to a tagged GitHub release.
 Never edit `compositeContent.xml`, `compositeArtifacts.xml`, `p2.index` or `index.html` on `gh-pages` by hand; they are generated.
 Never overwrite an existing `releases/<version>/` with different content, because p2 caches repositories aggressively and a changed repository under an unchanged URL produces confusing install failures.
 

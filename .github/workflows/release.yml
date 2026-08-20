@@ -5,10 +5,6 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to publish under releases/, for example 0.1.0'
-        required: true
 
 permissions:
   contents: write
@@ -25,17 +21,22 @@ jobs:
           java-version: '25'
           cache: maven
 
-      - name: Determine version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = workflow_dispatch ]; then
-            echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Build
         run: mvn -B clean verify
+
+      # The directory is named after what was actually built, qualifier included,
+      # so a rebuild of the same version never lands on an existing URL.
+      - name: Determine the built version
+        id: version
+        run: |
+          repository=update-site/com.vogella.eclipse.mcp.repository/target/repository
+          jar=$(find "$repository/features" -name 'com.vogella.eclipse.mcp.feature_*.jar' | head -1)
+          if [ -z "$jar" ]; then
+            echo "No feature jar below $repository/features" >&2
+            exit 1
+          fi
+          value=$(basename "$jar" .jar)
+          echo "value=${value#com.vogella.eclipse.mcp.feature_}" >> "$GITHUB_OUTPUT"
 
       - name: Check out the update site
         uses: actions/checkout@v4
@@ -43,7 +44,7 @@ jobs:
           ref: gh-pages
           path: gh-pages
 
-      - name: Add the release to the update site
+      - name: Add the build to the update site
         run: |
           version="${{ steps.version.outputs.value }}"
           rm -rf "gh-pages/releases/$version"
@@ -68,7 +69,7 @@ jobs:
         run: |
           built=$(find update-site/com.vogella.eclipse.mcp.repository/target -maxdepth 1 -name '*.zip' | head -1)
           # the built name carries the Maven -SNAPSHOT suffix, which is misleading on a release
-          archive="com.vogella.eclipse.mcp.repository-${{ steps.version.outputs.value }}.zip"
+          archive="com.vogella.eclipse.mcp.repository-${GITHUB_REF_NAME#v}.zip"
           cp "$built" "$archive"
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes || true
           gh release upload "$GITHUB_REF_NAME" "$archive" --clobber
