@@ -5,7 +5,7 @@ See `README.md` for what the feature does and how a user installs it.
 
 ## What this is
 
-An Eclipse plug-in project that turns a running IDE into a read-only MCP server.
+An Eclipse plug-in project that turns a running IDE into an MCP server.
 Built with Maven and Tycho, pomless: the root `pom.xml` is the only pom in the repository.
 
 ## Build and test

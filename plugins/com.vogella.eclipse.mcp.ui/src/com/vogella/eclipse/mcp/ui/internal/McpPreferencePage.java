@@ -57,7 +57,7 @@ public class McpPreferencePage extends FieldEditorPreferencePage implements IWor
 	public void init(IWorkbench workbench) {
 		setPreferenceStore(McpUiPlugin.getDefault().getServerPreferenceStore());
 		setDescription(
-				"Exposes read-only information about this IDE to MCP clients over HTTP on the loopback interface.");
+				"Exposes information about this IDE to MCP clients over HTTP on the loopback interface. Most tools only read; a few format a file, run a build, open and close projects or change plug-in and IDE settings.");
 	}
 
 	@Override

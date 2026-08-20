@@ -5,11 +5,12 @@ import java.util.Map;
 import org.eclipse.core.runtime.IProgressMonitor;
 
 /**
- * A single read-only capability that an MCP client can invoke.
+ * A single capability that an MCP client can invoke.
  * <p>
  * Implementations are contributed through the {@code com.vogella.eclipse.mcp.core.tools}
  * extension point. They are called on arbitrary worker threads, never on the UI thread,
- * and must not modify the workspace or open a dialog.
+ * and must not open a dialog. A tool that changes anything has to say so in its own
+ * description, because that is the only place the model sees it.
  */
 public interface IMcpTool {
 

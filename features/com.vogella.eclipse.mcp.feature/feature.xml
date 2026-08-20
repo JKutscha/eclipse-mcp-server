@@ -7,9 +7,10 @@
       plugin="com.vogella.eclipse.mcp.ui">
 
    <description>
-      Turns a running Eclipse IDE into a read-only MCP server, so that external
+      Turns a running Eclipse IDE into an MCP server, so that external
       LLM clients can query the resolved Java model, the problem markers of the
-      incremental builder and the current editor context.
+      incremental builder, the Error Log, the preferences and the current editor
+      context. Most tools only read; the few that change something say so.
    </description>
 
    <copyright>
