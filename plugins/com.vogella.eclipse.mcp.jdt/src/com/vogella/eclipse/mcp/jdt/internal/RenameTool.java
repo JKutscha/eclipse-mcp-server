@@ -220,9 +220,11 @@ public final class RenameTool implements IMcpTool {
 		if (type == null || !type.isBinary()) {
 			return null;
 		}
-		Object root = type.getAncestor(IJavaElement.PACKAGE_FRAGMENT_ROOT);
+		// getElementName, never toString: a package fragment root prints every package
+		// it contains, which turned this refusal into 221 lines nobody would read
+		IJavaElement root = type.getAncestor(IJavaElement.PACKAGE_FRAGMENT_ROOT);
 		return "'%s' resolved to a binary type in %s, and renaming needs source. This usually means the name was found in build output rather than in a source project; pass 'project' to scope the resolution."
-				.formatted(type.getFullyQualifiedName(), root == null ? "a library" : root.toString());
+				.formatted(type.getFullyQualifiedName(), root == null ? "a library" : root.getElementName());
 	}
 
 	private static String refactoringIdOf(IJavaElement element) {

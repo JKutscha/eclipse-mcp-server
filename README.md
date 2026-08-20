@@ -658,7 +658,11 @@ Screenshots earn their place for UI work: layout, theming, dialog rendering, con
 
 A part behind another tab is not rendered at all, so capturing it would produce an empty image. It is **refused** unless `activate` is passed, because activating visibly rearranges the user's IDE and should not be a silent side effect.
 
-Two things make this reliable rather than quietly wrong. The capture takes the real screen pixels for the area and crops, instead of `Control.print()`, which has GTK gaps that the widget on screen does not. And on GTK4 or native Wayland the SWT path that fills a GC from a window does nothing at all and returns a blank image with no error, so the tool refuses up front on those, and additionally checks the captured pixels and refuses if they came back uniform. A silently empty screenshot is the worst possible answer.
+`method` in the answer says how the image was produced. `rootCapture` reads the real screen pixels for the area and crops. `widgetPrint` paints the widget hierarchy instead, which is the fallback used when the first attempt comes back uniform: under a compositing window manager such as mutter, a redirected window's contents live in an offscreen pixmap, so reading the X11 root drawable yields nothing at all. Printing has known GTK gaps, which is why it is the fallback and not the primary path, but a slightly wrong image beats no image.
+
+There is no fallback for `display`, since there is no single widget to paint, so on such a display only `part` and `shell` can be captured.
+
+The uniform-pixel check is what makes this safe rather than quietly wrong: SWT returns a blank image with no error at all on GTK4, and root capture returns blank under compositing, so a screenshot tool that trusts its own output writes an empty PNG and says it succeeded. Here a capture that is uniform after both attempts is refused and nothing is written.
 
 ### `eclipse_check_for_updates`, `eclipse_update`, `eclipse_install`, `eclipse_get_provisioning_status`
 

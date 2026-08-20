@@ -187,10 +187,15 @@ Do not replace that allowlist with a single opt-in preference; a switch flipped 
 Counting stacks meant that on an IDE with seventy live threads a budget of 200 was spent after three rounds, roughly 300 ms, so sampling stopped before the operation being profiled had started.
 Parked and waiting threads are also excluded by default, otherwise `Unsafe.park` is reported as the hot frame of an idle IDE.
 
-**A GTK4 capture returns a blank image rather than an error.**
-`GC.java` only calls `gdk_cairo_set_source_window` when `!GTK.GTK4`, so on GTK4 the group is pushed, painted empty, and handed back as a valid image.
-The capture rejects a uniform image for that reason, and that check is the real backstop.
-Do not add a Wayland check back to `unsupportedReason`: `WAYLAND_DISPLAY` and `XDG_SESSION_TYPE` stay set even when `GDK_BACKEND=x11` binds X11 through XWayland, where capture works, so sniffing the environment refused on machines that were fine.
+**Root capture returns a blank image on this machine, and on GTK4, without erroring.**
+`GC.java` only calls `gdk_cairo_set_source_window` when `!GTK.GTK4`, so on GTK4 the group is painted empty and handed back as a valid image.
+Separately, a compositing window manager redirects a window's contents into an offscreen pixmap, so reading the X11 root drawable through XWayland also yields uniform pixels.
+The uniform check is therefore the only reliable signal, and `Control.print` is the fallback when it trips. It has GTK gaps, which is why it is second rather than first, but the alternative in that case is no image.
+Do not add an environment check back to `unsupportedReason`: `WAYLAND_DISPLAY` and `XDG_SESSION_TYPE` stay set when `GDK_BACKEND=x11` binds X11 through XWayland, so the environment cannot distinguish a display that captures from one that does not. It was tried and it refused on a machine where `widgetPrint` works.
+
+**Never interpolate a Java element into a message with `toString()`.**
+`IPackageFragmentRoot.toString()` prints every package it contains, which turned one rename refusal into 221 lines with the useful advice at the bottom.
+Use `getElementName()`, `getFullyQualifiedName()` or `JavaModelSupport.describe`.
 
 **The sampler must not need the UI thread or a workspace lock.**
 It exists to diagnose freezes, so anything that queues behind one is useless.
