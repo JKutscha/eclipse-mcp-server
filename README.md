@@ -501,6 +501,36 @@ Use it to turn a simple name into a fully qualified one.
    "packageName":"org.eclipse.jface.viewers","path":"/.../org.eclipse.jface_3.35.0.jar","binary":true}]}
 ```
 
+### `eclipse_rename`
+
+**Modifies source files, and a rename can touch hundreds.**
+Renames a Java type, method, field, package or compilation unit through the JDT refactoring engine.
+Runs as a dry run unless `dryRun` is set to `false`.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `typeName` | string, required | | Fully qualified type. With `memberName`, the type declaring it. |
+| `memberName` | string | the type itself | Method or field to rename. |
+| `newName` | string, required | | The new simple name. |
+| `project` | string | whole workspace | |
+| `kind` | `auto` \| `type` \| `method` \| `field` \| `package` \| `compilationUnit` | `auto` | |
+| `updateReferences` | boolean | `true` | |
+| `updateQualifiedNames` | boolean | `false` | Also update qualified names in non-Java files, matched textually. |
+| `renameGettersAndSetters` | boolean | `false` | For a field. |
+| `dryRun` | boolean | `true` | |
+
+```json
+{"element":"sample.Target","newName":"Renamed","refactoring":"org.eclipse.jdt.ui.rename.type",
+ "dryRun":true,"warnings":[],"affectedFileCount":2,
+ "affectedFiles":["/app/src/sample/Target.java","/app/src/sample/User.java"],"applied":false}
+```
+
+Going through the refactoring engine rather than editing text is the whole point: overrides and implementations follow, and the refactoring participants that update non-Java references, such as `plugin.xml` class attributes, fire.
+
+Preconditions are checked before anything is written. A rename that would collide with an existing type, or produce an invalid Java name, is **refused** with the reason rather than half applied. Warnings that do not block are reported in `warnings`.
+
+An overloaded method is refused rather than guessed at, because a rename has to name exactly one member.
+
 ### `eclipse_organize_imports`
 
 **Modifies the file.**

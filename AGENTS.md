@@ -102,6 +102,14 @@ JDT reads the import order, the on-demand thresholds and the type filter from th
 Headless, or before the UI plug-in has started, the lookup returns null and the operation fails with a `NullPointerException` deep inside `CodeStyleConfiguration` or `TypeNameMatchCollector`.
 `ensureCodeStylePreferences` sets the node id and fills the default scope only where nothing is set, so a user or project setting always wins.
 
+**A refactoring change has to be initialised before it can be performed.**
+`createChange` returns a change whose validation state is empty, and `PerformChangeOperation` then fails with "TextFileChange has not been initialialized".
+`RenameTool` calls `initializeValidationData` first and runs the operation through `IWorkspace.run`.
+
+**`RenameTool` needs the same jdt.ui preference node as `OrganizeImportsTool`.**
+The rename processors read `JavaManipulation.getPreference`, which throws `IllegalArgumentException` out of `ProjectScope.getNode` when the node id is unset.
+Renaming a field hits it through `GetterSetterUtil`; renaming a type does not, so this fails for one kind of rename and not another.
+
 **`BundleJsonSchemaValidator` clears the context class loader on purpose.**
 The networknt schema library reads its bundled meta-schemas through the context class loader and only falls back to its own when there is none.
 Inside Equinox the context class loader cannot see them, so without this the server fails to start with `FileNotFoundException: classpath:draft/2020-12/schema`.

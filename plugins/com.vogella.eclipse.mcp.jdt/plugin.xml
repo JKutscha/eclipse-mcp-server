@@ -11,6 +11,7 @@
       <tool class="com.vogella.eclipse.mcp.jdt.internal.FormatTool"/>
       <tool class="com.vogella.eclipse.mcp.jdt.internal.GetClasspathTool"/>
       <tool class="com.vogella.eclipse.mcp.jdt.internal.GetCallHierarchyTool"/>
+      <tool class="com.vogella.eclipse.mcp.jdt.internal.RenameTool"/>
    </extension>
 
 </plugin>
