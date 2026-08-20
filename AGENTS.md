@@ -169,6 +169,15 @@ Write and compare exactly `COMPLIANCE_KEYS`.
 It looks up `IBundleProjectService` from its own `BundleContext`, which is null while the bundle is merely resolved.
 The tool falls back to PDE's own context and then to a readable error, rather than a `NullPointerException`.
 
+**A GTK4 or Wayland capture returns a blank image rather than an error.**
+`GC.java` only calls `gdk_cairo_set_source_window` when `!GTK.GTK4`, so on GTK4 the group is pushed, painted empty, and handed back as a valid image.
+`ScreenshotTools.unsupportedReason` refuses up front, and the capture additionally rejects a uniform image, because the heuristic cannot cover every case and a silently empty screenshot is worse than a refusal.
+
+**The sampler must not need the UI thread or a workspace lock.**
+It exists to diagnose freezes, so anything that queues behind one is useless.
+`ThreadMXBean` does not require the sampled thread to be responsive; do not replace it with anything that runs on the Display.
+Note the wider caveat: tools that avoid the UI thread can still block on the workspace or Java model lock if the frozen UI thread holds one, so "MCP still answers while the IDE is frozen" is reliably true for thread contention and only usually true for lock contention.
+
 **The feature lists third party bundles the Eclipse SDK does not ship.**
 Jetty ee11, the MCP SDK, Jackson 3, networknt and reactor are included so that the p2 repository is installable.
 `slf4j.api` and `jakarta.servlet-api` are deliberately left out, because the host IDE ships satisfying versions.

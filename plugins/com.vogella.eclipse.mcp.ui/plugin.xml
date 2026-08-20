@@ -5,6 +5,10 @@
    <extension point="com.vogella.eclipse.mcp.core.tools">
       <tool class="com.vogella.eclipse.mcp.ui.internal.GetEditorContextTool"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.OpenInEditorTool"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.SamplingTools$Start"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.SamplingTools$Stop"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.ScreenshotTools$ListTargets"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.ScreenshotTools$Capture"/>
    </extension>
 
    <extension point="org.eclipse.ui.preferencePages">

@@ -204,6 +204,8 @@ class McpServerServiceTest {
 		case "eclipse_get_preferences" -> Map.of("qualifier", "org.eclipse.core.resources");
 		case "eclipse_refresh", "eclipse_get_classpath" -> Map.of("project", PROJECT);
 		case "eclipse_open" -> Map.of("path", SAMPLE);
+		// headless, so there is no part to capture; a named one keeps the refusal specific
+		case "eclipse_screenshot" -> Map.of("target", "part", "part", "org.eclipse.ui.views.ProblemView");
 		case "eclipse_get_call_hierarchy" -> Map.of("typeName", "java.lang.Object", "methodName", "toString");
 		// a dry run against the sample type, so the smoke test renames nothing
 		case "eclipse_rename" -> Map.of("typeName", "example.Sample", "newName", "Renamed");

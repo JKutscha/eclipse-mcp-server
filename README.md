@@ -620,6 +620,46 @@ No arguments.
 `selectedText` is capped at 2000 characters.
 When there is no workbench, no window or no file-backed editor, the answer is `{"hasActiveEditor":false}`.
 
+### `eclipse_start_sampling` and `eclipse_stop_sampling`
+
+Samples thread stacks at a fixed interval, to profile an operation or diagnose a freeze.
+
+`eclipse_start_sampling` takes `threads` (`ui` or `all`), `threadNames`, `intervalMillis` (100), `maxSamples` (300) and `maxDepth` (80), and returns a `sessionId`.
+`eclipse_stop_sampling` takes that id, plus `topMethods`, `minSamples`, `includeRawSamples` and `keepRunning`.
+
+Sampling runs on a daemon thread through `ThreadMXBean`, which needs neither the UI thread nor any workspace lock, so it keeps working while the IDE is frozen. That is the requirement, not a detail: a profiler that queues behind the freeze is useless for the case it exists for.
+
+The result is **aggregated, not dumped**: the frames where time was actually spent (`topBySelfTime`), the frames most often on the stack (`topByPresence`), and the samples merged into one call tree. A hundred samples of seventy frames is seven thousand lines, so the raw samples only come back on request.
+
+`ThreadMXBean` sampling is safepoint biased, so tight loops without safepoint polls are under-represented. Treat it as "where is the time going", not as an exact profiler.
+
+### `eclipse_list_ui_targets`
+
+Lists every open shell with its title, modality and bounds, and every workbench part with its id, title and visibility.
+It is also the only way to answer "which dialog is open right now".
+
+### `eclipse_screenshot`
+
+Captures the IDE as a PNG, writes it to a file and returns the path.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `target` | `part` \| `shell` \| `display` | `part` | |
+| `part` | string | | Part id, from `eclipse_list_ui_targets`. |
+| `shellTitle` | string | active shell | Title or substring. |
+| `activate` | boolean | `false` | Bring the part forward first. |
+| `maxWidth` | integer, 100 to 4000 | 1200 | Downscale before writing. |
+| `outputPath` | string | a temporary file | |
+| `includeBase64` | boolean | `false` | Also return the image inline. |
+
+Screenshots earn their place for UI work: layout, theming, dialog rendering, confirming a widget change looks right. For anything textual the other tools answer better and shorter, and a screenshot of the Problems view shows twenty rows of several thousand.
+
+`display` captures whatever else is on the screen, mail and chat included, which is why it is not the default.
+
+A part behind another tab is not rendered at all, so capturing it would produce an empty image. It is **refused** unless `activate` is passed, because activating visibly rearranges the user's IDE and should not be a silent side effect.
+
+Two things make this reliable rather than quietly wrong. The capture takes the real screen pixels for the area and crops, instead of `Control.print()`, which has GTK gaps that the widget on screen does not. And on GTK4 or native Wayland the SWT path that fills a GC from a window does nothing at all and returns a blank image with no error, so the tool refuses up front on those, and additionally checks the captured pixels and refuses if they came back uniform. A silently empty screenshot is the worst possible answer.
+
 ## Contributing a tool
 
 Tools are contributed through the `com.vogella.eclipse.mcp.core.tools` extension point:
