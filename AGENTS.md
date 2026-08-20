@@ -126,6 +126,20 @@ The two defaults differ on purpose; do not align them.
 `workspace.build` reports builder exceptions as a multi status, which `BuildRegistry.collect` flattens.
 Without it a project whose `JavaBuilder` threw reports `errors: 0`, which reads as success and is the single most misleading thing this tool could do.
 
+**`eclipse_set_preference` writes an allowlist, `eclipse_get_preferences` reads anything.**
+The asymmetry is the point: a wrongly set compiler or formatter preference is invisible and long-lived, so the writable qualifiers are the four in `SetPreferenceTool.ALLOWED_QUALIFIERS`.
+Widening that list is a decision, not a fix.
+Auto-build goes through `IWorkspaceDescription.setAutoBuilding`, not through a raw write of `description.autobuilding`, which is the usual way to get it subtly wrong.
+
+**Platform mismatch is read from `Eclipse-PlatformFilter`, not from the project name.**
+`PlatformFilters` parses the manifest header as an OSGi filter and matches it against `osgi.ws`, `osgi.os` and `osgi.arch`.
+The name heuristic is the fallback for projects without the header, and the reason string says which of the two was used.
+Do not promote the heuristic to the primary signal; it works for Eclipse's own naming convention and misfires everywhere else.
+
+**Closing a project that others reference creates errors instead of removing them.**
+`SetProjectStateTool` reports `openDependents` from `IProject.getReferencingProjects()`, which covers both the JDT build path and PDE required bundles, and refuses without `force`.
+It also defaults to `dryRun`, and requires an explicit selection, so that no call can close the whole workspace by omission.
+
 **The feature lists third party bundles the Eclipse SDK does not ship.**
 Jetty ee11, the MCP SDK, Jackson 3, networknt and reactor are included so that the p2 repository is installable.
 `slf4j.api` and `jakarta.servlet-api` are deliberately left out, because the host IDE ships satisfying versions.

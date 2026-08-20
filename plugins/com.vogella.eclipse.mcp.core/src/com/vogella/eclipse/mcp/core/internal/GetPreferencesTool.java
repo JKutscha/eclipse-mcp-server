@@ -85,7 +85,7 @@ public final class GetPreferencesTool implements IMcpTool {
 		String key = args.getString("key"); //$NON-NLS-1$
 		Pattern keyPattern;
 		try {
-			keyPattern = globPattern(args.getString("keyPattern")); //$NON-NLS-1$
+			keyPattern = Globs.compile(args.getString("keyPattern")); //$NON-NLS-1$
 		} catch (PatternSyntaxException e) {
 			return McpToolResult.error("Could not read 'keyPattern' as a glob: " + e.getMessage()); //$NON-NLS-1$
 		}
@@ -168,22 +168,5 @@ public final class GetPreferencesTool implements IMcpTool {
 				.put("effective", effective) //$NON-NLS-1$
 				.put("effectiveScope", effectiveScope) //$NON-NLS-1$
 				.put("values", values); //$NON-NLS-1$
-	}
-
-	/** Translates a {@code *}/{@code ?} glob into a case insensitive regex. */
-	private static Pattern globPattern(String glob) {
-		if (glob == null) {
-			return null;
-		}
-		StringBuilder regex = new StringBuilder();
-		for (int i = 0; i < glob.length(); i++) {
-			char c = glob.charAt(i);
-			switch (c) {
-			case '*' -> regex.append(".*"); //$NON-NLS-1$
-			case '?' -> regex.append('.');
-			default -> regex.append(Pattern.quote(String.valueOf(c)));
-			}
-		}
-		return Pattern.compile(regex.toString(), Pattern.CASE_INSENSITIVE);
 	}
 }

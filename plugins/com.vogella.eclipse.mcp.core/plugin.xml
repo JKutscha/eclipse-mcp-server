@@ -11,6 +11,8 @@
       <tool class="com.vogella.eclipse.mcp.core.internal.GetPreferencesTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.BuildTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.GetBuildStatusTool"/>
+      <tool class="com.vogella.eclipse.mcp.core.internal.SetPreferenceTool"/>
+      <tool class="com.vogella.eclipse.mcp.core.internal.SetProjectStateTool"/>
    </extension>
 
 </plugin>

@@ -202,6 +202,10 @@ class McpServerServiceTest {
 			Map.of("typeName", "java.lang.Object");
 		case "eclipse_search_types" -> Map.of("pattern", "java.lang.Object");
 		case "eclipse_get_preferences" -> Map.of("qualifier", "org.eclipse.core.resources");
+		case "eclipse_set_preference" ->
+			Map.of("qualifier", "org.eclipse.core.runtime", "key", "mcp.server.smoke.test", "value", "yes");
+		// a dry run against a name that matches nothing, so the smoke test changes nothing
+		case "eclipse_set_project_state" -> Map.of("state", "open", "namePattern", "no-such-project-*");
 		case "eclipse_organize_imports", "eclipse_format" -> Map.of("path", SAMPLE);
 		default -> Map.of();
 		};

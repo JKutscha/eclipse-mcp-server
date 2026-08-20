@@ -8,7 +8,7 @@ An agent with a shell already has files, grep and git.
 What it does not have is the resolved Java model, the incremental builder's problem markers and the user's current editor context.
 Those are the capabilities exposed here.
 
-Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, and `eclipse_build` runs the project's builders.
+Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration within an allowlist, and `eclipse_set_project_state` opens and closes projects.
 There is no general file writing, no refactoring, no terminal and no debugger control.
 The server is **disabled by default**, listens on the loopback interface only, and rejects every request that does not carry a bearer token.
 
@@ -127,7 +127,7 @@ Sessions are carried in the `mcp-session-id` header, a `GET` opens the server-to
 
 Every tool returns a single text block containing pretty-printed JSON.
 Every list-returning tool honours `maxResults` and reports `total` and `truncated`, so the model can tell when it is seeing a partial answer.
-Read-only except `eclipse_organize_imports` and `eclipse_format`, which rewrite the file they are pointed at, and `eclipse_build`, which runs builders.
+Read-only except the four marked tools: `eclipse_organize_imports` and `eclipse_format` rewrite a file, `eclipse_build` runs builders, `eclipse_set_preference` writes configuration, and `eclipse_set_project_state` opens and closes projects.
 
 ### `eclipse_list_projects`
 
@@ -225,6 +225,57 @@ Use it to find out what has actually been customized here, auto-build being the 
 `values` holds every scope that sets the key, in lookup order, and `effectiveScope` names the one that won.
 An effective value without its origin cannot explain why one project behaves unlike its neighbours, which is the question this tool exists to answer.
 The default value of a listed key is always reported; `includeDefaults` only controls whether keys that are *only* set in the default scope are listed at all, because for a qualifier like `org.eclipse.jdt.core` that is several hundred entries of noise.
+
+### `eclipse_set_preference`
+
+**Modifies the IDE configuration.**
+Writes one preference and returns the previous value, so any change can be undone.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `qualifier` | string, required | | Restricted to an allowlist, see below. |
+| `key` | string, required | | |
+| `value` | string | remove the key | Omitting it removes the key, letting the value below it in the lookup order take over. |
+| `scope` | `instance` \| `project` | `instance` | |
+| `project` | string | | Required for the project scope. |
+
+Only `org.eclipse.core.resources`, `org.eclipse.jdt.core`, `org.eclipse.jdt.ui` and `org.eclipse.core.runtime` may be written.
+Reading is not restricted: `eclipse_get_preferences` takes any qualifier.
+The asymmetry is deliberate. Preferences span the whole `org.eclipse.*` key space, and a wrongly set compiler or formatter option is invisible in the IDE while producing confusing results for a long time afterwards, so the writable set starts from what is defensible rather than from everything.
+
+Auto-build is special cased. Setting `org.eclipse.core.resources` / `description.autobuilding` goes through `IWorkspaceDescription.setAutoBuilding` rather than writing the raw key, which is the usual way to get this subtly wrong, and the answer says so in `appliedThrough`.
+
+### `eclipse_set_project_state`
+
+**Opens and closes projects.**
+Reversible: no files are lost and no project code runs.
+Runs as a dry run unless `dryRun` is set to `false`.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `state` | `open` \| `closed`, required | | |
+| `projects` | array of strings | | Project names to act on. |
+| `namePattern` | string | | Glob over project names, `*` and `?`, case insensitive. |
+| `platformMismatch` | boolean | `false` | Only projects whose bundle cannot run on this platform. |
+| `dryRun` | boolean | `true` | |
+| `force` | boolean | `false` | Close even when open projects depend on the project. |
+| `maxResults` | integer, 1 to 2000 | 200 | |
+
+```json
+{"state":"closed","dryRun":true,"total":2,"changed":1,"skipped":1,"truncated":false,"projects":[
+  {"name":"org.eclipse.compare.win32","previousState":"open",
+   "platformReason":"Eclipse-PlatformFilter does not match: (& (osgi.ws=win32) (osgi.os=win32))",
+   "changed":true,"newState":"closed","skippedBecause":null},
+  {"name":"org.eclipse.ui.win32","previousState":"open","openDependents":["org.eclipse.ui.ide"],
+   "changed":false,"newState":"open",
+   "skippedBecause":"Open projects reference it, and closing it would give them build path errors rather than removing errors. Pass force to close it anyway."}]}
+```
+
+At least one of `projects`, `namePattern` or `platformMismatch` is required; the tool refuses to act on every project in the workspace.
+
+`platformMismatch` reads the `Eclipse-PlatformFilter` header from the project's `META-INF/MANIFEST.MF` and evaluates it as an OSGi filter against the running `osgi.ws`, `osgi.os` and `osgi.arch`. That is a declaration, not a guess. Only when a project has no such header does it fall back to looking for a foreign platform token in the name, and `platformReason` then says that it is a heuristic. Name matching alone would work for Eclipse's own naming convention and quietly misfire elsewhere.
+
+Closing a project that open projects reference does not remove errors, it gives the dependents build path errors instead. So `openDependents` is always reported, from `IProject.getReferencingProjects()`, which covers both JDT build path references and PDE required bundles, and closing is refused unless `force` is passed.
 
 ### `eclipse_build`
 
