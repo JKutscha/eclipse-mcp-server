@@ -24,13 +24,19 @@ public final class CheckForUpdatesTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Reports which installed units have an update available, from which version to which version and from which repository. Changes nothing. Resolution contacts every configured update site, so it can take a while on a slow mirror."; //$NON-NLS-1$
+		return "Reports which installed units have an update available, from which version to which version and from which repository. Changes nothing. By default it re-reads the repository metadata first, because p2 caches it and a cached miss is reported as 'no updates found', which is indistinguishable from a genuinely current IDE. That costs a network round trip per configured site; pass refresh false for a fast answer from the cache, and read the repository timestamps in the result to judge how stale it is."; //$NON-NLS-1$
 	}
 
 	@Override
 	public String getInputSchema() {
 		return """
-				{"type":"object","properties":{},"additionalProperties":false}"""; //$NON-NLS-1$
+				{
+				  "type": "object",
+				  "properties": {
+				    "refresh": {"type":"boolean","default":true,"description":"Re-read the repository metadata before resolving. Off means the answer may be stale; the repository timestamps say how stale."}
+				  },
+				  "additionalProperties": false
+				}"""; //$NON-NLS-1$
 	}
 
 	@Override
@@ -40,6 +46,8 @@ public final class CheckForUpdatesTool implements IMcpTool {
 			return McpToolResult.error(
 					"No p2 provisioning agent is available. This IDE was probably not installed through p2, so it cannot update itself."); //$NON-NLS-1$
 		}
+		boolean refresh = com.vogella.eclipse.mcp.core.ToolArguments.of(arguments).getBoolean("refresh", true); //$NON-NLS-1$
+		JsonArray repositories = Provisioning.describeRepositories(agent, refresh, monitor);
 		UpdateOperation operation = new UpdateOperation(new ProvisioningSession(agent));
 		IStatus status = operation.resolveModal(monitor);
 		JsonObject result = new JsonObject().put("resolution", status.isOK() ? "ok" : status.getMessage()); //$NON-NLS-1$ //$NON-NLS-2$
@@ -53,8 +61,11 @@ public final class CheckForUpdatesTool implements IMcpTool {
 						.put("name", update.replacement.getProperty("org.eclipse.equinox.p2.name", null))); //$NON-NLS-1$ //$NON-NLS-2$
 			}
 		}
-		JsonArray repositories = new JsonArray();
-		Provisioning.knownRepositories(agent).forEach(uri -> repositories.add(uri.toString()));
+		result.put("metadataRefreshed", refresh); //$NON-NLS-1$
+		if (updates.size() == 0 && !refresh) {
+			result.put("caveat", //$NON-NLS-1$
+					"Nothing was found, but the repository metadata was read from p2's cache rather than from the network, so a newly published build would not be visible. Run again with refresh true before concluding that this IDE is current."); //$NON-NLS-1$
+		}
 		return McpToolResult.of(result.put("total", updates.size()) //$NON-NLS-1$
 				.put("updates", updates) //$NON-NLS-1$
 				.put("configuredRepositories", repositories) //$NON-NLS-1$

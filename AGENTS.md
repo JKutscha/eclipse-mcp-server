@@ -173,6 +173,12 @@ The tool falls back to PDE's own context and then to a readable error, rather th
 `com.vogella.eclipse.mcp.server.tests` requires only core, server and jdt, so the ui, pde and p2 tools are not registered in that headless run and the smoke test cannot see them.
 That is deliberate for `eclipse_restart`, which must never be invoked by a test, but do not read a green smoke test as protocol level coverage of the other bundles.
 
+**p2 caches repository metadata, and a cached miss reads as success.**
+`UpdateOperation` resolves against whatever is cached, so a newly published build is invisible until something invalidates it, and the answer is the same "no updates found" a current IDE gives.
+`Provisioning.describeRepositories` refreshes before resolving, by default, and reports each repository's timestamp.
+This matters most in the self-update loop, where the tool is used immediately after a publish. Do not make the refresh opt-in to save a round trip; a check that quietly lies is worse than a slow one.
+The update site is a composite whose child location changes per release rather than accumulating, so it is the composite document itself that has to be re-read.
+
 **`IWorkbench.restart()` relaunches without the original command line.**
 Use `restart(true)`. The no argument form drops `-data`, so the IDE comes back up showing the workspace chooser and waits for a person, which is exactly what an unattended restart must not do.
 

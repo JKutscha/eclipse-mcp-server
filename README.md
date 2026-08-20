@@ -667,7 +667,9 @@ The uniform-pixel check is what makes this safe rather than quietly wrong: SWT r
 ### `eclipse_check_for_updates`, `eclipse_update`, `eclipse_install`, `eclipse_get_provisioning_status`
 
 **These modify the installation.**
-`eclipse_check_for_updates` changes nothing and reports which installed units have an update, from which version to which, and which repositories are configured.
+`eclipse_check_for_updates` changes nothing and reports which installed units have an update, from which version to which, and the configured repositories with the timestamp of the metadata behind each one.
+
+It re-reads that metadata first, by default. p2 caches repository metadata, and a cached miss comes back as "no updates found", which is exactly what a genuinely current IDE reports, so a stale cache is invisible and looks like success. That is worst in the self-update workflow these tools exist for: publish a build, check for updates, and be told there is nothing new. `refresh: false` gives the fast cached answer instead, and then says so in a `caveat` rather than letting the miss pass as a verdict. `eclipse_update` refreshes for the same reason, since otherwise it resolves against the cache and finds nothing to apply.
 `eclipse_update` applies updates to units that are already installed, from repositories already configured. `eclipse_install` adds a new unit.
 Both run as jobs and return an `operationId` polled through `eclipse_get_provisioning_status`, because p2 resolution can take minutes on a slow mirror.
 

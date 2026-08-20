@@ -9,7 +9,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.jobs.IJobChangeEvent;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.core.runtime.jobs.JobChangeAdapter;
@@ -194,6 +196,48 @@ final class Provisioning {
 			known.add(uri);
 		}
 		return known;
+	}
+
+	/**
+	 * Re-reads the configured repositories and reports the state of each.
+	 * <p>
+	 * p2 caches repository metadata, and a cached miss is reported as "no updates
+	 * found", which is exactly what a genuinely current IDE reports. That makes a
+	 * stale cache invisible in the one workflow these tools exist for. The composite
+	 * document itself has to be re-read, because a release replaces the child rather
+	 * than adding one.
+	 */
+	static JsonArray describeRepositories(IProvisioningAgent agent, boolean refresh, IProgressMonitor monitor) {
+		IMetadataRepositoryManager manager = agent.getService(IMetadataRepositoryManager.class);
+		JsonArray reported = new JsonArray();
+		if (manager == null) {
+			return reported;
+		}
+		for (URI uri : knownRepositories(agent)) {
+			JsonObject entry = new JsonObject().put("uri", uri.toString()); //$NON-NLS-1$
+			if (refresh) {
+				try {
+					manager.refreshRepository(uri, monitor);
+					entry.put("refreshed", Boolean.TRUE); //$NON-NLS-1$
+				} catch (org.eclipse.equinox.p2.core.ProvisionException | OperationCanceledException e) {
+					entry.put("refreshed", Boolean.FALSE).put("error", e.getMessage()); //$NON-NLS-1$ //$NON-NLS-2$
+				}
+			} else {
+				entry.put("refreshed", Boolean.FALSE); //$NON-NLS-1$
+			}
+			String timestamp = manager.getRepositoryProperty(uri, org.eclipse.equinox.p2.repository.IRepository.PROP_TIMESTAMP);
+			entry.put("timestamp", timestamp == null ? null : stamp(timestamp)); //$NON-NLS-1$
+			reported.add(entry);
+		}
+		return reported;
+	}
+
+	private static String stamp(String millis) {
+		try {
+			return millis + " (" + new java.util.Date(Long.parseLong(millis)) + ")"; //$NON-NLS-1$ //$NON-NLS-2$
+		} catch (NumberFormatException e) {
+			return millis;
+		}
 	}
 
 	/** The timestamp of the current configuration, which is the revert point. */
