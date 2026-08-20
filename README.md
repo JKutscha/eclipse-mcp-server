@@ -40,7 +40,10 @@ When building from source, the same repository is produced under `update-site/co
 
 ## Releasing
 
-Pushing a `v<version>` tag runs `.github/workflows/release.yml`, which builds the tag, copies the p2 repository into `releases/<version>/` on the `gh-pages` branch, regenerates the composite metadata with `releng/update-composite-site.sh` and attaches the repository archive to the GitHub release.
+`gh workflow run release.yml` builds `main` and publishes it to the update site, under a directory named after the qualifier of the build.
+The site keeps that build alone; the previous one is deleted.
+
+Pushing a `v<version>` tag runs the same workflow and additionally creates the GitHub release with the repository archive attached, which is the only way a downloadable zip is produced.
 
 ## Developing in the IDE
 
@@ -109,7 +112,7 @@ It declares the `tools` capability with `listChanged: false`, which means it ans
 |---|---|
 | `initialize` | reports the server as `eclipse-mcp` with the bundle version, plus an instructions string |
 | `ping` | |
-| `tools/list` | the nine tools below |
+| `tools/list` | the ten tools below |
 | `tools/call` | arguments are validated against the tool's input schema before the tool runs |
 | `notifications/initialized`, `notifications/roots/list_changed` | accepted and ignored |
 
@@ -158,6 +161,41 @@ A client that edits files through its own shell is invisible to the IDE until th
 That is why it defaults to `true`.
 `upToDate` says whether the refresh and the build actually completed, and `autoBuild` reports whether the workspace builds on its own; when `upToDate` is `false` the problems may be stale.
 Set `refresh` to `false` for a faster answer when nothing has changed on disk.
+
+### `eclipse_get_log_entries`
+
+Returns entries from the platform log, the file behind the Error Log view.
+This is where UI freezes reported by `org.eclipse.ui.monitoring` and exceptions thrown by builders end up.
+None of those become problem markers, so `eclipse_get_problems` cannot see them.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `severity` | `error` \| `warning` \| `info` \| `all` | `all` | Only entries of exactly this severity. |
+| `plugin` | string | all bundles | Restrict to this bundle symbolic name. |
+| `messageFilter` | string | no filter | Only entries whose message contains this text, case insensitive. |
+| `since` | string | no limit | Only entries at or after this local timestamp, `2026-08-20T11:00` or `2026-08-20`. |
+| `maxResults` | integer, 1 to 500 | 50 | |
+| `includeStackTraces` | boolean | `true` | Include the full stack trace of every entry and child. |
+| `newestFirst` | boolean | `true` | Newest first, so that truncation keeps the most recent entries. |
+
+The default severity is `all` rather than `error` on purpose: `org.eclipse.ui.monitoring` logs a UI freeze as a **warning**, so a default of `error` would hide exactly the entries worth asking for.
+
+```json
+{"logFile":"/home/user/workspace/.metadata/.log","total":6,"truncated":false,"entries":[
+  {"plugin":"org.eclipse.ui.monitoring","severity":"warning","code":0,
+   "timestamp":"2026-08-20T11:58:27.932","message":"UI freeze of 3.2s at 11:58:24.766",
+   "exception":null,"stackTrace":null,
+   "children":[{"plugin":"org.eclipse.ui.monitoring","severity":"info","code":0,
+                "timestamp":"2026-08-20T11:58:27.932",
+                "message":"Sample at 11:58:26.099 (+1.333s)\nThread 'main' tid=3 (RUNNABLE)",
+                "exception":null,
+                "stackTrace":"Stack Trace\n\tat org.eclipse.jdt.internal.core.JavaModelManager.create(...)"}]}]}
+```
+
+A UI freeze is a multi status whose children carry the sampled thread stacks, and those children are the whole point, so they come through in full rather than being flattened into the `UI freeze of 3.2s` headline.
+Stack traces are never truncated either, which means a handful of freezes can amount to megabytes; `maxResults`, `plugin` and `includeStackTraces: false` are the levers for keeping an answer small.
+
+The entries are read from the log file rather than from a listener registered at startup, so entries from before the server started, and from previous sessions still present in the file, are included.
 
 ### `eclipse_find_references`
 

@@ -7,6 +7,7 @@
    <extension point="com.vogella.eclipse.mcp.core.tools">
       <tool class="com.vogella.eclipse.mcp.core.internal.ListProjectsTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.GetProblemsTool"/>
+      <tool class="com.vogella.eclipse.mcp.core.internal.GetLogEntriesTool"/>
    </extension>
 
 </plugin>

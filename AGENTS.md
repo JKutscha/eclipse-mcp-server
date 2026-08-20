@@ -107,6 +107,15 @@ Any MCP client built inside the IDE needs the same treatment, as `McpServerServi
 **The MCP SDK is used with explicit `jsonMapper` and `jsonSchemaValidator`.**
 Letting the SDK fall back to `McpJsonDefaults` makes it depend on `ServiceLoader` discovery across bundles, which is fragile under OSGi.
 
+**`eclipse_get_log_entries` parses `.metadata/.log` instead of listening to `ILog`.**
+A listener registered when the bundle starts cannot see anything logged before that, and loses everything from previous sessions, which is exactly where the interesting UI freezes and builder exceptions already are.
+The file is the complete record and its `!ENTRY` / `!SUBENTRY` / `!MESSAGE` / `!STACK` format keeps multi status nesting and stack traces intact, so parsing it costs less than it looks.
+`PlatformLogFile` is exported to the test bundle through `x-friends`, so the parser can be tested against fixtures without the tool reading an arbitrary caller-supplied path.
+
+**A UI freeze is logged at severity WARNING, not ERROR.**
+`org.eclipse.ui.monitoring` uses `IStatus.WARNING`, so `eclipse_get_log_entries` defaults to `severity: all` while `eclipse_get_problems` defaults to `error`.
+The two defaults differ on purpose; do not align them.
+
 **The feature lists third party bundles the Eclipse SDK does not ship.**
 Jetty ee11, the MCP SDK, Jackson 3, networknt and reactor are included so that the p2 repository is installable.
 `slf4j.api` and `jakarta.servlet-api` are deliberately left out, because the host IDE ships satisfying versions.
