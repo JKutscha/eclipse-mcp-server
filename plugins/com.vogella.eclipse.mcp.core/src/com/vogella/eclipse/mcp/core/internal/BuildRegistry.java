@@ -21,6 +21,8 @@ import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
 
+import com.vogella.eclipse.mcp.core.WorkspaceSync;
+
 /**
  * Runs builds as jobs and keeps their outcome so that a client can poll instead of
  * holding an HTTP request open for the length of a build.
@@ -29,6 +31,10 @@ public final class BuildRegistry {
 
 	/** How many finished builds stay queryable. */
 	private static final int HISTORY = 20;
+
+	public static final String CLEAN = "clean"; //$NON-NLS-1$
+
+	public static final String REFRESH = "refresh"; //$NON-NLS-1$
 
 	private static final BuildRegistry INSTANCE = new BuildRegistry();
 
@@ -63,6 +69,9 @@ public final class BuildRegistry {
 
 		private volatile String state = "running"; //$NON-NLS-1$
 		private volatile long endedAt;
+		private volatile long refreshMillis = -1;
+		private volatile long buildMillis = -1;
+		private volatile String note;
 		private volatile List<String> builderFailures = List.of();
 		private volatile int errors = -1;
 		private volatile int warnings = -1;
@@ -93,6 +102,21 @@ public final class BuildRegistry {
 			return (endedAt == 0 ? System.currentTimeMillis() : endedAt) - startedAt;
 		}
 
+		/** Time spent refreshing from disk, {@code -1} when no refresh was asked for. */
+		public long refreshMillis() {
+			return refreshMillis;
+		}
+
+		/** Time spent building, {@code -1} for a refresh that never built. */
+		public long buildMillis() {
+			return buildMillis;
+		}
+
+		/** Set when the outcome needs a caveat, such as a clean that rebuilt nothing. */
+		public String note() {
+			return note;
+		}
+
 		/**
 		 * Builder exceptions that never became markers. A build that reports no
 		 * problems while its builder threw is the misleading case worth avoiding.
@@ -116,17 +140,28 @@ public final class BuildRegistry {
 	}
 
 	/**
-	 * Starts a build and returns immediately. {@code projectNames} empty means the
-	 * whole workspace.
+	 * What one call asked for. {@code projectNames} empty means the whole
+	 * workspace; {@code kind} is {@code refresh} for a refresh that never builds.
 	 */
-	public synchronized Build start(String kind, List<String> projectNames, boolean countProblems) {
+	public record Request(String kind, List<String> projectNames, boolean countProblems, boolean refresh,
+			boolean buildAfterClean) {
+	}
+
+	/**
+	 * Starts the work and returns immediately.
+	 * <p>
+	 * Everything slow happens inside the job, the refresh included. A refresh done
+	 * before scheduling would make a call block for its whole duration even when
+	 * the caller asked not to wait, which defeats the point of handing back an id.
+	 */
+	public synchronized Build start(Request request) {
 		String id = "build-" + ids.incrementAndGet(); //$NON-NLS-1$
-		Build build = new Build(id, kind, projectNames);
+		Build build = new Build(id, request.kind(), request.projectNames());
 		builds.put(id, build);
 		lastId = id;
 
-		Job job = Job.create("MCP " + kind + " build", monitor -> { //$NON-NLS-1$ //$NON-NLS-2$
-			run(build, kind, projectNames, countProblems, monitor);
+		Job job = Job.create("MCP " + request.kind(), monitor -> { //$NON-NLS-1$
+			run(build, request, monitor);
 			return Status.OK_STATUS;
 		});
 		job.setRule(ResourcesPlugin.getWorkspace().getRuleFactory().buildRule());
@@ -135,39 +170,85 @@ public final class BuildRegistry {
 		return build;
 	}
 
-	private static void run(Build build, String kind, List<String> projectNames, boolean countProblems,
-			IProgressMonitor monitor) {
+	private static void run(Build build, Request request, IProgressMonitor monitor) {
 		IWorkspace workspace = ResourcesPlugin.getWorkspace();
-		int buildKind = kindOf(kind);
+		String kind = request.kind();
+		List<String> projectNames = request.projectNames();
 		List<String> failures = new ArrayList<>();
 		String state = "done"; //$NON-NLS-1$
-		try {
-			if (projectNames.isEmpty()) {
-				workspace.build(buildKind, monitor);
-			} else {
-				for (String name : projectNames) {
-					IProject project = workspace.getRoot().getProject(name);
-					if (project.isAccessible()) {
-						project.build(buildKind, monitor);
-					} else {
-						failures.add("Project '%s' is not open, so it was not built.".formatted(name)); //$NON-NLS-1$
-					}
+
+		if (request.refresh()) {
+			long startedRefresh = System.currentTimeMillis();
+			try {
+				for (IResource scope : scopes(projectNames)) {
+					WorkspaceSync.refresh(scope, monitor);
 				}
+			} catch (CoreException e) {
+				state = "failed"; //$NON-NLS-1$
+				collect(e.getStatus(), failures);
+			} catch (OperationCanceledException e) {
+				state = "cancelled"; //$NON-NLS-1$
 			}
-		} catch (CoreException e) {
-			state = "failed"; //$NON-NLS-1$
-			collect(e.getStatus(), failures);
-		} catch (OperationCanceledException e) {
-			state = "cancelled"; //$NON-NLS-1$
+			build.refreshMillis = System.currentTimeMillis() - startedRefresh;
+		}
+
+		if (!REFRESH.equals(kind) && "done".equals(state)) { //$NON-NLS-1$
+			long startedBuild = System.currentTimeMillis();
+			try {
+				build(workspace, kindOf(kind), projectNames, failures, monitor);
+				if (CLEAN.equals(kind) && request.buildAfterClean()) {
+					build(workspace, IncrementalProjectBuilder.FULL_BUILD, projectNames, failures, monitor);
+				}
+			} catch (CoreException e) {
+				state = "failed"; //$NON-NLS-1$
+				collect(e.getStatus(), failures);
+			} catch (OperationCanceledException e) {
+				state = "cancelled"; //$NON-NLS-1$
+			}
+			build.buildMillis = System.currentTimeMillis() - startedBuild;
+		}
+
+		if (CLEAN.equals(kind) && !request.buildAfterClean()) {
+			// a clean deletes the markers, so the counts below describe an unbuilt
+			// workspace and say nothing about whether it compiles
+			build.note = "A clean deletes build state without rebuilding, so the error and warning counts below only mean that nothing is built. Pass buildAfterClean to get a verdict."; //$NON-NLS-1$
 		}
 		collectLogged(build, failures);
 		build.builderFailures = List.copyOf(failures);
-		if (countProblems) {
+		if (request.countProblems()) {
 			countProblems(build, projectNames);
 		}
 		build.endedAt = System.currentTimeMillis();
 		build.state = state;
 		build.finished.countDown();
+	}
+
+	private static void build(IWorkspace workspace, int buildKind, List<String> projectNames, List<String> failures,
+			IProgressMonitor monitor) throws CoreException {
+		if (projectNames.isEmpty()) {
+			workspace.build(buildKind, monitor);
+			return;
+		}
+		for (String name : projectNames) {
+			IProject project = workspace.getRoot().getProject(name);
+			if (project.isAccessible()) {
+				project.build(buildKind, monitor);
+			} else {
+				failures.add("Project '%s' is not open, so it was not built.".formatted(name)); //$NON-NLS-1$
+			}
+		}
+	}
+
+	/** The resources to refresh: the named projects, or the whole workspace. */
+	private static List<IResource> scopes(List<String> projectNames) {
+		if (projectNames.isEmpty()) {
+			return List.of(ResourcesPlugin.getWorkspace().getRoot());
+		}
+		List<IResource> scopes = new ArrayList<>();
+		for (String name : projectNames) {
+			scopes.add(ResourcesPlugin.getWorkspace().getRoot().getProject(name));
+		}
+		return scopes;
 	}
 
 	/**

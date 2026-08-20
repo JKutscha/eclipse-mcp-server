@@ -119,6 +119,11 @@ The file is the complete record and its `!ENTRY` / `!SUBENTRY` / `!MESSAGE` / `!
 `org.eclipse.ui.monitoring` uses `IStatus.WARNING`, so `eclipse_get_log_entries` defaults to `severity: all` while `eclipse_get_problems` defaults to `error`.
 The two defaults differ on purpose; do not align them.
 
+**Everything slow belongs inside the job, the refresh included.**
+The refresh first ran before the job was scheduled, so `wait: false` still blocked for its whole duration and an unscoped refresh of a large workspace blew the 30 second call timeout before the async path was ever reached.
+It also refreshed the workspace root even when one project was named.
+`BuildRegistry.Request` now carries the refresh, `scopes` limits it to the named projects, and `refreshMillis` and `buildMillis` are reported separately because the refresh can cost more than the build.
+
 **`eclipse_build` returns a handle rather than blocking to completion.**
 `BuildRegistry` runs the build as a job under the workspace build rule and keeps the last 20 outcomes, so a build longer than the call timeout is polled through `eclipse_get_build_status` instead of dying with the request.
 `timeoutSeconds` defaults to 25 to sit under the default 30 second call timeout; core cannot read the server bundle's preference without breaking the layering, so the two numbers are kept in step by hand.

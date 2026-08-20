@@ -325,20 +325,43 @@ Builds the workspace or named projects.
 | `wait` | boolean | `true` | Wait for the build before answering. |
 | `timeoutSeconds` | integer, 1 to 3600 | 25 | How long to wait before answering with `running`. |
 | `returnProblems` | boolean | `true` | Count errors and warnings once the build ended. |
-| `refresh` | boolean | `true` | Refresh from disk first. |
+| `refresh` | boolean | `true` | Refresh from disk first, scoped to the named projects. |
+| `buildAfterClean` | boolean | `false` | Build again after a clean. |
 
 ```json
 {"buildId":"build-3","kind":"full","state":"done","scope":"projects","projects":["app"],
- "elapsedMillis":8412,"errors":2,"warnings":17,"builderFailures":[]}
+ "elapsedMillis":8412,"refreshMillis":204,"buildMillis":8208,"note":null,
+ "errors":2,"warnings":17,"builderFailures":[]}
 ```
 
-The build runs as a job, so a build longer than `timeoutSeconds` comes back as `state: "running"` with a `buildId` rather than holding the request open until the server's call timeout kills it.
+Everything slow happens inside the job, the refresh included, so `wait: false` always returns straight away with a `buildId`, and a build longer than `timeoutSeconds` comes back as `state: "running"` rather than holding the request open until the call timeout kills it.
 Keep `timeoutSeconds` below that timeout; the default 25 fits under the default 30.
+
+`refreshMillis` and `buildMillis` are reported separately because on a large workspace the refresh can cost more than the build, and a single number hides that.
+
+A `clean` only deletes build state. With auto-build off nothing rebuilds afterwards, so the error count describes an unbuilt workspace rather than a working one; the answer then carries a `note` saying so. `buildAfterClean` rebuilds, the way the *Build immediately* checkbox of *Project > Clean* does.
 
 `builderFailures` carries what went wrong without becoming a problem marker, so that a build whose `JavaBuilder` threw is not reported as a clean one.
 It has two sources. Exceptions that reach `IProject.build` are flattened out of the multi status they arrive in. But most builder failures never get that far: `BuildManager` runs builders inside a `SafeRunner`, which catches the exception and writes it to the Error Log, so the build returns normally and there is nothing to catch. Those are picked up by reading the platform log for errors and warnings logged while the build ran.
 
 The second source is correlated by time, not by causation, so anything else the IDE logged during the same window is included too. Over-reporting was the deliberate choice: calling a broken build clean is the worse failure.
+
+### `eclipse_refresh`
+
+Reads changes made outside the IDE into the workspace, and nothing else.
+Use it after switching branches, updating submodules or editing through a shell, when you want the IDE to see the new files without also building or reading markers.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `project` | string | whole workspace | Single project to refresh. |
+| `projects` | array of strings | | Several projects, instead of `project`. |
+| `wait` | boolean | `true` | Wait for the refresh before answering. |
+| `timeoutSeconds` | integer, 1 to 3600 | 25 | |
+
+It runs as a job and answers in the same shape as `eclipse_build`, with `kind: "refresh"`, so `eclipse_get_build_status` reports on it too.
+It never counts markers: a refresh does not build, so any count would describe whatever the last build left behind and invite a wrong conclusion.
+
+Refreshing is available on `eclipse_build` and `eclipse_get_problems` as well, but only as a step before something else. With auto-build off, picking up external edits and deciding whether to build are separate decisions, which is why this exists on its own.
 
 ### `eclipse_get_build_status`
 

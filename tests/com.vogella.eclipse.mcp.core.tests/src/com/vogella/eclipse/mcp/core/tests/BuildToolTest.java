@@ -117,6 +117,45 @@ class BuildToolTest {
 	}
 
 	@Test
+	void waitFalseReturnsBeforeTheRefreshRuns() throws Exception {
+		fixture.createProject(PROJECT);
+
+		long before = System.currentTimeMillis();
+		Map<String, Object> result = TestFixture.callAndParse(TOOL,
+				Map.of("wait", Boolean.FALSE, "refresh", Boolean.TRUE));
+		long elapsed = System.currentTimeMillis() - before;
+
+		// the refresh belongs inside the job; running it first made wait:false block for
+		// the whole workspace refresh and blow the call timeout on a large workspace
+		assertNotNull(result.get("buildId"));
+		assertTrue(elapsed < 5000, "wait:false took " + elapsed + " ms, so something ran synchronously");
+	}
+
+	@Test
+	void reportsTheRefreshCostSeparatelyFromTheBuild() throws Exception {
+		fixture.createProject(PROJECT);
+
+		Map<String, Object> result = TestFixture.callAndParse(TOOL,
+				Map.of("project", PROJECT, "refresh", Boolean.TRUE));
+
+		assertEquals("done", result.get("state"));
+		assertNotNull(result.get("refreshMillis"), "a refresh that ran must be reported");
+		assertNotNull(result.get("buildMillis"));
+	}
+
+	@Test
+	void aCleanSaysThatItRebuiltNothing() throws Exception {
+		fixture.createProject(PROJECT);
+
+		Map<String, Object> plain = TestFixture.callAndParse(TOOL, Map.of("project", PROJECT, "kind", "clean"));
+		assertTrue(String.valueOf(plain.get("note")).contains("nothing is built"), String.valueOf(plain.get("note")));
+
+		Map<String, Object> rebuilt = TestFixture.callAndParse(TOOL,
+				Map.of("project", PROJECT, "kind", "clean", "buildAfterClean", Boolean.TRUE));
+		assertEquals(null, rebuilt.get("note"));
+	}
+
+	@Test
 	void doesNotReportLogEntriesFromBeforeTheBuild() throws Exception {
 		fixture.createProject(PROJECT);
 		String message = "mcp stale log marker " + System.nanoTime();

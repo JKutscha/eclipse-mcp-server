@@ -8,14 +8,12 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
-import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IProgressMonitor;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolException;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.ToolArguments;
-import com.vogella.eclipse.mcp.core.WorkspaceSync;
 
 /**
  * Starts a build. Long builds are polled through {@code eclipse_get_build_status}
@@ -35,7 +33,7 @@ public final class BuildTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Builds the workspace or named projects and reports the outcome. MODIFIES THE WORKSPACE: builders run project code and write build output. The build runs as a job; when it does not finish within timeoutSeconds the call returns state 'running' with a buildId to poll through eclipse_get_build_status. Builder exceptions that never become problem markers are reported in builderFailures, so a build that looks clean but threw is not mistaken for a success."; //$NON-NLS-1$
+		return "Builds the workspace or named projects and reports the outcome. MODIFIES THE WORKSPACE: builders run project code and write build output. The build runs as a job, refresh included, so wait false always returns straight away with a buildId to poll through eclipse_get_build_status. A clean only deletes build state; pass buildAfterClean to rebuild, otherwise the error count afterwards only says that nothing is built. Builder exceptions that never become problem markers are reported in builderFailures, so a build that looks clean but threw is not mistaken for a success."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -50,7 +48,8 @@ public final class BuildTool implements IMcpTool {
 				    "wait":           {"type":"boolean","default":true,"description":"Wait for the build to finish before answering."},
 				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":3600,"description":"How long to wait before returning with state 'running'. Keep this below the server's tool call timeout, which is set in Preferences > General > MCP Server."},
 				    "returnProblems": {"type":"boolean","default":true,"description":"Count errors and warnings once the build ended."},
-				    "refresh":        {"type":"boolean","default":true,"description":"Refresh the workspace from disk first, so that edits made outside the IDE are built."}
+				    "refresh":        {"type":"boolean","default":true,"description":"Refresh from disk first, so that edits made outside the IDE are built. Scoped to the named projects. The refresh runs inside the job, so it never blocks a call with wait false, and its cost is reported as refreshMillis."},
+				    "buildAfterClean":{"type":"boolean","default":false,"description":"After a clean, build again, the way the 'Build immediately' checkbox of Project > Clean does. Without it a clean only deletes build state, so the error count afterwards means nothing."}
 				  },
 				  "additionalProperties": false
 				}"""; //$NON-NLS-1$
@@ -74,15 +73,9 @@ public final class BuildTool implements IMcpTool {
 		int timeoutSeconds = args.getInt("timeoutSeconds", DEFAULT_TIMEOUT_SECONDS, 1, 3600); //$NON-NLS-1$
 		boolean returnProblems = args.getBoolean("returnProblems", true); //$NON-NLS-1$
 
-		if (args.getBoolean("refresh", true)) { //$NON-NLS-1$
-			try {
-				WorkspaceSync.refresh(ResourcesPlugin.getWorkspace().getRoot(), monitor);
-			} catch (CoreException e) {
-				throw new McpToolException("Could not refresh the workspace before building", e); //$NON-NLS-1$
-			}
-		}
-
-		BuildRegistry.Build build = BuildRegistry.getInstance().start(kind, projects, returnProblems);
+		BuildRegistry.Build build = BuildRegistry.getInstance()
+				.start(new BuildRegistry.Request(kind, projects, returnProblems, args.getBoolean("refresh", true), //$NON-NLS-1$
+						args.getBoolean("buildAfterClean", false))); //$NON-NLS-1$
 		if (wait) {
 			try {
 				build.await(timeoutSeconds, TimeUnit.SECONDS);
