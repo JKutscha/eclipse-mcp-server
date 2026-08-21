@@ -97,15 +97,17 @@ public final class TestRunRegistry {
 			return finished.await(seconds, TimeUnit.SECONDS);
 		}
 
-		void fail(String reason) {
-			message = reason;
-			if ("running".equals(state)) { //$NON-NLS-1$
-				state = "failed"; //$NON-NLS-1$
+		/**
+		 * Moves to a terminal state, once. Terminating an abandoned launch makes JDT
+		 * fire sessionFinished, which used to overwrite "abandoned" with "done" and
+		 * report a run that never started as a completed one with no failures.
+		 */
+		synchronized void finish(String terminalState, String reason) {
+			if (!running) {
+				return;
 			}
-			end();
-		}
-
-		void end() {
+			state = terminalState;
+			message = reason;
 			endedAt = System.currentTimeMillis();
 			running = false;
 			finished.countDown();
@@ -152,8 +154,7 @@ public final class TestRunRegistry {
 			public void sessionFinished(ITestRunSession session) {
 				Run run = match(session);
 				if (run != null) {
-					run.state = "done"; //$NON-NLS-1$
-					run.end();
+					run.finish("done", null); //$NON-NLS-1$
 				}
 			}
 		});
@@ -201,7 +202,7 @@ public final class TestRunRegistry {
 	}
 
 	public static void failed(Run run, String reason) {
-		run.fail(reason);
+		run.finish("failed", reason); //$NON-NLS-1$
 	}
 
 	/**
@@ -230,18 +231,20 @@ public final class TestRunRegistry {
 					anyResult = !run.cases.isEmpty();
 				}
 				if (launch != null && launch.isTerminated() && !anyResult) {
-					run.state = "cancelled"; //$NON-NLS-1$
-					run.fail("The launch ended without producing any test event. It was most likely cancelled, at the 'Errors in Workspace' prompt or otherwise."); //$NON-NLS-1$
+					run.finish("cancelled", //$NON-NLS-1$
+							"The launch ended without producing any test event. It was most likely cancelled, at the 'Errors in Workspace' prompt or otherwise."); //$NON-NLS-1$
 					return;
 				}
 				if (System.currentTimeMillis() > deadline && !anyResult) {
 					// kill it, do not merely stop waiting: an abandoned plug-in launch is
 					// a second Eclipse holding half a gigabyte, its workspace and its port
 					boolean killed = terminate(run);
-					run.state = "failed"; //$NON-NLS-1$
-					run.fail("No test event arrived within %d seconds, so the run was abandoned. %s" //$NON-NLS-1$
-							.formatted(staleAfterSeconds, killed ? "Its launch was terminated." //$NON-NLS-1$
-									: "Its launch could NOT be terminated and may still be running; check for an orphaned process.")); //$NON-NLS-1$
+					// its own terminal state: neither a run that completed nor one whose
+					// tests failed, and "done" with no tests is a contradiction
+					run.finish("abandoned", //$NON-NLS-1$
+							"No test event arrived within %d seconds, so the run was abandoned. %s" //$NON-NLS-1$
+									.formatted(staleAfterSeconds, killed ? "Its launch was terminated." //$NON-NLS-1$
+											: "Its launch could NOT be terminated and may still be running; check for an orphaned process.")); //$NON-NLS-1$
 					return;
 				}
 			}
@@ -256,8 +259,7 @@ public final class TestRunRegistry {
 			return false;
 		}
 		boolean killed = terminate(run);
-		run.state = "cancelled"; //$NON-NLS-1$
-		run.fail(killed ? "Abandoned on request; its launch was terminated." //$NON-NLS-1$
+		run.finish("abandoned", killed ? "Abandoned on request; its launch was terminated." //$NON-NLS-1$ //$NON-NLS-2$
 				: "Abandoned on request, but its launch could NOT be terminated and may still be running."); //$NON-NLS-1$
 		return true;
 	}
@@ -325,6 +327,12 @@ public final class TestRunRegistry {
 		JsonObject counted = new JsonObject();
 		if (unclassified > 0) {
 			counted.put("unclassified", unclassified); //$NON-NLS-1$
+		}
+		// a completed run with no tests is a contradiction, and the state field is the
+		// one read programmatically, so it must not quietly claim success
+		if ("done".equals(run.state) && cases.isEmpty()) { //$NON-NLS-1$
+			counted.put("stateInconsistent", //$NON-NLS-1$
+					"State is done but no test was reported, which cannot both be true. Treat this as a run that did not happen."); //$NON-NLS-1$
 		}
 		// the counters must account for every case, or the summary contradicts the list
 		if (passed + failed + errors + ignored + unclassified != cases.size()) {
