@@ -193,6 +193,19 @@ public final class RunTestsTool implements IMcpTool {
 				result.put("note", //$NON-NLS-1$
 						"A second Eclipse is starting, which takes tens of seconds before the first test runs. Poll eclipse_get_test_results with this runId."); //$NON-NLS-1$
 			}
+			// report what was actually set rather than what was intended: two rounds of
+			// this were spent inferring the launch configuration from a runtime log
+			if (asPlugin) {
+				result.put("launchAttributes", new JsonObject() //$NON-NLS-1$
+						.put(IPDELauncherConstants.APPLICATION,
+								configuration.getAttribute(IPDELauncherConstants.APPLICATION, (String) null))
+						.put(IPDELauncherConstants.APP_TO_TEST,
+								configuration.getAttribute(IPDELauncherConstants.APP_TO_TEST, (String) null))
+						.put(IPDELauncherConstants.RUN_IN_UI_THREAD,
+								configuration.getAttribute(IPDELauncherConstants.RUN_IN_UI_THREAD, true))
+						.put(IPDELauncherConstants.LOCATION,
+								configuration.getAttribute(IPDELauncherConstants.LOCATION, (String) null)));
+			}
 			JsonArray broken = projectsWithErrors(project);
 			if (broken.size() > 0) {
 				result.put("launchedWithCompileErrors", broken) //$NON-NLS-1$
@@ -293,12 +306,17 @@ public final class RunTestsTool implements IMcpTool {
 	 */
 	private static void configurePlatform(ILaunchConfigurationWorkingCopy configuration, String runtimeWorkspace,
 			boolean ui) {
-		// APP_TO_TEST is what the delegate actually reads: it compares that against the
-		// core test application to decide headless, and setting only APPLICATION left
-		// it defaulting to the product's workbench and starting a full IDE
-		configuration.setAttribute(IPDELauncherConstants.APP_TO_TEST,
-				ui ? "org.eclipse.ui.ide.workbench" : CORE_TEST_APPLICATION); //$NON-NLS-1$
-		configuration.setAttribute(IPDELauncherConstants.APPLICATION, ui ? UI_TEST_APPLICATION : CORE_TEST_APPLICATION);
+		// APPLICATION is the switch, per PDE's own comment in getApplication: "if
+		// application is set, it must be a headless app". Leaving it unset yields the
+		// UI test application. APP_TO_TEST is a different thing, the product the UI
+		// test application runs inside, so it belongs only on the ui path.
+		if (ui) {
+			configuration.removeAttribute(IPDELauncherConstants.APPLICATION);
+			configuration.setAttribute(IPDELauncherConstants.APP_TO_TEST, "org.eclipse.ui.ide.workbench"); //$NON-NLS-1$
+		} else {
+			configuration.setAttribute(IPDELauncherConstants.APPLICATION, CORE_TEST_APPLICATION);
+			configuration.removeAttribute(IPDELauncherConstants.APP_TO_TEST);
+		}
 		configuration.setAttribute(IPDELauncherConstants.USE_PRODUCT, false);
 		configuration.setAttribute(IPDELauncherConstants.LOCATION,
 				runtimeWorkspace == null ? "${workspace_loc}/../mcp-junit-workspace" : runtimeWorkspace); //$NON-NLS-1$
