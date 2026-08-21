@@ -58,8 +58,25 @@ final class GitContent {
 						Long.valueOf(loader.getSize()), Integer.valueOf(maxBytes));
 			}
 			ObjectId commit = repository.resolve(revision);
-			return new Blob(loader.getBytes(), commit == null ? null : commit.name(),
-					repository.getDirectory().getParentFile().getName(), path);
+			return new Blob(loader.getBytes(), commit == null ? null : commit.name(), name(repository), path);
+		}
+	}
+
+	/**
+	 * The repository's name, taken from the work tree.
+	 * <p>
+	 * Not from the git directory: a submodule's {@code .git} is a file pointing at
+	 * {@code <parent>/.git/modules/<name>}, so a name derived from there is
+	 * "modules" for every submodule in the tree, which makes twelve repositories
+	 * look like one. The work tree is what carries the identity.
+	 */
+	private static String name(Repository repository) {
+		try {
+			return repository.getWorkTree().getName();
+		} catch (RuntimeException e) {
+			// a bare repository has no work tree, and then the git directory is the
+			// only name there is
+			return repository.getDirectory().getName();
 		}
 	}
 

@@ -97,7 +97,7 @@ public final class FindReferencesTool implements IMcpTool {
 			if (projects.isEmpty()) {
 				return McpToolResult.error("The workspace contains no open Java project."); //$NON-NLS-1$
 			}
-			type = JavaModelSupport.findType(typeName, projects);
+			type = JavaModelSupport.findType(typeName, projects, monitor);
 			members = memberName == null ? List.of() : JavaModelSupport.findMembers(type, memberName);
 			fields = members.stream().filter(IField.class::isInstance).toList();
 			resolved = memberName == null ? type.getFullyQualifiedName()

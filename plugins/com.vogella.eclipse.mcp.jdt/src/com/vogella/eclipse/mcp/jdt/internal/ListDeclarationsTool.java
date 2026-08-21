@@ -58,7 +58,7 @@ public final class ListDeclarationsTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Enumerates the types, methods or fields a project declares in its own source, and cross-checks each one against the places an Eclipse runtime instantiates a class by name. This is the candidate generation step of a dead code sweep; eclipse_find_references is the confirm step, and neither replaces the other. Binary types are never listed, so a class that exists a dozen times over inside built jars appears once, as source. registryStatus is THREE valued and the distinction matters: 'dead' means only that no registry position this tool understands names it, never that deleting it is safe; 'live-via-registry' means not provably dead, not that anything still uses it, since an extension can be contributed to a point nobody reads; 'undecidable' means something names it in a position that cannot be judged. Extension attributes are resolved through the extension point's .exsd schema, so only attributes the schema declares java-typed count, and a class name in a comment or a changelog counts for nothing."; //$NON-NLS-1$
+		return "Enumerates the types, methods or fields a project declares in its own source, or reports on a list of types you already have through typeNames, and cross-checks each one against the places an Eclipse runtime instantiates a class by name. This is the candidate generation step of a dead code sweep; eclipse_find_references is the confirm step, and neither replaces the other. Binary types are never listed, so a class that exists a dozen times over inside built jars appears once, as source. registryStatus is THREE valued and the distinction matters: 'dead' means only that no registry position this tool understands names it, never that deleting it is safe; 'live-via-registry' means not provably dead, not that anything still uses it, since an extension can be contributed to a point nobody reads; 'undecidable' means something names it in a position that cannot be judged. Extension attributes are resolved through the extension point's .exsd schema, so only attributes the schema declares java-typed count, and a class name in a comment or a changelog counts for nothing."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -69,6 +69,7 @@ public final class ListDeclarationsTool implements IMcpTool {
 				  "properties": {
 				    "project":    {"type":"string","description":"Project to enumerate. Omit both this and 'projects' for every open Java project, which walks the whole workspace and is rarely what you want."},
 				    "projects":   {"type":"array","items":{"type":"string"},"description":"Several projects. Use instead of 'project'."},
+				    "typeNames":  {"type":"array","items":{"type":"string"},"description":"Report only these fully qualified types, resolved directly instead of by walking a project. Use this when you already have candidates and want the registry and API verdict for each."},
 				    "kinds":      {"type":"array","items":{"type":"string","enum":["types","methods","fields"]},"default":["types"]},
 				    "visibility": {"type":"array","items":{"type":"string","enum":["public","protected","package","private"]},"description":"Report only these. Omit for all."},
 				    "status":     {"type":"string","enum":["dead","live-via-registry","undecidable","all"],"default":"all","description":"Report only declarations with this verdict."},
@@ -100,7 +101,16 @@ public final class ListDeclarationsTool implements IMcpTool {
 		int maxResults = args.getInt("maxResults", 500, 1, 5000); //$NON-NLS-1$
 
 		List<IJavaProject> projects = new ArrayList<>();
-		if (names.isEmpty()) {
+		if (names.isEmpty() && !strings(arguments, "typeNames").isEmpty()) { //$NON-NLS-1$
+			// resolving named types does not need a project walk, so the whole
+			// workspace is the right scope and costs nothing extra
+			for (IProject project : ResourcesPlugin.getWorkspace().getRoot().getProjects()) {
+				IJavaProject javaProject = JavaCore.create(project);
+				if (project.isAccessible() && javaProject != null && javaProject.exists()) {
+					projects.add(javaProject);
+				}
+			}
+		} else if (names.isEmpty()) {
 			// every open Java project, as the other workspace-wide tools do. Naming
 			// projects is still worth it: this walks every compilation unit it is given
 			for (IProject project : ResourcesPlugin.getWorkspace().getRoot().getProjects()) {
@@ -124,7 +134,12 @@ public final class ListDeclarationsTool implements IMcpTool {
 		}
 
 		try {
+			List<String> typeNames = strings(arguments, "typeNames"); //$NON-NLS-1$
 			RegistryIndex index = RegistryIndex.build(monitor);
+			if (!typeNames.isEmpty()) {
+				return McpToolResult.of(reportNamed(typeNames, projects, index, kinds, visibility, status, maxResults,
+						includeReflection, monitor).toString());
+			}
 			List<IPackageFragmentRoot> roots = sourceRoots(projects, includeTest);
 			if (includeReflection) {
 				index.indexReflection(containers(roots), MAX_REFLECTION_FILES, monitor);
@@ -136,6 +151,53 @@ public final class ListDeclarationsTool implements IMcpTool {
 		} catch (CoreException e) {
 			throw new McpToolException("Could not read the workspace", e); //$NON-NLS-1$
 		}
+	}
+
+	/**
+	 * Reports named types directly, without walking anything.
+	 * <p>
+	 * The registry cross-check is the expensive part and is shared, so asking about
+	 * twenty candidates costs one index build rather than twenty project walks.
+	 */
+	private JsonObject reportNamed(List<String> typeNames, List<IJavaProject> projects, RegistryIndex index,
+			List<String> kinds, Set<String> visibility, String status, int maxResults, boolean includeReflection,
+			IProgressMonitor monitor) throws CoreException, McpToolException {
+		LineIndex lines = new LineIndex();
+		PackageExports exports = new PackageExports();
+		Set<String> workspaceBundles = workspaceBundles();
+		JsonArray declarations = new JsonArray();
+		JsonArray unresolved = new JsonArray();
+		int total = 0;
+		for (String name : typeNames) {
+			if (monitor.isCanceled()) {
+				return new JsonObject().put("cancelled", Boolean.TRUE); //$NON-NLS-1$
+			}
+			IType type;
+			try {
+				type = JavaModelSupport.findType(name, projects, monitor);
+			} catch (ToolInputException e) {
+				unresolved.add(name);
+				continue;
+			}
+			if (type.isBinary()) {
+				unresolved.add(name);
+				continue;
+			}
+			total += collect(type, index, kinds, visibility, status, maxResults, declarations, lines, exports,
+					workspaceBundles, monitor);
+		}
+		JsonObject result = new JsonObject().put("kinds", array(kinds)) //$NON-NLS-1$
+				.put("status", status) //$NON-NLS-1$
+				.put("total", Integer.valueOf(total)) //$NON-NLS-1$
+				.put("truncated", Boolean.valueOf(total > declarations.size())) //$NON-NLS-1$
+				.put("declarations", declarations); //$NON-NLS-1$
+		if (unresolved.size() > 0) {
+			result.put("unresolved", unresolved) //$NON-NLS-1$
+					.put("unresolvedNote", //$NON-NLS-1$
+							"These names did not resolve to a source type in this workspace. A binary type is not reported, because this tool is about source a project declares."); //$NON-NLS-1$
+		}
+		addCaveats(result, index, includeReflection, List.of());
+		return result;
 	}
 
 	private JsonObject report(List<IPackageFragmentRoot> roots, RegistryIndex index, List<String> kinds,

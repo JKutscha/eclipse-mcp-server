@@ -77,7 +77,7 @@ public final class GetTypeHierarchyTool implements IMcpTool {
 			if (projects.isEmpty()) {
 				return McpToolResult.error("The workspace contains no open Java project."); //$NON-NLS-1$
 			}
-			type = JavaModelSupport.findType(typeName, projects);
+			type = JavaModelSupport.findType(typeName, projects, monitor);
 		} catch (ToolInputException e) {
 			return McpToolResult.error(e.getMessage());
 		}

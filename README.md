@@ -507,6 +507,7 @@ Enumerates the types, methods or fields a project declares in its own source, an
 
 | Argument | Type | Default | Meaning |
 |---|---|---|---|
+| `typeNames` | array of strings | | Report only these types, resolved directly instead of by walking a project. |
 | `project` | string | | Project to enumerate. |
 | `projects` | array of strings | | Several projects, instead of `project`. |
 | `kinds` | array of `types` \| `methods` \| `fields` | `["types"]` | |
@@ -515,6 +516,8 @@ Enumerates the types, methods or fields a project declares in its own source, an
 | `includeTest` | boolean | `false` | Include source folders the build path marks as test. |
 | `includeReflection` | boolean | `true` | Scan source for `Class.forName` and `loadClass`. |
 | `maxResults` | integer, 1 to 5000 | 500 | |
+
+`typeNames` turns it around: when you already have candidates, it resolves each one and gives you the registry and API verdict per type without walking anything, sharing one registry index across the batch. Names that do not resolve to a source type come back in `unresolved`.
 
 This is the candidate generation step of a dead code sweep. `eclipse_find_references` is the confirm step, and neither replaces the other: search is fast and resolves overloads and inheritance, but it cannot enumerate, and zero references does not mean dead.
 
@@ -767,12 +770,15 @@ Searches the text of workspace files, including the ones the Java model cannot s
 | `projects` | array of strings | whole workspace | |
 | `path` | string | | Restrict to a workspace folder or file. |
 | `fileNamePattern` | string | every file | Glob over file names, e.g. `*.exsd`. |
-| `includeDerived` | boolean | `false` | Include build output. |
+| `excludePathPattern` | string | | Glob over the workspace path; matches are skipped. |
+| `includeDerived` | boolean | `false` | Include resources Eclipse marks derived. |
 | `maxResults` | integer, 1 to 5000 | 200 | |
 
 For Java elements `eclipse_find_references` answers better, because it resolves overloads and inheritance and this does not. This is for everything that is not Java.
 
-It runs through Eclipse's own `TextSearchEngine`, so **derived resources are excluded by default**. That is the difference between this and a raw grep of the same tree, where every type comes back once per copy under a build output directory.
+**Maven and Gradle output is not marked derived**, so `includeDerived` does not exclude it and a search of a built tree comes back mostly build output. `excludePathPattern` is the answer, for example `*/target/*`, and `excludedByPath` reports how many matches it dropped.
+
+It runs through Eclipse's own `TextSearchEngine`, so **resources Eclipse marks derived are excluded by default**. That is the difference between this and a raw grep of the same tree, where every type comes back once per copy under a build output directory.
 
 Each match reports the file, the line number and the line, capped at 500 characters.
 

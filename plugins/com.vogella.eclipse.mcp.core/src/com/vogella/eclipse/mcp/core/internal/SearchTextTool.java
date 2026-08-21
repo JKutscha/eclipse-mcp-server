@@ -39,7 +39,7 @@ public final class SearchTextTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Searches the text of workspace files, including the ones the Java model cannot see: plugin.xml, .exsd schemas, .project, manifests, properties. Read-only. For Java elements eclipse_find_references answers better, because it resolves overloads and inheritance and this does not; this is for everything that is not Java, and for a client that has no filesystem of its own because the IDE is on another machine or hidden. It searches through Eclipse's own text search, so derived resources such as build output are excluded by default rather than returned as duplicate noise, and fileNamePattern narrows to the files that matter."; //$NON-NLS-1$
+		return "Searches the text of workspace files, including the ones the Java model cannot see: plugin.xml, .exsd schemas, .project, manifests, properties. Read-only. For Java elements eclipse_find_references answers better, because it resolves overloads and inheritance and this does not; this is for everything that is not Java, and for a client that has no filesystem of its own because the IDE is on another machine or hidden. It searches through Eclipse's own text search, so resources Eclipse marks derived are excluded by default rather than returned as duplicate noise, and fileNamePattern narrows to the files that matter. Maven and Gradle output under target and build is NOT marked derived and is therefore not covered by that; use excludePathPattern, for example */target/*, to drop it."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -55,6 +55,7 @@ public final class SearchTextTool implements IMcpTool {
 				    "projects":        {"type":"array","items":{"type":"string"},"description":"Restrict to these projects. Omit for the whole workspace."},
 				    "path":            {"type":"string","description":"Restrict to this workspace folder or file, e.g. /app/src."},
 				    "fileNamePattern": {"type":"string","description":"Glob over file names, e.g. *.exsd or plugin.xml. Omit for every file."},
+				    "excludePathPattern": {"type":"string","description":"Glob over the workspace path, matches are skipped, e.g. */target/* to drop Maven build output. Maven and Gradle output is not marked derived, so includeDerived does not exclude it."},
 				    "includeDerived":  {"type":"boolean","default":false,"description":"Include derived resources, which is build output."},
 				    "maxResults":      {"type":"integer","default":200,"minimum":1,"maximum":5000}
 				  },
@@ -79,6 +80,12 @@ public final class SearchTextTool implements IMcpTool {
 			pattern = TextSearchEngine.createPattern(text, caseSensitive, isRegex);
 		} catch (PatternSyntaxException e) {
 			return McpToolResult.error("Could not read 'pattern' as a regular expression: " + e.getMessage()); //$NON-NLS-1$
+		}
+		Pattern excluded;
+		try {
+			excluded = Globs.compile(args.getString("excludePathPattern")); //$NON-NLS-1$
+		} catch (PatternSyntaxException e) {
+			return McpToolResult.error("Could not read 'excludePathPattern' as a glob: " + e.getMessage()); //$NON-NLS-1$
 		}
 		Pattern fileNames;
 		try {
@@ -108,7 +115,7 @@ public final class SearchTextTool implements IMcpTool {
 			roots.add(ResourcesPlugin.getWorkspace().getRoot());
 		}
 
-		Collector collector = new Collector(maxResults);
+		Collector collector = new Collector(maxResults, excluded);
 		// the scope matches every file name against this, so "no filter" has to be a
 		// pattern that matches rather than null, which it dereferences
 		TextSearchScope scope = TextSearchScope.newSearchScope(roots.toArray(IResource[]::new),
@@ -122,6 +129,7 @@ public final class SearchTextTool implements IMcpTool {
 				.put("total", Integer.valueOf(collector.distinct.size())) //$NON-NLS-1$
 				.put("files", Integer.valueOf(collector.locations.size())) //$NON-NLS-1$
 				.put("duplicatePathsCollapsed", Integer.valueOf(collector.collapsed)) //$NON-NLS-1$
+				.put("excludedByPath", Integer.valueOf(collector.excludedMatches)) //$NON-NLS-1$
 				.put("truncated", Boolean.valueOf(collector.distinct.size() > maxResults)) //$NON-NLS-1$
 				.put("matches", collector.matches(maxResults)); //$NON-NLS-1$
 		if (collector.collapsed > 0) {
@@ -148,14 +156,19 @@ public final class SearchTextTool implements IMcpTool {
 
 		private final int maxResults;
 
+		private final Pattern excluded;
+
 		private int collapsed;
+
+		private int excludedMatches;
 
 		private IFile currentFile;
 
 		private int[] lineStarts;
 
-		Collector(int maxResults) {
+		Collector(int maxResults, Pattern excluded) {
 			this.maxResults = maxResults;
+			this.excluded = excluded;
 		}
 
 		@Override
@@ -181,6 +194,10 @@ public final class SearchTextTool implements IMcpTool {
 		public boolean acceptPatternMatch(TextSearchMatchAccess match) {
 			IFile file = match.getFile();
 			String path = file.getFullPath().toString();
+			if (excluded != null && excluded.matcher(path).matches()) {
+				excludedMatches++;
+				return true;
+			}
 			int offset = match.getMatchOffset();
 			// 754 of 755 projects in a platform workspace are nested inside another
 			// one, so a single file on disk is reachable through several workspace

@@ -9,6 +9,7 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IField;
@@ -69,6 +70,22 @@ final class JavaModelSupport {
 	 * @throws ToolInputException if no project resolves the name
 	 */
 	static IType findType(String typeName, List<IJavaProject> projects) throws ToolInputException, McpToolException {
+		return findType(typeName, projects, null);
+	}
+
+	/**
+	 * Returns the first type resolvable under the given fully qualified name.
+	 * <p>
+	 * A monitor is what makes secondary types findable: JDT's own javadoc says
+	 * {@code findType(String)} excludes them, because without a monitor it resolves
+	 * through the package fragments alone, where a package-private class declared
+	 * in a file of a different name does not appear. The index knows about it and is
+	 * only consulted by the monitor-taking overload.
+	 *
+	 * @throws ToolInputException if no project resolves the name
+	 */
+	static IType findType(String typeName, List<IJavaProject> projects, IProgressMonitor monitor)
+			throws ToolInputException, McpToolException {
 		IType binaryFallback = null;
 		for (IJavaProject project : projects) {
 			try {
@@ -93,6 +110,13 @@ final class JavaModelSupport {
 		}
 		if (binaryFallback != null) {
 			return binaryFallback;
+		}
+		// only now the slower lookup, which goes to the index for secondary types.
+		// Doing it first would put an index query in front of every call that does
+		// not need one
+		IType secondary = findSecondaryType(typeName, projects, monitor);
+		if (secondary != null) {
+			return secondary;
 		}
 		throw new ToolInputException(
 				"Could not resolve the type '%s' on the classpath of %s. Use a fully qualified name." //$NON-NLS-1$
@@ -125,6 +149,24 @@ final class JavaModelSupport {
 	 * source does not contain the type at all, which is worse than useless because
 	 * nothing in the answer marks it as second hand.
 	 */
+	/** A package-private type declared in a file named after a different type. */
+	private static IType findSecondaryType(String typeName, List<IJavaProject> projects, IProgressMonitor monitor)
+			throws McpToolException {
+		for (IJavaProject project : projects) {
+			try {
+				IType type = project.findType(typeName,
+						monitor == null ? new org.eclipse.core.runtime.NullProgressMonitor() : monitor);
+				if (type != null && type.exists() && !type.isBinary()) {
+					return type;
+				}
+			} catch (JavaModelException e) {
+				throw new McpToolException("Could not resolve type %s in project %s".formatted(typeName, //$NON-NLS-1$
+						project.getElementName()), e);
+			}
+		}
+		return null;
+	}
+
 	static void describeLocation(org.eclipse.jdt.core.search.SearchMatch match, JsonObject entry) {
 		org.eclipse.core.resources.IResource resource = match.getResource();
 		IJavaElement element = match.getElement() instanceof IJavaElement found ? found : null;

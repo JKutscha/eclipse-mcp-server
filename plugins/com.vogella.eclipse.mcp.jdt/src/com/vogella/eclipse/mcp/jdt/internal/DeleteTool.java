@@ -81,7 +81,7 @@ public final class DeleteTool implements IMcpTool {
 		List<IJavaProject> projects;
 		try {
 			projects = JavaModelSupport.javaProjects(args.getString("project")); //$NON-NLS-1$
-			type = JavaModelSupport.findType(typeName, projects);
+			type = JavaModelSupport.findType(typeName, projects, monitor);
 		} catch (ToolInputException e) {
 			return McpToolResult.error(e.getMessage());
 		}

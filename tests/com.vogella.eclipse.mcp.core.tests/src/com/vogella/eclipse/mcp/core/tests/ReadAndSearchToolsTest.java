@@ -130,6 +130,25 @@ class ReadAndSearchToolsTest {
 	}
 
 	@Test
+	void excludesPathsThatAreNotMarkedDerived() throws Exception {
+		IProject project = fixture.createProject(PROJECT);
+		project.getFolder("target").create(false, true, new NullProgressMonitor());
+		write(project, "target/copy.xml", "a.b.Matcher\n");
+		write(project, "plugin.xml", "a.b.Matcher\n");
+
+		// Maven and Gradle output is not marked derived, so includeDerived false does
+		// not exclude it and a search of a built tree is mostly build output
+		Map<String, Object> all = TestFixture.callAndParse("eclipse_search_text",
+				Map.of("pattern", "a.b.Matcher", "projects", List.of(PROJECT)));
+		assertEquals(Integer.valueOf(2), all.get("total"));
+
+		Map<String, Object> filtered = TestFixture.callAndParse("eclipse_search_text", Map.of("pattern",
+				"a.b.Matcher", "projects", List.of(PROJECT), "excludePathPattern", "*/target/*"));
+		assertEquals(Integer.valueOf(1), filtered.get("total"), "got " + filtered);
+		assertEquals(Integer.valueOf(1), filtered.get("excludedByPath"));
+	}
+
+	@Test
 	void searchesByRegularExpression() throws Exception {
 		IProject project = fixture.createProject(PROJECT);
 		write(project, "schema.exsd", "<meta.attribute kind=\"java\" basedOn=\"a.b.C:\"/>\n");

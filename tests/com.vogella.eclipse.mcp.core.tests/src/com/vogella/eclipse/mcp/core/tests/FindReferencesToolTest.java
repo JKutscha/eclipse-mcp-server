@@ -24,6 +24,29 @@ class FindReferencesToolTest {
 	}
 
 	@Test
+	void resolvesASecondaryType() throws Exception {
+		IJavaProject project = fixture.createJavaProject("mcp-secondary-type-test");
+		// a package-private type declared in a file named after a different type.
+		// JDT's findType(String) excludes these by its own documentation, and only
+		// the monitor-taking overload consults the index where they are known
+		TestFixture.addType(project, "example", "Holder", """
+				package example;
+				public class Holder {
+					Secondary use() { return new Secondary(); }
+				}
+				class Secondary {
+				}
+				""");
+		TestFixture.build(project.getProject());
+
+		Map<String, Object> result = TestFixture.callAndParse("eclipse_find_references",
+				Map.of("typeName", "example.Secondary", "project", "mcp-secondary-type-test"));
+
+		assertTrue(((Number) result.get("total")).intValue() > 0,
+				"references to a secondary type should be found, got " + result);
+	}
+
+	@Test
 	@SuppressWarnings("unchecked")
 	void findsAReferenceBetweenTwoTypes() throws Exception {
 		createFixtureProject();
