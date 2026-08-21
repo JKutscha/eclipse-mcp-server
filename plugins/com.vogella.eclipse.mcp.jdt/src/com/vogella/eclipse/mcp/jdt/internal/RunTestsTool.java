@@ -73,8 +73,9 @@ public final class RunTestsTool implements IMcpTool {
 				    "pluginTest":     {"type":"string","enum":["auto","true","false"],"default":"auto","description":"Run as a JUnit Plug-in Test, which launches a second Eclipse with a running platform. 'auto' uses it when the project is a plug-in project. Tests that need OSGi fail as plain JUnit with errors that look like broken tests rather than real results."},
 				    "ui":             {"type":"boolean","default":false,"description":"Use the UI test application, which opens a workbench window on the user's screen. Off by default: a launched IDE should never be a surprise."},
 				    "runtimeWorkspace": {"type":"string","description":"Workspace directory for the launched platform. Defaults to a sibling junit-workspace, and it is cleared on every run."},
+				    "maxResults":     {"type":"integer","default":50,"minimum":1,"maximum":2000,"description":"Reported cases. A suite of several hundred truncates; omitted says how many were dropped and eclipse_get_test_results returns the rest."},
 				    "dryRun":         {"type":"boolean","default":false,"description":"List the test types that would run, without running anything."},
-				    "wait":           {"type":"boolean","default":true},
+				    "wait":           {"type":"boolean","default":true,"description":"Defaults to false for a plug-in test: launching a second Eclipse takes tens of seconds, well past the server's call timeout, so waiting would abandon the call rather than answer it."},
 				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":3600,"description":"Keep below the server's tool call timeout; poll with eclipse_get_test_results for longer runs."}
 				  },
 				  "additionalProperties": false
@@ -154,15 +155,25 @@ public final class RunTestsTool implements IMcpTool {
 								.formatted(e.getMessage(), kind));
 			}
 
-			if (args.getBoolean("wait", true)) { //$NON-NLS-1$
+			// a launched platform starts far too slowly to hold a call open for
+			if (args.getBoolean("wait", !asPlugin)) { //$NON-NLS-1$
 				try {
 					run.await(args.getInt("timeoutSeconds", 25, 1, 3600)); //$NON-NLS-1$
 				} catch (InterruptedException e) {
 					Thread.currentThread().interrupt();
 				}
 			}
-			JsonObject result = TestRunRegistry.toJson(run, 50, false).put("testKind", kind) //$NON-NLS-1$
+			JsonObject result = TestRunRegistry.toJson(run, args.getInt("maxResults", 50, 1, 2000), false) //$NON-NLS-1$
+					.put("testKind", kind) //$NON-NLS-1$
 					.put("launchedAs", asPlugin ? (ui ? "pluginTest-ui" : "pluginTest") : "junit"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+			if (asPlugin && run.running()) {
+				result.put("note", //$NON-NLS-1$
+						"A second Eclipse is starting, which takes tens of seconds before the first test runs. Poll eclipse_get_test_results with this runId."); //$NON-NLS-1$
+			}
+			if (asPlugin && !ui) {
+				result.put("headless", //$NON-NLS-1$
+						"Running the core test application, which has no workbench. Tests that need a Display fail here; pass ui true to run them in a real workbench window."); //$NON-NLS-1$
+			}
 			if (!asPlugin && project.hasNature(PLUGIN_NATURE)) {
 				result.put("caveat", //$NON-NLS-1$
 						"'%s' is a plug-in project but was run as plain JUnit, so tests needing OSGi fail with errors such as 'The application has not been initialized', a null IExtensionRegistry or NoClassDefFoundError. Those are not test failures. Omit pluginTest to launch a platform." //$NON-NLS-1$

@@ -78,6 +78,10 @@ public final class TestRunRegistry {
 			return id;
 		}
 
+		public boolean running() {
+			return running;
+		}
+
 		String launchName() {
 			return launchName;
 		}
@@ -239,6 +243,9 @@ public final class TestRunRegistry {
 				.put("errors", errors) //$NON-NLS-1$
 				.put("ignored", ignored) //$NON-NLS-1$
 				.put("truncated", interesting.size() > reported.size()) //$NON-NLS-1$
+				// how many were dropped, so a caller knows to ask eclipse_get_test_results
+				// for the rest rather than only that something is missing
+				.put("omitted", interesting.size() - reported.size()) //$NON-NLS-1$
 				.put("message", run.message) //$NON-NLS-1$
 				.put("tests", reported); //$NON-NLS-1$
 	}
