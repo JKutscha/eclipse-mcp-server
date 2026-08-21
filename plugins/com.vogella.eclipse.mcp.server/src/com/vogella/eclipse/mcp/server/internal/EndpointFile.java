@@ -30,7 +30,12 @@ public final class EndpointFile {
 
 	public static void write(McpEndpoint endpoint) {
 		Path path = location();
-		String json = new JsonObject().put("url", endpoint.url()).put("token", endpoint.token()).toString(); //$NON-NLS-1$ //$NON-NLS-2$
+		// startedAt identifies this server process. A client that restarts the IDE
+		// cannot tell "reachable" from "restarted", because the reply is sent before
+		// the restart begins and the old process answers until it dies; comparing this
+		// value across a reconnect is the cheap way to know the new one is up.
+		String json = new JsonObject().put("url", endpoint.url()).put("token", endpoint.token()) //$NON-NLS-1$ //$NON-NLS-2$
+				.put("startedAt", System.currentTimeMillis()).toString(); //$NON-NLS-1$
 		try {
 			PrivateFiles.write(path, json);
 		} catch (IOException e) {

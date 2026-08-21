@@ -138,8 +138,10 @@ public final class RestartTool implements IMcpTool {
 				.put("inMillis", RESTART_DELAY_MILLIS) //$NON-NLS-1$
 				.put("workspace", workspaceLocation()) //$NON-NLS-1$
 				.put("savedEditors", save) //$NON-NLS-1$
+				.put("verifyRestartWith", //$NON-NLS-1$
+						"Read startedAt from the discovery file before and after; it changes only when a new server process comes up.") //$NON-NLS-1$
 				.put("note", //$NON-NLS-1$
-						"The connection will drop when the IDE goes down. Reconnect with the same bearer token, which is kept in the bundle state location and survives restarts and updates. The IDE is relaunched into the workspace named above; if it comes back asking which workspace to use, the relaunch lost its arguments and a human has to answer the chooser."); //$NON-NLS-1$
+						"The connection will drop when the IDE goes down. IMPORTANT: this answer is sent BEFORE the restart, so the old server keeps answering for a couple of seconds and a reachability check will succeed against the process that is about to die. Wait for the connection to drop and then return, or compare startedAt in the discovery file. Reconnect with the same bearer token, which survives restarts and updates. The IDE is relaunched into the workspace named above; if it comes back asking which workspace to use, the relaunch lost its arguments and a human has to answer the chooser."); //$NON-NLS-1$
 	}
 
 	/** The workspace the IDE is expected to come back into. */

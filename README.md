@@ -78,9 +78,12 @@ On startup the server writes a discovery file so that no value has to be copied 
 ```json
 {
   "url": "http://127.0.0.1:8642/mcp",
-  "token": "0f0f2a2e-1f9c-4c4a-9a0e-6d0f8f0f1e2b"
+  "token": "0f0f2a2e-1f9c-4c4a-9a0e-6d0f8f0f1e2b",
+  "startedAt": 1787300000000
 }
 ```
+
+`startedAt` identifies the server process. It matters after `eclipse_restart`, which answers *before* it restarts: the old server keeps responding for a couple of seconds, so a plain reachability check succeeds against the process that is about to die. Compare `startedAt` across the reconnect to know the new one is really up.
 
 The file is created with owner-only permissions and deleted when the server stops.
 
