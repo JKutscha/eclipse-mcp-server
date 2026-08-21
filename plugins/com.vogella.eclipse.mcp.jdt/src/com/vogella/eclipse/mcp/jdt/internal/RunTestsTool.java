@@ -43,6 +43,15 @@ public final class RunTestsTool implements IMcpTool {
 
 	private static final String PLUGIN_NATURE = "org.eclipse.pde.PluginNature"; //$NON-NLS-1$
 
+	/**
+	 * The preference the "Errors in Workspace / Always launch without asking" toggle
+	 * writes. Launching with compile errors otherwise raises a modal dialog through
+	 * the debug.ui status handler, which blocks a call nobody is watching.
+	 */
+	private static final String DEBUG_UI = "org.eclipse.debug.ui"; //$NON-NLS-1$
+
+	private static final String CONTINUE_WITH_COMPILE_ERROR = "org.eclipse.debug.ui.PREF_CONTINUE_WITH_COMPILE_ERROR"; //$NON-NLS-1$
+
 	/** Launch configuration attributes of the JUnit launcher, which are a stable contract. */
 	private static final String ATTR_CONTAINER = "org.eclipse.jdt.junit.CONTAINER"; //$NON-NLS-1$
 
@@ -115,6 +124,12 @@ public final class RunTestsTool implements IMcpTool {
 				return McpToolResult.of(dryRun(javaProject, type, monitor).toString());
 			}
 
+			TestRunRegistry.Run active = TestRunRegistry.getInstance().findRunning();
+			if (active != null) {
+				return McpToolResult.error(
+						"A test run is already in progress (%s). Two overlapping runs share JDT's AST parser and can fail with an IllegalStateException, so this one is refused; poll eclipse_get_test_results for the active run first." //$NON-NLS-1$
+								.formatted(active.id()));
+			}
 			String kind = testKind(javaProject);
 			String pluginTest = args.getString("pluginTest", "auto"); //$NON-NLS-1$ //$NON-NLS-2$
 			boolean asPlugin = "true".equals(pluginTest) //$NON-NLS-1$
@@ -143,17 +158,21 @@ public final class RunTestsTool implements IMcpTool {
 					configuration.setAttribute(ATTR_TEST_NAME, testMethod);
 				}
 			}
-			try {
-				// never saved: a run started here must not litter the user's launch history
-				configuration.launch(ILaunchManager.RUN_MODE, null);
-			} catch (RuntimeException e) {
-				// the runner bundles are part of the SDK; a stripped IDE can lack them,
-				// and JDT reports that as an assertion rather than a CoreException
-				TestRunRegistry.failed(run, e.getMessage());
-				return McpToolResult.error(
-						"Could not launch the tests: %s. The JUnit runner for %s may not be installed in this IDE." //$NON-NLS-1$
-								.formatted(e.getMessage(), kind));
-			}
+			// launching happens in a job: preLaunchCheck alone can take a while, and
+			// doing it here would defeat wait:false exactly as the p2 refresh once did
+			org.eclipse.core.runtime.jobs.Job.create("MCP test launch " + run.id(), progress -> { //$NON-NLS-1$
+				Object previous = suppressCompileErrorPrompt();
+				try {
+					configuration.launch(ILaunchManager.RUN_MODE, null);
+				} catch (CoreException | RuntimeException e) {
+					// the runner bundles ship with the SDK, and JDT reports a missing one
+					// as an assertion rather than a CoreException
+					TestRunRegistry.failed(run, describe(e));
+				} finally {
+					restoreCompileErrorPrompt(previous);
+				}
+				return org.eclipse.core.runtime.Status.OK_STATUS;
+			}).schedule();
 
 			// a launched platform starts far too slowly to hold a call open for
 			if (args.getBoolean("wait", !asPlugin)) { //$NON-NLS-1$
@@ -170,6 +189,12 @@ public final class RunTestsTool implements IMcpTool {
 				result.put("note", //$NON-NLS-1$
 						"A second Eclipse is starting, which takes tens of seconds before the first test runs. Poll eclipse_get_test_results with this runId."); //$NON-NLS-1$
 			}
+			JsonArray broken = projectsWithErrors(project);
+			if (broken.size() > 0) {
+				result.put("launchedWithCompileErrors", broken) //$NON-NLS-1$
+						.put("compileErrorNote", //$NON-NLS-1$
+								"These projects do not compile. Eclipse would normally ask whether to launch anyway; this server answered yes, because a dialog would block a call nobody is watching. Failures may be stale classes rather than real results."); //$NON-NLS-1$
+			}
 			if (asPlugin && !ui) {
 				result.put("headless", //$NON-NLS-1$
 						"Running the core test application, which has no workbench. Tests that need a Display fail here; pass ui true to run them in a real workbench window."); //$NON-NLS-1$
@@ -181,8 +206,68 @@ public final class RunTestsTool implements IMcpTool {
 			}
 			return McpToolResult.of(result.toString());
 		} catch (CoreException e) {
-			throw new McpToolException("Could not run the tests of " + projectName, e); //$NON-NLS-1$
+			// the cause's own text in the message: a bare "could not run the tests"
+			// restates the request and says nothing about what went wrong
+			throw new McpToolException(
+					"Could not run the tests of %s: %s".formatted(projectName, describe(e)), e); //$NON-NLS-1$
 		}
+	}
+
+	/** Pre-answers the compile error prompt, returning the previous setting. */
+	private static Object suppressCompileErrorPrompt() {
+		var node = org.eclipse.core.runtime.preferences.InstanceScope.INSTANCE.getNode(DEBUG_UI);
+		String previous = node.get(CONTINUE_WITH_COMPILE_ERROR, null);
+		node.put(CONTINUE_WITH_COMPILE_ERROR, "always"); //$NON-NLS-1$
+		return previous;
+	}
+
+	private static void restoreCompileErrorPrompt(Object previous) {
+		var node = org.eclipse.core.runtime.preferences.InstanceScope.INSTANCE.getNode(DEBUG_UI);
+		if (previous instanceof String value) {
+			node.put(CONTINUE_WITH_COMPILE_ERROR, value);
+		} else {
+			node.remove(CONTINUE_WITH_COMPILE_ERROR);
+		}
+	}
+
+	/** The projects the launch depends on that do not compile. */
+	private static JsonArray projectsWithErrors(IProject project) {
+		JsonArray broken = new JsonArray();
+		java.util.List<IProject> scope = new java.util.ArrayList<>();
+		scope.add(project);
+		try {
+			scope.addAll(java.util.List.of(project.getReferencedProjects()));
+		} catch (CoreException | RuntimeException e) {
+			// PDE can throw computing dynamic references; the launch project alone will do
+		}
+		for (IProject candidate : scope) {
+			try {
+				if (!candidate.isAccessible()) {
+					continue;
+				}
+				for (org.eclipse.core.resources.IMarker marker : candidate.findMarkers(
+						org.eclipse.core.resources.IMarker.PROBLEM, true,
+						org.eclipse.core.resources.IResource.DEPTH_INFINITE)) {
+					if (marker.getAttribute(org.eclipse.core.resources.IMarker.SEVERITY,
+							-1) == org.eclipse.core.resources.IMarker.SEVERITY_ERROR) {
+						broken.add(candidate.getName());
+						break;
+					}
+				}
+			} catch (CoreException e) {
+				// a project whose markers cannot be read is not evidence either way
+			}
+		}
+		return broken;
+	}
+
+	/** An exception with no message is useless to a caller; name the type at least. */
+	private static String describe(Throwable e) {
+		if (e.getMessage() != null && !e.getMessage().isBlank()) {
+			return e.getMessage();
+		}
+		StackTraceElement[] frames = e.getStackTrace();
+		return e.getClass().getName() + (frames.length == 0 ? "" : " at " + frames[0]); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
 	/**

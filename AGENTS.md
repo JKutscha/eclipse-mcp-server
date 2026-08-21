@@ -192,6 +192,12 @@ The update site is a composite whose child location changes per release rather t
 **`IWorkbench.restart()` relaunches without the original command line.**
 Use `restart(true)`. The no argument form drops `-data`, so the IDE comes back up showing the workspace chooser and waits for a person, which is exactly what an unattended restart must not do.
 
+**Every long running IDE operation a client drives has a dialog in it somewhere.**
+Three so far: p2's unsigned content prompt, the workspace chooser on restart, and the launch time "Errors in Workspace" prompt raised by the `org.eclipse.debug.ui` status handler.
+Each blocked a call nobody was watching, and each was invisible in the protocol until someone looked at the screen.
+The answer is always the same: do not let the dialog be raised on a path a client drives, answer it, and report what was answered.
+Before adding a tool that runs project code or touches the installation, look for a prompting `IStatusHandler` on that path rather than waiting for it to surface.
+
 **p2 prompts block a provisioning job, and a blocked job looks like a slow download.**
 The IDE's `UIServices` raises a modal dialog for unsigned content, and from a client that is indistinguishable from a slow mirror until the call times out.
 `HeadlessTrust` replaces it for the duration of a provisioning call: it answers rather than prompting, refuses by default, and records what it refused so the result says why.

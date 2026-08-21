@@ -58,8 +58,29 @@ public final class McpToolAdapter {
 		} catch (ExecutionException e) {
 			Throwable cause = e.getCause() == null ? e : e.getCause();
 			ILog.get().error("The MCP tool '%s' failed".formatted(tool.getName()), cause); //$NON-NLS-1$
-			return error("The tool '%s' failed: %s".formatted(tool.getName(), cause.getMessage())); //$NON-NLS-1$
+			return error("The tool '%s' failed: %s".formatted(tool.getName(), describe(cause))); //$NON-NLS-1$
 		}
+	}
+
+	/**
+	 * Some exceptions carry no message, and "failed: null" tells a caller nothing.
+	 * Name the type and where it came from instead, and chase the cause chain.
+	 */
+	private static String describe(Throwable throwable) {
+		StringBuilder text = new StringBuilder();
+		for (Throwable current = throwable; current != null && text.length() < 500; current = current.getCause()) {
+			if (text.length() > 0) {
+				text.append(" caused by "); //$NON-NLS-1$
+			}
+			text.append(current.getMessage() == null || current.getMessage().isBlank()
+					? current.getClass().getName()
+							+ (current.getStackTrace().length == 0 ? "" : " at " + current.getStackTrace()[0]) //$NON-NLS-1$ //$NON-NLS-2$
+					: current.getMessage());
+			if (current.getCause() == current) {
+				break;
+			}
+		}
+		return text.toString();
 	}
 
 	private static CallToolResult error(String message) {

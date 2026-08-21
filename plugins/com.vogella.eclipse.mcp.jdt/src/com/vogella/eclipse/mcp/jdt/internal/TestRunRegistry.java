@@ -177,6 +177,16 @@ public final class TestRunRegistry {
 		return runs.get(id);
 	}
 
+	/** The run still in progress, if any. JDT's AST parser is not safe to share. */
+	public synchronized Run findRunning() {
+		for (Run run : runs.values()) {
+			if (run.running) {
+				return run;
+			}
+		}
+		return null;
+	}
+
 	public synchronized Run findLatest() {
 		return lastId == null ? null : runs.get(lastId);
 	}
