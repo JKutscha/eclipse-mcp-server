@@ -61,7 +61,7 @@ final class Provisioning {
 		private volatile String message;
 		private volatile JsonArray changes = new JsonArray();
 		private volatile String previousConfiguration;
-		private volatile JsonArray refusedTrust = new JsonArray();
+		private volatile JsonArray trustPrompts = new JsonArray();
 		private volatile boolean trustedUnsigned;
 
 		Operation(String id, String kind) {
@@ -82,10 +82,14 @@ final class Provisioning {
 					.put("message", message) //$NON-NLS-1$
 					.put("previousConfiguration", previousConfiguration) //$NON-NLS-1$
 					.put("trustedUnsigned", trustedUnsigned) //$NON-NLS-1$
-					.put("refusedTrust", refusedTrust); //$NON-NLS-1$
-			if (refusedTrust.size() > 0 && !trustedUnsigned) {
+					.put(trustedUnsigned ? "trustedContent" : "refusedTrust", trustPrompts); //$NON-NLS-1$ //$NON-NLS-2$
+			if (trustPrompts.size() > 0 && trustedUnsigned) {
+				json.put("trustNote", //$NON-NLS-1$
+						"p2 asked whether to trust content that is unsigned or signed by a certificate this IDE does not trust, and this server accepted it, because an install it performs is unattended and there is nobody to answer a dialog. Only repositories this IDE is already configured with can be installed from, which is what bounds this. Nothing was added to the IDE's permanent trust store. Pass trustUnsigned false to refuse instead."); //$NON-NLS-1$
+			}
+			if (trustPrompts.size() > 0 && !trustedUnsigned) {
 				json.put("blockedBy", //$NON-NLS-1$
-						"p2 asked whether to trust content that is unsigned or signed by an untrusted certificate, and this server answered no rather than raising a dialog nobody may be there to click. Pass trustUnsigned to accept it for this one call, after checking what refusedTrust names. Signing the artifacts on the update site removes the question for every consumer instead."); //$NON-NLS-1$
+						"trustUnsigned was false, so this server refused content that is unsigned or signed by an untrusted certificate rather than installing it."); //$NON-NLS-1$
 			}
 			if ("done".equals(state)) { //$NON-NLS-1$
 				json.put("restartRequired", true) //$NON-NLS-1$
@@ -163,11 +167,11 @@ final class Provisioning {
 		operation.changes = changes;
 	}
 
-	/** Records what p2 asked about, so a refusal is visible instead of looking like a slow download. */
+	/** Records what p2 asked about, so the answer is visible instead of looking like a slow download. */
 	static void setTrust(Operation operation, HeadlessTrust trust, boolean trustUnsigned) {
-		JsonArray refused = new JsonArray();
-		trust.refused().forEach(refused::add);
-		operation.refusedTrust = refused;
+		JsonArray prompts = new JsonArray();
+		trust.prompts().forEach(prompts::add);
+		operation.trustPrompts = prompts;
 		operation.trustedUnsigned = trustUnsigned && trust.prompted();
 	}
 

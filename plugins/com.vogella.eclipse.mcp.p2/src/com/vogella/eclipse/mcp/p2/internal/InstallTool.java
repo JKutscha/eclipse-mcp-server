@@ -49,7 +49,7 @@ public final class InstallTool implements IMcpTool {
 				    "unit":           {"type":"string","description":"Installable unit id, usually a feature id ending in .feature.group."},
 				    "repository":     {"type":"string","description":"Repository URL to install from. Must already be configured in this IDE. Omit to search every configured repository."},
 				    "version":        {"type":"string","description":"Exact version. Omit for the newest available."},
-				    "trustUnsigned":  {"type":"boolean","default":false,"description":"Accept unsigned content, or content signed by a certificate this IDE does not trust, for this one call. Refused by default: the repository allowlist restricts where code comes from, and trusting unsigned artifacts removes the remaining check on what that code is."},
+				    "trustUnsigned":  {"type":"boolean","default":true,"description":"Accept unsigned content, or content signed by a certificate this IDE does not trust. On by default, because an install performed by this server is unattended and there is nobody to answer the dialog p2 would otherwise raise. What bounds it is the repository allowlist: only sites the IDE is already configured with can be installed from. Nothing is added to the IDE's permanent trust store, and whatever was accepted is reported. Set false to refuse unsigned content instead."},
 				    "wait":           {"type":"boolean","default":false},
 				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":3600}
 				  },
@@ -131,7 +131,7 @@ public final class InstallTool implements IMcpTool {
 			changes.add(new JsonObject().put("unit", unit.getId()) //$NON-NLS-1$
 					.put("toVersion", unit.getVersion().toString())); //$NON-NLS-1$
 		}
-		boolean trustUnsigned = args.getBoolean("trustUnsigned", false); //$NON-NLS-1$
+		boolean trustUnsigned = args.getBoolean("trustUnsigned", true); //$NON-NLS-1$
 		HeadlessTrust trust = new HeadlessTrust(trustUnsigned);
 		Object previousTrust = HeadlessTrust.install(agent, trust);
 		ProvisioningJob job = operation.getProvisioningJob(null);

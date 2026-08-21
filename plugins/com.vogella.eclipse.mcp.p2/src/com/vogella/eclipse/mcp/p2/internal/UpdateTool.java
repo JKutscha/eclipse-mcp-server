@@ -37,7 +37,7 @@ public final class UpdateTool implements IMcpTool {
 				  "properties": {
 				    "units":          {"type":"array","items":{"type":"string"},"description":"Installed unit ids to update. Scopes the resolution to the repositories that can supply them, so a targeted update makes one network round trip instead of one per configured site. Omit to update everything that has an update."},
 				    "refresh":        {"type":"boolean","default":true,"description":"Re-read the repository metadata first. Without it the update resolves against p2's cache and may find nothing to apply."},
-				    "trustUnsigned":  {"type":"boolean","default":false,"description":"Accept unsigned content, or content signed by a certificate this IDE does not trust, for this one call. Refused by default: the repository allowlist restricts where code comes from, and trusting unsigned artifacts removes the remaining check on what that code is."},
+				    "trustUnsigned":  {"type":"boolean","default":true,"description":"Accept unsigned content, or content signed by a certificate this IDE does not trust. On by default, because an install performed by this server is unattended and there is nobody to answer the dialog p2 would otherwise raise. What bounds it is the repository allowlist: only sites the IDE is already configured with can be installed from. Nothing is added to the IDE's permanent trust store, and whatever was accepted is reported. Set false to refuse unsigned content instead."},
 				    "wait":           {"type":"boolean","default":false,"description":"Wait for the job. Updates are slow, so this is off by default."},
 				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":3600}
 				  },
@@ -81,7 +81,7 @@ public final class UpdateTool implements IMcpTool {
 					.put("fromVersion", update.toUpdate.getVersion().toString()) //$NON-NLS-1$
 					.put("toVersion", update.replacement.getVersion().toString())); //$NON-NLS-1$
 		}
-		boolean trustUnsigned = args.getBoolean("trustUnsigned", false); //$NON-NLS-1$
+		boolean trustUnsigned = args.getBoolean("trustUnsigned", true); //$NON-NLS-1$
 		HeadlessTrust trust = new HeadlessTrust(trustUnsigned);
 		Object previousTrust = HeadlessTrust.install(agent, trust);
 		ProvisioningJob job = operation.getProvisioningJob(null);

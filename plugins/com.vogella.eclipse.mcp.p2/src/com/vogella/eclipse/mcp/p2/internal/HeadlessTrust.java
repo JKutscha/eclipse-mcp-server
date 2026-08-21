@@ -13,15 +13,19 @@ import org.eclipse.equinox.p2.core.UIServices;
  * The IDE's own {@code UIServices} raises a modal dialog, which blocks the
  * provisioning job until somebody clicks it. From a client that is
  * indistinguishable from a slow download, so an unattended update hangs until
- * the call times out and the real cause never surfaces. This answers instead:
- * it refuses by default and records what it refused, so the caller gets a
- * truthful, terminating result.
+ * the call times out and the real cause never surfaces. This answers instead.
+ * <p>
+ * Unsigned content is accepted by default on this path, because an install the
+ * server performs is unattended by definition and there is nobody to click the
+ * dialog. What limits the exposure is the repository allowlist: only sites the
+ * IDE is already configured with can be installed from. Whatever was accepted
+ * is reported, so a trusted install is auditable rather than silent.
  */
 final class HeadlessTrust extends UIServices {
 
 	private final boolean trustUnsigned;
 
-	private final List<String> refused = new ArrayList<>();
+	private final List<String> prompts = new ArrayList<>();
 
 	private volatile boolean prompted;
 
@@ -33,8 +37,9 @@ final class HeadlessTrust extends UIServices {
 		return prompted;
 	}
 
-	synchronized List<String> refused() {
-		return List.copyOf(refused);
+	/** What p2 asked about, whether it was then trusted or refused. */
+	synchronized List<String> prompts() {
+		return List.copyOf(prompts);
 	}
 
 	/**
@@ -52,11 +57,11 @@ final class HeadlessTrust extends UIServices {
 		synchronized (this) {
 			if (unsignedDetail != null) {
 				for (String detail : unsignedDetail) {
-					refused.add(detail);
+					prompts.add(detail);
 				}
 			}
 			if (untrustedChains != null && untrustedChains.length > 0) {
-				refused.add("%d artifact(s) signed by a certificate this IDE does not trust"
+				prompts.add("%d artifact(s) signed by a certificate this IDE does not trust"
 						.formatted(untrustedChains.length));
 			}
 		}
@@ -69,7 +74,7 @@ final class HeadlessTrust extends UIServices {
 	public AuthenticationInfo getUsernamePassword(String location) {
 		prompted = true;
 		synchronized (this) {
-			refused.add("credentials for " + location);
+			prompts.add("credentials for " + location);
 		}
 		return AUTHENTICATION_PROMPT_CANCELED;
 	}
