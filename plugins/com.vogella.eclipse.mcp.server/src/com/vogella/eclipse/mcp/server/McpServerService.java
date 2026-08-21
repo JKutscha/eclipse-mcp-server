@@ -88,6 +88,17 @@ public final class McpServerService {
 	}
 
 	/**
+	 * The persisted bearer token, or {@code null} when none has been generated yet.
+	 * <p>
+	 * Available whether or not the server is running: the token is kept across
+	 * restarts, so it is a property of this workspace rather than of the process,
+	 * and a client can be configured with it before the server is ever started.
+	 */
+	public static String getToken() {
+		return TokenStore.get();
+	}
+
+	/**
 	 * The message of the last failed {@link #start()}, or {@code null} when the server
 	 * started or was never asked to. Typically a port that is already in use.
 	 */

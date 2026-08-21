@@ -49,6 +49,10 @@ public class McpPreferencePage extends FieldEditorPreferencePage implements IWor
 
 	private Text token;
 
+	private Button tokenCopy;
+
+	private Button lastCopyButton;
+
 	public McpPreferencePage() {
 		super(GRID);
 	}
@@ -98,7 +102,8 @@ public class McpPreferencePage extends FieldEditorPreferencePage implements IWor
 		status.setLayoutData(new GridData(SWT.FILL, SWT.BEGINNING, true, false, 3, 1));
 
 		url = addCopyableField(group, "&URL:", true);
-		token = addCopyableField(group, "&Token:", true);
+		token = addCopyableField(group, "&Token:", false);
+		tokenCopy = lastCopyButton;
 		addCopyableField(group, "&File:", false).setText(McpServerService.getEndpointFile().toString());
 
 		Button regenerate = new Button(group, SWT.PUSH);
@@ -152,6 +157,7 @@ public class McpPreferencePage extends FieldEditorPreferencePage implements IWor
 		if (onlyWhenRunning) {
 			copyButtons.add(copy);
 		}
+		lastCopyButton = copy;
 		return text;
 	}
 
@@ -188,10 +194,19 @@ public class McpPreferencePage extends FieldEditorPreferencePage implements IWor
 		McpEndpoint endpoint = McpServerService.getInstance().getEndpoint();
 		boolean running = endpoint != null;
 		String error = McpServerService.getInstance().getLastError();
+		// the token is persisted, so it exists and is worth showing whether or not the
+		// server is up. Blanking it while stopped made "Regenerate token" look like a
+		// button that does nothing, because the only visible result was hidden
+		String persisted = running ? endpoint.token() : McpServerService.getToken();
 		status.setText(running ? "The server is listening."
-				: error != null ? error : "The server is not running. Enable it above and press Apply.");
+				: error != null ? error
+						: persisted == null ? "The server is not running. Enable it above and press Apply."
+								: "The server is not running. Enable it above and press Apply. The token below is already generated and will be used when it starts.");
 		url.setText(running ? endpoint.url() : "");
-		token.setText(running ? endpoint.token() : "");
+		token.setText(persisted == null ? "" : persisted);
 		copyButtons.forEach(button -> button.setEnabled(running));
+		if (tokenCopy != null) {
+			tokenCopy.setEnabled(persisted != null);
+		}
 	}
 }
