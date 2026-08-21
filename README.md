@@ -210,6 +210,25 @@ Stack traces are never truncated either, which means a handful of freezes can am
 
 The entries are read from the log file rather than from a listener registered at startup, so entries from before the server started, and from previous sessions still present in the file, are included.
 
+### `eclipse_mark_log` and `eclipse_clear_log`
+
+Two ways to get "everything in the log is from this run" before a long test run.
+
+`eclipse_mark_log` records the current end of the log and returns an opaque marker. No arguments, changes nothing. `eclipse_get_log_entries` then takes `marker` and reports only what was logged after that point.
+
+**Prefer the marker.** It is exact where `since` is not, and it destroys nothing. `since` needs a timestamp from the caller's clock checked against timestamps the IDE wrote, and those are not the same clock; the marker is a byte position in the IDE's own file, so no clock is involved. `since` also filters without shrinking, so old entries still compete for `maxResults` on a run that logs heavily. And a `since` window that spans a log rotation silently loses entries, which the caller cannot detect: a marker whose file has since shrunk comes back with `markerStale` and everything readable, rather than a window that would be wrong.
+
+`eclipse_clear_log` **destroys the log irreversibly**, including entries from earlier sessions. It runs as a dry run unless `dryRun` is `false`, and reports `entriesDiscarded` and `bytes` either way.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `dryRun` | boolean | `true` | |
+| `includeRotated` | boolean | `true` | Also remove the rotated `.log.bak` sibling. |
+
+It deletes the file, which is exactly what the Error Log view's own delete action does. The rotated sibling goes too by default, because leaving it means a later query can still reach entries from before the clear.
+
+After a real clear it writes one entry, reads it back, and reports `stillLogging`. The framework writes the log through a handle of its own, so a delete underneath it could in principle leave later entries going somewhere nothing can read, and that failure would be silent until someone noticed an empty log much later. Equinox reopens the file, so this works, and `LogStateToolsTest.clearingLeavesTheLogWritableAndReadable` holds it that way rather than leaving it as an assumption.
+
 ### `eclipse_get_preferences`
 
 Reads preferences for a qualifier and reports which scope each value comes from.

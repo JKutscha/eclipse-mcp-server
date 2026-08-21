@@ -52,6 +52,7 @@ public final class GetLogEntriesTool implements IMcpTool {
 				    "severity":           {"type":"string","enum":["error","warning","info","all"],"default":"all","description":"Only return entries of exactly this severity. UI freezes are warnings."},
 				    "plugin":             {"type":"string","description":"Restrict to this bundle symbolic name, for example org.eclipse.ui.monitoring."},
 				    "messageFilter":      {"type":"string","description":"Only return entries whose message contains this text, case insensitive."},
+				    "marker":             {"type":"string","description":"A marker from eclipse_mark_log. Reports only what was logged after that point, with no dependence on the caller's clock."},
 				    "since":              {"type":"string","description":"Only return entries logged at or after this local timestamp, for example 2026-08-20T11:00 or 2026-08-20."},
 				    "maxResults":         {"type":"integer","default":50,"minimum":1,"maximum":500},
 				    "includeStackTraces": {"type":"boolean","default":true,"description":"Include the full stack trace of every entry and child. Set to false for a compact overview; the stack traces of a UI freeze are long."},
@@ -82,6 +83,17 @@ public final class GetLogEntriesTool implements IMcpTool {
 			}
 		}
 		int maxResults = args.getInt("maxResults", DEFAULT_MAX_RESULTS, 1, 500); //$NON-NLS-1$
+		String marker = args.getString("marker"); //$NON-NLS-1$
+		long fromByte = 0;
+		boolean markerStale = false;
+		if (marker != null) {
+			Long position = positionOf(marker);
+			if (position == null) {
+				return McpToolResult.error(
+						"Could not read '%s' as a marker. Get one from eclipse_mark_log.".formatted(marker)); //$NON-NLS-1$
+			}
+			fromByte = position.longValue();
+		}
 		boolean includeStackTraces = args.getBoolean("includeStackTraces", true); //$NON-NLS-1$
 		boolean newestFirst = args.getBoolean("newestFirst", true); //$NON-NLS-1$
 
@@ -100,7 +112,14 @@ public final class GetLogEntriesTool implements IMcpTool {
 
 		List<PlatformLogFile.Entry> entries;
 		try {
-			entries = PlatformLogFile.read(logFile);
+			if (fromByte > 0 && !PlatformLogFile.stillHas(logFile, fromByte)) {
+				// the log was rotated or cleared since the mark, so the position means
+				// nothing any more. Reading from it would silently return the wrong
+				// window, which is the failure a marker exists to prevent
+				markerStale = true;
+				fromByte = 0;
+			}
+			entries = PlatformLogFile.read(logFile, fromByte);
 		} catch (IOException e) {
 			throw new McpToolException("Could not read the platform log at " + logFile, e); //$NON-NLS-1$
 		}
@@ -126,7 +145,27 @@ public final class GetLogEntriesTool implements IMcpTool {
 				.put("total", matching.size()) //$NON-NLS-1$
 				.put("truncated", matching.size() > reported.size()) //$NON-NLS-1$
 				.put("entries", reported); //$NON-NLS-1$
+		if (marker != null) {
+			result.put("marker", marker).put("markerStale", Boolean.valueOf(markerStale)); //$NON-NLS-1$ //$NON-NLS-2$
+			if (markerStale) {
+				result.put("markerNote", //$NON-NLS-1$
+						"The log is shorter than it was when the marker was taken, so it has been rotated or cleared since and the marker no longer locates anything. Everything readable is reported instead of a window that would be wrong."); //$NON-NLS-1$
+			}
+		}
 		return McpToolResult.of(result.toString());
+	}
+
+	/** The byte position a marker records, or {@code null} when it is not one of ours. */
+	private static Long positionOf(String marker) {
+		String[] parts = marker.split("-"); //$NON-NLS-1$
+		if (parts.length != 3 || !LogStateTools.MARKER_PREFIX.equals(parts[0])) {
+			return null;
+		}
+		try {
+			return Long.valueOf(Long.parseLong(parts[1]));
+		} catch (NumberFormatException e) {
+			return null;
+		}
 	}
 
 	private static Path logFile() {

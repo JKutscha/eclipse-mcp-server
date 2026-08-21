@@ -37,7 +37,25 @@ public final class PlatformLogFile {
 
 	/** Returns the entries of {@code file} in the order they were written. */
 	public static List<Entry> read(Path file) throws IOException {
-		return parse(readLines(file));
+		return parse(readLines(file, 0));
+	}
+
+	/**
+	 * Returns the entries written after byte {@code fromByte}.
+	 * <p>
+	 * Entries are appended whole, so a position recorded as the file's size is
+	 * always a record boundary and parsing can start there. Reading from a position
+	 * rather than filtering on a timestamp is what makes a marker exact: it needs no
+	 * clock, and a file that has since shrunk is visibly not the file that was
+	 * marked.
+	 */
+	public static List<Entry> read(Path file, long fromByte) throws IOException {
+		return parse(readLines(file, fromByte));
+	}
+
+	/** Whether the file still holds everything up to {@code position}. */
+	public static boolean stillHas(Path file, long position) throws IOException {
+		return Files.size(file) >= position;
 	}
 
 	/**
@@ -45,10 +63,12 @@ public final class PlatformLogFile {
 	 * recorded anywhere, so undecodable bytes are replaced rather than failing a
 	 * read of an otherwise fine file.
 	 */
-	private static List<String> readLines(Path file) throws IOException {
+	private static List<String> readLines(Path file, long fromByte) throws IOException {
 		var decoder = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPLACE)
 				.onUnmappableCharacter(CodingErrorAction.REPLACE);
-		String text = decoder.decode(java.nio.ByteBuffer.wrap(Files.readAllBytes(file))).toString();
+		byte[] bytes = Files.readAllBytes(file);
+		int from = (int) Math.clamp(fromByte, 0, bytes.length);
+		String text = decoder.decode(java.nio.ByteBuffer.wrap(bytes, from, bytes.length - from)).toString();
 		return List.of(text.split("\r\n|\n|\r", -1)); //$NON-NLS-1$
 	}
 

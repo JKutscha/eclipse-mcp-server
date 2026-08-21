@@ -241,6 +241,16 @@ Disabling or uninstalling the server must not be the moment the IDE becomes unre
 That only works while the jgit imports stay inside that one class: the caller catches `LinkageError`, which is what a missing optional bundle produces when the class is first linked.
 Spreading a jgit type into a signature `CompareTool` touches would turn the missing bundle into a failure of the whole tool.
 
+**Deleting the platform log underneath the framework is safe here, and it was checked rather than assumed.**
+Equinox reopens the log file per write, so `eclipse_clear_log` deleting it leaves logging working and the file reappears on the next entry.
+The tool still writes an entry and reads it back on every real clear, and reports `stillLogging`, because the failure mode if that ever changes is silent: entries would go to an unlinked file and only surface as an empty log much later.
+`LogStateToolsTest.clearingLeavesTheLogWritableAndReadable` is what turns this from a belief into a check.
+
+**A timestamp from the caller is not a point in the IDE's log.**
+`eclipse_mark_log` records a byte position, and `eclipse_get_log_entries` takes it as `marker`.
+The `since` filter needs the caller's clock compared against timestamps the IDE wrote, which is the same shape as the UTC-versus-local mistake that cost a wrong conclusion about a published build.
+It also cannot see a rotation: a `since` window spanning one silently loses entries, while a marker whose file has shrunk reports `markerStale` instead of returning a window that would be wrong.
+
 **One file on disk is many workspace paths, and `eclipse_search_text` has to collapse them.**
 754 of 755 projects in a platform workspace are nested inside another project, so the same file arrives once per path and a raw count is inflated by an unpredictable factor.
 Matches are keyed by `getLocationURI()` plus offset, the extra paths become `alsoVisibleAs`, and `duplicatePathsCollapsed` reports the fold.
