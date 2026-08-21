@@ -9,6 +9,11 @@ on:
 permissions:
   contents: write
 
+# two dispatches must not race the gh-pages publish
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest

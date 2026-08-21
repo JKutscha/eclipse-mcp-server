@@ -82,6 +82,12 @@ and whether anything is filed upstream.
 The point is that these get fixed in the platform eventually rather than
 accumulating as silent workarounds nobody dares remove.
 
+## Continuous integration
+
+`.github/workflows/build.yml` runs `mvn clean verify` on every push and pull request, under `xvfb-run` because the Tycho surefire run starts a real Equinox.
+Before it existed the whole test suite ran only when somebody remembered to, and a regression could reach a release build undetected.
+`release.yml` has a `concurrency` group so two dispatches cannot race the gh-pages publish.
+
 ## Gotchas already paid for
 
 Do not undo these without understanding why they are there.
@@ -181,6 +187,16 @@ The tool falls back to PDE's own context and then to a readable error, rather th
 It is there so the registry tests cover the ui tools' names and schemas, and so the argument handling that happens before the UI thread is reached can be tested at all.
 Nothing in that bundle may call a ui tool that needs a workbench, and nothing there may ever call `eclipse_restart`, which is registered in that run even though the smoke test that would reach it lives elsewhere.
 Loading a ui tool class headlessly is safe; every one of them refuses with "There is no running workbench" rather than touching `PlatformUI`.
+
+**The provisioning tools can be covered only by their declarations.**
+No test may run `eclipse_update` or `eclipse_install`, because a passing test would have changed the IDE it ran in.
+`ProvisioningGuardsTest` asserts what a careless edit would silently drop: that they are registered, that `eclipse_update` still defaults to a dry run and still has `acknowledgeSelfUpdate`, and that the descriptions still announce what they do and that an unknown repository is refused rather than added.
+Note the asymmetry it documents rather than fixes: `eclipse_update` is a dry run by default and `eclipse_install` has no dry run at all.
+
+**A call that outlives its timeout keeps its thread.**
+`McpToolAdapter` cancels the progress monitor first, which is what actually stops a cooperative tool; `Future.cancel(true)` only interrupts, and a tool blocked on the workspace lock or in native code keeps running whatever anyone does.
+Nothing can fix that, so `abandon` records those calls, logs them, and tells the next caller how many are outstanding.
+The point is that the leak stops being invisible: each abandoned call holds locks that block later builds and refreshes, and the symptom otherwise looks like a slow IDE.
 
 **`callsEveryRegisteredTool` does not call every tool.**
 `com.vogella.eclipse.mcp.server.tests` requires only core, server and jdt, so the ui, pde and p2 tools are not registered in that headless run and the smoke test cannot see them.

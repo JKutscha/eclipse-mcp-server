@@ -25,6 +25,9 @@ import io.modelcontextprotocol.spec.McpSchema.Tool;
  */
 public final class McpToolAdapter {
 
+	/** Calls that outlived their timeout and are still holding a thread. */
+	private static final java.util.Map<String, Future<McpToolResult>> ABANDONED = new java.util.LinkedHashMap<>();
+
 	private McpToolAdapter() {
 	}
 
@@ -46,11 +49,18 @@ public final class McpToolAdapter {
 			McpToolResult result = pending.get(timeout.toSeconds(), TimeUnit.SECONDS);
 			return CallToolResult.builder().addTextContent(result.text()).isError(result.isError()).build();
 		} catch (TimeoutException e) {
+			// the monitor is what actually stops a cooperative tool; cancel(true) only
+			// interrupts, and a tool blocked on the workspace lock or in native code
+			// keeps its thread whatever we do. What must not happen is that going
+			// unnoticed, because each one holds locks that block later work
 			monitor.setCanceled(true);
 			pending.cancel(true);
+			int abandoned = abandon(tool.getName(), pending);
 			return error(
-					"The tool '%s' did not finish within %d seconds. Raise the timeout in Preferences > General > MCP Server if the operation is expected to take longer." //$NON-NLS-1$
-							.formatted(tool.getName(), timeout.toSeconds()));
+					"The tool '%s' did not finish within %d seconds. Raise the timeout in Preferences > General > MCP Server if the operation is expected to take longer.%s" //$NON-NLS-1$
+							.formatted(tool.getName(), timeout.toSeconds(), abandoned <= 1 ? "" //$NON-NLS-1$
+									: " %d calls are now abandoned and still running in this IDE; they hold locks that block builds and refreshes, so a restart is worth considering." //$NON-NLS-1$
+											.formatted(Integer.valueOf(abandoned))));
 		} catch (InterruptedException e) {
 			pending.cancel(true);
 			Thread.currentThread().interrupt();
@@ -81,6 +91,21 @@ public final class McpToolAdapter {
 			}
 		}
 		return text.toString();
+	}
+
+	/**
+	 * Remembers a call that outlived its timeout, and reports how many are still
+	 * running. Nothing can kill a thread stuck in native code, so the containment
+	 * available is to stop the leak being invisible.
+	 */
+	private static synchronized int abandon(String name, Future<McpToolResult> pending) {
+		ABANDONED.entrySet().removeIf(entry -> entry.getValue().isDone());
+		ABANDONED.put(name + "@" + System.nanoTime(), pending); //$NON-NLS-1$
+		if (ABANDONED.size() > 1) {
+			ILog.get().warn("%d MCP tool calls are abandoned and still running: %s" //$NON-NLS-1$
+					.formatted(Integer.valueOf(ABANDONED.size()), ABANDONED.keySet()));
+		}
+		return ABANDONED.size();
 	}
 
 	private static CallToolResult error(String message) {

@@ -56,6 +56,7 @@ public final class SearchTextTool implements IMcpTool {
 				    "path":            {"type":"string","description":"Restrict to this workspace folder or file, e.g. /app/src."},
 				    "fileNamePattern": {"type":"string","description":"Glob over file names, e.g. *.exsd or plugin.xml. Omit for every file."},
 				    "excludePathPattern": {"type":"string","description":"Glob over the workspace path, matches are skipped, e.g. */target/* to drop Maven build output. Maven and Gradle output is not marked derived, so includeDerived does not exclude it."},
+				    "refresh":         {"type":"boolean","default":true,"description":"Read changes made outside the IDE into the searched scope first. Without it a file created outside the IDE is not searched and a deleted one still is."},
 				    "includeDerived":  {"type":"boolean","default":false,"description":"Include derived resources, which is build output."},
 				    "maxResults":      {"type":"integer","default":200,"minimum":1,"maximum":5000}
 				  },
@@ -115,6 +116,18 @@ public final class SearchTextTool implements IMcpTool {
 			roots.add(ResourcesPlugin.getWorkspace().getRoot());
 		}
 
+		// the traversal set comes from the resource tree, so a file created outside
+		// the IDE is invisible to the search and a deleted one is searched as a ghost.
+		// The scope is what has to be refreshed, not the files it finds
+		if (ToolArguments.of(arguments).getBoolean("refresh", true)) { //$NON-NLS-1$
+			for (IResource root : roots) {
+				try {
+					com.vogella.eclipse.mcp.core.WorkspaceSync.refresh(root, monitor);
+				} catch (org.eclipse.core.runtime.CoreException e) {
+					// an unrefreshable scope is still searchable, and stale beats nothing
+				}
+			}
+		}
 		Collector collector = new Collector(maxResults, excluded);
 		// the scope matches every file name against this, so "no filter" has to be a
 		// pattern that matches rather than null, which it dereferences

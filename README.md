@@ -143,7 +143,7 @@ Read-only except the four marked tools: `eclipse_organize_imports` and `eclipse_
 ### `eclipse_list_projects`
 
 Lists the projects in the workspace, with their natures and open/closed state.
-No arguments.
+Takes `maxResults` (500), and reports `total` and `truncated`.
 
 ```json
 {"projects":[{"name":"com.example.app","open":true,

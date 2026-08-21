@@ -41,13 +41,25 @@ public final class ListProjectsTool implements IMcpTool {
 	@Override
 	public String getInputSchema() {
 		return """
-				{"type":"object","properties":{},"additionalProperties":false}"""; //$NON-NLS-1$
+				{
+				  "type": "object",
+				  "properties": {
+				    "maxResults": {"type":"integer","default":500,"minimum":1,"maximum":5000}
+				  },
+				  "additionalProperties": false
+				}"""; //$NON-NLS-1$
 	}
 
 	@Override
 	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) throws McpToolException {
+		int maxResults = com.vogella.eclipse.mcp.core.ToolArguments.of(arguments).getInt("maxResults", 500, 1, 5000); //$NON-NLS-1$
 		JsonArray projects = new JsonArray();
+		int total = 0;
 		for (IProject project : ResourcesPlugin.getWorkspace().getRoot().getProjects()) {
+			total++;
+			if (projects.size() >= maxResults) {
+				continue;
+			}
 			JsonObject entry = new JsonObject();
 			entry.put("name", project.getName()); //$NON-NLS-1$
 			entry.put("open", project.isOpen()); //$NON-NLS-1$
@@ -75,7 +87,9 @@ public final class ListProjectsTool implements IMcpTool {
 			entry.put("location", location == null ? null : location.toOSString()); //$NON-NLS-1$
 			projects.add(entry);
 		}
-		return McpToolResult.of(new JsonObject().put("projects", projects).toString()); //$NON-NLS-1$
+		return McpToolResult.of(new JsonObject().put("total", Integer.valueOf(total)) //$NON-NLS-1$
+				.put("truncated", Boolean.valueOf(total > projects.size())) //$NON-NLS-1$
+				.put("projects", projects).toString()); //$NON-NLS-1$
 	}
 
 	/**
