@@ -26,7 +26,7 @@ public final class UpdateTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Applies the available updates to this IDE. MODIFIES THE INSTALLATION. Only units that are already installed are updated, from the repositories already configured; it installs nothing new. Runs as a job and returns an operationId to poll through eclipse_get_provisioning_status, because resolution can take minutes. THIS IS SELF UPDATING MACHINERY: if a bad build lands, the tools that would fix it are the tools that just broke. The result names the previous configuration timestamp so the installation can be reverted from Help > About > Installation Details even when this path is dead, and eclipse_restart works independently of this tool."; //$NON-NLS-1$
+		return "Applies the available updates to this IDE. MODIFIES THE INSTALLATION, and runs as a dry run unless dryRun is set to false. Only units that are already installed are updated, from the repositories already configured; it installs nothing new. Runs as a job and returns an operationId to poll through eclipse_get_provisioning_status, because resolution can take minutes. THIS IS SELF UPDATING MACHINERY: if a bad build lands, the tools that would fix it are the tools that just broke. The result names the previous configuration timestamp so the installation can be reverted from Help > About > Installation Details even when this path is dead, and eclipse_restart works independently of this tool."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -36,6 +36,7 @@ public final class UpdateTool implements IMcpTool {
 				  "type": "object",
 				  "properties": {
 				    "units":          {"type":"array","items":{"type":"string"},"description":"Installed unit ids to update. Scopes the resolution to the repositories that can supply them, so a targeted update makes one network round trip instead of one per configured site. Omit to update everything that has an update."},
+				    "dryRun":         {"type":"boolean","default":true,"description":"Report what would be updated without changing anything. On by default: an update modifies the installation and there is no undo short of reverting the configuration, so the change list should be seen before it is committed to."},
 				    "refresh":        {"type":"boolean","default":true,"description":"Re-read the repository metadata first. Without it the update resolves against p2's cache and may find nothing to apply."},
 				    "trustUnsigned":  {"type":"boolean","default":true,"description":"Accept unsigned content, or content signed by a certificate this IDE does not trust. On by default, because an install performed by this server is unattended and there is nobody to answer the dialog p2 would otherwise raise. What bounds it is the repository allowlist: only sites the IDE is already configured with can be installed from. Nothing is added to the IDE's permanent trust store, and whatever was accepted is reported. Set false to refuse unsigned content instead."},
 				    "wait":           {"type":"boolean","default":false,"description":"Wait for the job. Updates are slow, so this is off by default."},
@@ -72,15 +73,51 @@ public final class UpdateTool implements IMcpTool {
 							new JsonArray())
 					.toJson().toString());
 		}
+		if (!unitIds.isEmpty()) {
+			// Constructing the operation with the units restricts what is examined but
+			// not what is selected: without setSelectedUpdates p2 applies every update
+			// it found, which once updated a whole SDK when one feature was named.
+			java.util.List<Update> wanted = new java.util.ArrayList<>();
+			for (Update update : possible) {
+				if (unitIds.contains(update.toUpdate.getId())) {
+					wanted.add(update);
+				}
+			}
+			if (wanted.isEmpty()) {
+				return McpToolResult.of(Provisioning.record("update", "done", //$NON-NLS-1$ //$NON-NLS-2$
+						"No update is available for %s.".formatted(unitIds), new JsonArray()).toJson().toString()); //$NON-NLS-1$
+			}
+			operation.setSelectedUpdates(wanted.toArray(Update[]::new));
+			resolution = operation.resolveModal(monitor);
+			possible = operation.getSelectedUpdates();
+		}
 		if (!resolution.isOK() && resolution.getSeverity() == IStatus.ERROR) {
 			return McpToolResult.error("The update could not be resolved: " + resolution.getMessage()); //$NON-NLS-1$
 		}
 		JsonArray changes = new JsonArray();
+		java.util.List<String> unexpected = new java.util.ArrayList<>();
 		for (Update update : possible) {
 			changes.add(new JsonObject().put("unit", update.toUpdate.getId()) //$NON-NLS-1$
 					.put("fromVersion", update.toUpdate.getVersion().toString()) //$NON-NLS-1$
 					.put("toVersion", update.replacement.getVersion().toString())); //$NON-NLS-1$
+			if (!unitIds.isEmpty() && !unitIds.contains(update.toUpdate.getId())) {
+				unexpected.add(update.toUpdate.getId());
+			}
 		}
+		// last line of defence: never install something the caller did not name
+		if (!unexpected.isEmpty()) {
+			return McpToolResult.error(
+					"Refused: the resolution wants to update %s, which you did not ask for. Only %s was named. Nothing was changed." //$NON-NLS-1$
+							.formatted(unexpected, unitIds));
+		}
+		if (args.getBoolean("dryRun", true)) { //$NON-NLS-1$
+			return McpToolResult.of(Provisioning
+					.record("update", "dryRun", //$NON-NLS-1$ //$NON-NLS-2$
+							"Nothing was changed. This is what would be updated; pass dryRun false to apply it.", //$NON-NLS-1$
+							changes)
+					.toJson().toString());
+		}
+		// installed after the dry run returns, so a dry run never swaps the IDE's dialogs
 		boolean trustUnsigned = args.getBoolean("trustUnsigned", true); //$NON-NLS-1$
 		HeadlessTrust trust = new HeadlessTrust(trustUnsigned);
 		Object previousTrust = HeadlessTrust.install(agent, trust);

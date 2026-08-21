@@ -63,6 +63,7 @@ final class Provisioning {
 		private volatile String previousConfiguration;
 		private volatile JsonArray trustPrompts = new JsonArray();
 		private volatile boolean trustedUnsigned;
+		private volatile Job job;
 
 		Operation(String id, String kind) {
 			this.id = id;
@@ -107,6 +108,7 @@ final class Provisioning {
 		OPERATIONS.put(id, operation);
 		lastId = id;
 		Job job = jobFactory.apply(operation);
+		operation.job = job;
 		job.addJobChangeListener(new JobChangeAdapter() {
 			@Override
 			public void done(IJobChangeEvent event) {
@@ -153,6 +155,17 @@ final class Provisioning {
 		}, "MCP provisioning cleanup " + operation.id); //$NON-NLS-1$
 		waiter.setDaemon(true);
 		waiter.start();
+	}
+
+	/** Cancels a running operation. p2's jobs honour cancellation. */
+	static boolean cancel(Operation operation) {
+		Job job = operation.job;
+		if (job == null || !operation.running) {
+			return false;
+		}
+		job.cancel();
+		operation.state = "cancelling"; //$NON-NLS-1$
+		return true;
 	}
 
 	static synchronized Operation find(String id) {

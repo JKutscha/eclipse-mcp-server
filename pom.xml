@@ -53,7 +53,11 @@
         <version>${tycho.version}</version>
         <configuration>
           <useUIHarness>false</useUIHarness>
-          <failIfNoTests>false</failIfNoTests>
+          <!-- a build that runs no tests must fail: with this false, Tycho silently
+               picking the junit4 provider made every build green while discovering
+               none of the JUnit 5 tests -->
+          <failIfNoTests>true</failIfNoTests>
+          <providerHint>junit5</providerHint>
         </configuration>
       </plugin>
     </plugins>

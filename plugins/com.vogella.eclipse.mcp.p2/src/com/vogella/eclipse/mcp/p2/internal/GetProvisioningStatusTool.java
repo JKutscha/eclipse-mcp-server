@@ -19,7 +19,7 @@ public final class GetProvisioningStatusTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Reports an update or install started through eclipse_update or eclipse_install: running, done, failed or cancelled, what it changed and the previous configuration timestamp to revert to. Separate from eclipse_get_build_status because a build and an install are not the same kind of thing."; //$NON-NLS-1$
+		return "Reports an update or install started through eclipse_update or eclipse_install: running, done, failed or cancelled, what it changed and the previous configuration timestamp to revert to. Separate from eclipse_get_build_status because a build and an install are not the same kind of thing. Pass cancel to stop one that is still running."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -28,7 +28,8 @@ public final class GetProvisioningStatusTool implements IMcpTool {
 				{
 				  "type": "object",
 				  "properties": {
-				    "operationId": {"type":"string","description":"Identifier returned by eclipse_update or eclipse_install. Omit for the most recent."}
+				    "operationId": {"type":"string","description":"Identifier returned by eclipse_update or eclipse_install. Omit for the most recent."},
+				    "cancel":      {"type":"boolean","default":false,"description":"Stop the operation if it is still running. An install or update modifies the installation, so being able to stop one that was started by mistake matters."}
 				  },
 				  "additionalProperties": false
 				}"""; //$NON-NLS-1$
@@ -44,6 +45,15 @@ public final class GetProvisioningStatusTool implements IMcpTool {
 			}
 			return McpToolResult.of(new JsonObject().put("state", "none") //$NON-NLS-1$ //$NON-NLS-2$
 					.put("message", "No update or install has been started.").toString()); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		if (ToolArguments.of(arguments).getBoolean("cancel", false)) { //$NON-NLS-1$
+			boolean cancelled = Provisioning.cancel(operation);
+			return McpToolResult.of(operation.toJson()
+					.put("cancelRequested", cancelled) //$NON-NLS-1$
+					.put("cancelNote", cancelled //$NON-NLS-1$
+							? "Cancellation was requested. Work already downloaded is discarded, but an operation that had begun committing may still complete." //$NON-NLS-1$
+							: "Nothing to cancel; the operation had already finished.") //$NON-NLS-1$
+					.toString());
 		}
 		return McpToolResult.of(operation.toJson().toString());
 	}

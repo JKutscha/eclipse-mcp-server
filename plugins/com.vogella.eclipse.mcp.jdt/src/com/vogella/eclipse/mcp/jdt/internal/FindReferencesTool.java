@@ -52,7 +52,7 @@ public final class FindReferencesTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Finds all references to a Java type, method or field across the workspace, using the JDT search engine. Far more accurate than a text search because it resolves overloads and inheritance. For fields it also splits the references into reads and writes, which decides whether a field is actually used: one written in four places and read in none is dead, though a text search sees four live occurrences. A field initializer counts as a write but is a declaration rather than a reference, so byKind need not sum to total. Every match carries an origin of source or binary: a binary match is inside a compiled jar on some project's build path, not in anyone's source, and byOrigin counts the two separately. Judge 'how many consumers does this API have' from the source count."; //$NON-NLS-1$
+		return "Finds all references to a Java type, method or field across the workspace, using the JDT search engine. Far more accurate than a text search because it resolves overloads and inheritance. For fields it also splits the references into reads and writes, which decides whether a field is actually used: one written in four places and read in none is dead, though a text search sees four live occurrences. A field initializer counts as a write but is a declaration rather than a reference, so byKind need not sum to total. Every match carries an origin of source or binary: a binary match is inside a compiled jar on some project's build path, not in anyone's source, and byOrigin counts the two separately. Judge 'how many consumers does this API have' from the source count. resolvedFrom names the jar or source folder the type was resolved from, and matchedBy says whether the search followed the compiled binding or matched the qualified name; a type that exists only in jars is searched by name, because binding to one copy of a library silently misses every reference compiled against another."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -111,9 +111,21 @@ public final class FindReferencesTool implements IMcpTool {
 							.formatted(resolved));
 		}
 
-		SearchPattern pattern = memberName == null
-				? SearchPattern.createPattern(type, IJavaSearchConstants.REFERENCES)
-				: pattern(ALL.equals(accessKind) ? members : fields, limitTo(accessKind));
+		// A binary type binds to the one jar it was resolved from, so an element based
+		// search finds only references compiled against that copy. When the same
+		// qualified name is supplied by several jars, which is the norm for a library
+		// like JUnit, that silently answers zero. Search the name instead and say so.
+		boolean byName = type.isBinary() && memberName == null;
+		SearchPattern pattern;
+		if (byName) {
+			pattern = SearchPattern.createPattern(type.getFullyQualifiedName(), IJavaSearchConstants.TYPE,
+					IJavaSearchConstants.REFERENCES,
+					SearchPattern.R_EXACT_MATCH | SearchPattern.R_CASE_SENSITIVE);
+		} else if (memberName == null) {
+			pattern = SearchPattern.createPattern(type, IJavaSearchConstants.REFERENCES);
+		} else {
+			pattern = pattern(ALL.equals(accessKind) ? members : fields, limitTo(accessKind));
+		}
 		if (pattern == null) {
 			return McpToolResult.error("Could not build a search pattern for '%s'.".formatted(resolved)); //$NON-NLS-1$
 		}
@@ -156,12 +168,23 @@ public final class FindReferencesTool implements IMcpTool {
 			}
 		}
 		JsonObject result = new JsonObject().put("resolved", resolved) //$NON-NLS-1$
+				.put("resolvedFrom", JavaModelSupport.originOf(type)) //$NON-NLS-1$
+				.put("matchedBy", byName ? "name" : "binding") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 				.put("accessKind", accessKind) //$NON-NLS-1$
 				.put("total", matches.size()) //$NON-NLS-1$
 				.put("byOrigin", new JsonObject().put("source", matches.size() - binary).put("binary", binary)) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 				.put("truncated", matches.size() > reported.size()); //$NON-NLS-1$
 		if (reads != null) {
 			result.put("byKind", new JsonObject().put("read", reads.size()).put("write", writes.size())); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		}
+		if (type.isBinary() && memberName != null) {
+			result.put("caveat", //$NON-NLS-1$
+					"'%s' resolved to a compiled type in %s, and a member search binds to that one copy. If several jars supply this qualified name, references compiled against the others are not counted. Search the type without memberName for a name based count." //$NON-NLS-1$
+							.formatted(type.getFullyQualifiedName(), JavaModelSupport.originOf(type)));
+		} else if (JavaModelSupport.isBuildOutput(type)) {
+			result.put("caveat", //$NON-NLS-1$
+					"'%s' resolved to a copy inside build output (%s). No project compiles against that, so treat this count with suspicion." //$NON-NLS-1$
+							.formatted(type.getFullyQualifiedName(), JavaModelSupport.originOf(type)));
 		}
 		result.put("matches", reported); //$NON-NLS-1$
 		return McpToolResult.of(result.toString());

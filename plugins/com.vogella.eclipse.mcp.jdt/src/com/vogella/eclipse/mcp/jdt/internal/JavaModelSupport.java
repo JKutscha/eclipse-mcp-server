@@ -79,7 +79,10 @@ final class JavaModelSupport {
 					if (!type.isBinary()) {
 						return type;
 					}
-					if (binaryFallback == null) {
+					// among compiled candidates prefer one a project actually compiles
+					// against: a copy inside build output binds to nothing, so a search
+					// for references to it correctly finds none, which reads as zero
+					if (binaryFallback == null || (isBuildOutput(binaryFallback) && !isBuildOutput(type))) {
 						binaryFallback = type;
 					}
 				}
@@ -95,6 +98,22 @@ final class JavaModelSupport {
 				"Could not resolve the type '%s' on the classpath of %s. Use a fully qualified name." //$NON-NLS-1$
 						.formatted(typeName, projects.size() == 1 ? "project " + projects.get(0).getElementName() //$NON-NLS-1$
 								: "any Java project in the workspace")); //$NON-NLS-1$
+	}
+
+	/** Whether the type lives in build output rather than in a dependency. */
+	static boolean isBuildOutput(IType type) {
+		IJavaElement root = type.getAncestor(IJavaElement.PACKAGE_FRAGMENT_ROOT);
+		if (root == null || root.getPath() == null) {
+			return false;
+		}
+		String path = root.getPath().toString();
+		return path.contains("/target/") || path.contains("/bin/"); //$NON-NLS-1$ //$NON-NLS-2$
+	}
+
+	/** Where a resolved type came from, for saying which binding was searched. */
+	static String originOf(IType type) {
+		IJavaElement root = type.getAncestor(IJavaElement.PACKAGE_FRAGMENT_ROOT);
+		return root == null || root.getPath() == null ? null : root.getPath().toString();
 	}
 
 	/**

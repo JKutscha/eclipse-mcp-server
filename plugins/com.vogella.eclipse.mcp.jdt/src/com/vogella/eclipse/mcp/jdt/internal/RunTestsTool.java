@@ -120,8 +120,17 @@ public final class RunTestsTool implements IMcpTool {
 					configuration.setAttribute(ATTR_TEST_NAME, testMethod);
 				}
 			}
-			// never saved: a run started here must not litter the user's launch history
-			configuration.launch(ILaunchManager.RUN_MODE, null);
+			try {
+				// never saved: a run started here must not litter the user's launch history
+				configuration.launch(ILaunchManager.RUN_MODE, null);
+			} catch (RuntimeException e) {
+				// the runner bundles are part of the SDK; a stripped IDE can lack them,
+				// and JDT reports that as an assertion rather than a CoreException
+				TestRunRegistry.failed(run, e.getMessage());
+				return McpToolResult.error(
+						"Could not launch the tests: %s. The JUnit runner for %s may not be installed in this IDE." //$NON-NLS-1$
+								.formatted(e.getMessage(), kind));
+			}
 
 			if (args.getBoolean("wait", true)) { //$NON-NLS-1$
 				try {

@@ -126,7 +126,10 @@ public final class TestRunRegistry {
 				ITestElement.FailureTrace trace = element.getFailureTrace();
 				synchronized (run.cases) {
 					run.cases.add(new Case(element.getTestClassName(), element.getTestMethodName(),
-							String.valueOf(element.getTestResult(false)), element.getElapsedTimeInSeconds(),
+							// Result.toString() is "Failure", not "FAILURE"; normalising here is
+							// what stops the counters below silently matching nothing but OK
+							String.valueOf(element.getTestResult(false)).toUpperCase(java.util.Locale.ROOT),
+							element.getElapsedTimeInSeconds(),
 							trace == null ? null : trace.getTrace(), trace == null ? null : trace.getExpected(),
 							trace == null ? null : trace.getActual()));
 				}

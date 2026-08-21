@@ -74,6 +74,14 @@ Reporting stale markers as if they were current is worse than returning nothing.
 3. Put it in the bundle whose dependencies it needs, so that the layering above survives.
 4. Add a test. `McpToolRegistryTest` already checks that every registered tool has a name, a description and an input schema that parses as JSON.
 
+## Platform bugs
+
+When a workaround here exists because Eclipse is wrong rather than because we
+are, record it in `docs/platform-bugs.md`: what was observed, the file and line,
+and whether anything is filed upstream.
+The point is that these get fixed in the platform eventually rather than
+accumulating as silent workarounds nobody dares remove.
+
 ## Gotchas already paid for
 
 Do not undo these without understanding why they are there.
