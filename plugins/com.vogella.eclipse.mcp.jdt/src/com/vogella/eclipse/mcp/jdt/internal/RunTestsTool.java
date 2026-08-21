@@ -160,6 +160,9 @@ public final class RunTestsTool implements IMcpTool {
 					configuration.setAttribute(ATTR_TEST_NAME, testMethod);
 				}
 			}
+			if (asPlugin) {
+				configurePlatform(configuration, args.getString("runtimeWorkspace"), ui); //$NON-NLS-1$
+			}
 			// launching happens in a job: preLaunchCheck alone can take a while, and
 			// doing it here would defeat wait:false exactly as the p2 refresh once did
 			run.launchedAs(launchedAs);
