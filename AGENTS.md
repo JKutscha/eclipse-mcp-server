@@ -212,10 +212,14 @@ Closed projects are exactly the ones a cleanup client needs to classify, so this
 Without it `Class.forName("registry." + suffix)` matches as a resolved literal named `registry.`, and the one case that must stay `undecidable` is reported as live.
 The fixture in `ListDeclarationsToolTest` contains exactly that expression; it caught this, and it is the reason the test exists.
 
-**In `eclipse_list_declarations`, unverifiable is never refuted.**
-A schema's `basedOn` is checked against the type's supertype hierarchy, but a supertype that is not resolvable in that project cannot be checked at all, and `satisfies` returns `null` rather than `false`.
-Read as `false`, every `Bundle-Activator` in a project that does not compile against OSGi is reported dead, which is the one answer that tool must never give.
-The same rule is why the verdict has three values rather than two.
+**In `eclipse_list_declarations`, `basedOn` never demotes a verdict.**
+It shipped doing exactly that and it reported 14 live classes in `org.eclipse.ui.ide` and `org.eclipse.ui.workbench` as dead, through three mechanisms: a schema whose constraint is conditional (`org.eclipse.ui.decorators` names `ILabelDecorator` while every `lightweight="true"` decorator implements `ILightweightLabelDecorator`), the `IExecutableExtensionFactory` form where `basedOn` describes the product and not the named class, and a class named as its own `basedOn`, since `getAllSupertypes` does not include the type itself.
+`basedOn` is a single-valued hint that real schemas cannot always express, so an unsatisfied constraint is a flag for a person and not evidence of a stale entry.
+Unverifiable is not refuted, and unsatisfied is not refuted either. The invariant to hold on to: a declaration with `registryEvidence` can never be `dead`, which `ListDeclarationsToolTest` asserts.
+
+**A scoped result must not carry a workspace-scoped caveat.**
+`extensionPointsWithoutSchema` is filtered to the projects that were asked about.
+It once reported the same four points for two projects that contributed to none of them, on results with zero undecidable declarations, so the caveat described a limit those answers did not have and invited distrust of a fully judged result.
 
 **The extension point schemas are parsed here rather than read through PDE.**
 `org.eclipse.pde.internal.core.schema` and `.ischema` are exported `x-friends:="org.eclipse.pde.ui"`, so `SchemaAttribute` would resolve at runtime but is a discouraged access at compile time and a dependency PDE may break in any release.

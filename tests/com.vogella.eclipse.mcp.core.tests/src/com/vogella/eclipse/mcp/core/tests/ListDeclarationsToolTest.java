@@ -70,14 +70,56 @@ class ListDeclarationsToolTest {
 	}
 
 	@Test
-	void aRegistryEntryThatDoesNotMatchItsBasedOnIsStale() throws Exception {
+	void anUnsatisfiedBasedOnIsReportedButDoesNotDemote() throws Exception {
 		fixtureProject();
 		Map<String, Object> entry = declaration("registry.WrongSupertype");
 
-		assertEquals("dead", entry.get("registryStatus"),
-				"an entry naming a class that is not what the schema requires keeps nothing alive");
+		// basedOn is single valued and several real schemas cannot express what they
+		// mean with it: org.eclipse.ui.decorators names ILabelDecorator while every
+		// lightweight decorator implements ILightweightLabelDecorator. So an
+		// unsatisfied constraint is a flag for a person, never a demotion
+		assertEquals("live-via-registry", entry.get("registryStatus"));
 		assertEquals(Boolean.FALSE, firstEvidence(entry).get("basedOnSatisfied"),
-				"the stale entry should still be reported, with the reason it does not count");
+				"the mismatch still has to be visible");
+	}
+
+	@Test
+	void aClassSatisfiesABasedOnThatNamesItself() throws Exception {
+		fixtureProject();
+		// getAllSupertypes does not include the type, and a class named as its own
+		// basedOn was reported unsatisfied against itself
+		assertEquals(Boolean.TRUE, firstEvidence(declaration("registry.AbstractMatcher")).get("basedOnSatisfied"));
+	}
+
+	@Test
+	void anExecutableExtensionFactoryIsNotCheckedAgainstWhatItProduces() throws Exception {
+		fixtureProject();
+		Map<String, Object> entry = declaration("registry.Factory");
+
+		assertEquals("live-via-registry", entry.get("registryStatus"));
+		assertNull(firstEvidence(entry).get("basedOnSatisfied"),
+				"basedOn describes what the factory produces, so there is nothing to check against the factory");
+	}
+
+	@Test
+	void aTypeTestIsReportedWithoutChangingTheVerdict() throws Exception {
+		fixtureProject();
+		Map<String, Object> entry = declaration("registry.Tested");
+
+		assertEquals("dead", entry.get("registryStatus"), "an instanceof test is not instantiation");
+		assertNotNull(entry.get("typeTests"), "but deleting it breaks the expression silently, so it is reported");
+		assertNull(entry.get("registryEvidence"), "a type test is not registry evidence");
+	}
+
+	@Test
+	void nothingReportedDeadCarriesRegistryEvidence() throws Exception {
+		fixtureProject();
+		Map<String, Object> result = TestFixture.callAndParse(TOOL,
+				Map.of("project", PROJECT, "status", "dead", "maxResults", 5000));
+		for (Object entry : declarations(result)) {
+			assertNull(((Map<?, ?>) entry).get("registryEvidence"),
+					"a class named in a registry position cannot be dead, got " + entry);
+		}
 	}
 
 	@Test
@@ -150,6 +192,15 @@ class ListDeclarationsToolTest {
 				"package registry;\n// registry.Unused is named here in a comment, which counts for nothing\npublic class Unused {\n}\n");
 		TestFixture.addType(javaProject, "registry", "Activator",
 				"package registry;\npublic class Activator {\n}\n");
+		// declared in the fixture so the factory rule is actually exercised: without it
+		// on the build path the check would fall through the unresolvable branch and
+		// pass for the wrong reason
+		TestFixture.addType(javaProject, "org.eclipse.core.runtime", "IExecutableExtensionFactory",
+				"package org.eclipse.core.runtime;\npublic interface IExecutableExtensionFactory {\n  Object create();\n}\n");
+		TestFixture.addType(javaProject, "registry", "Factory",
+				"package registry;\npublic class Factory implements org.eclipse.core.runtime.IExecutableExtensionFactory {\n  @Override public Object create() { return null; }\n}\n");
+		TestFixture.addType(javaProject, "registry", "Tested",
+				"package registry;\npublic class Tested {\n}\n");
 		TestFixture.addType(javaProject, "registry", "Reflected",
 				"package registry;\npublic class Reflected {\n}\n");
 		TestFixture.addType(javaProject, "registry", "Loader",
@@ -201,6 +252,13 @@ class ListDeclarationsToolTest {
 				   <extension point="registry.host.matchers">
 				      <matcher class="registry.Matcher" label="registry.Mentioned"/>
 				      <matcher class="registry.WrongSupertype"/>
+				      <matcher class="registry.AbstractMatcher"/>
+				      <matcher class="registry.Factory:someProduct"/>
+				      <matcher class="registry.Matcher">
+				         <enablement>
+				            <instanceof value="registry.Tested"/>
+				         </enablement>
+				      </matcher>
 				   </extension>
 				</plugin>
 				""");

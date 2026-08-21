@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -70,7 +71,10 @@ final class RegistryIndex {
 	/** Point id to element name to attribute name to basedOn. Absent means unread. */
 	private final Map<String, Map<String, Map<String, String>>> schemas = new HashMap<>();
 
-	private final Set<String> pointsWithoutSchema = new TreeSet<>();
+	/** Keyed by the project whose plugin.xml contributed to the point. */
+	private final Map<String, Set<String>> pointsWithoutSchema = new HashMap<>();
+
+	private final Map<String, List<Evidence>> typeTests = new HashMap<>();
 
 	private final List<String> dynamicReflection = new ArrayList<>();
 
@@ -85,8 +89,32 @@ final class RegistryIndex {
 		return byName.getOrDefault(name, List.of());
 	}
 
-	Set<String> pointsWithoutSchema() {
-		return pointsWithoutSchema;
+	/**
+	 * The points contributed to from {@code projects} whose schema could not be read.
+	 * <p>
+	 * Scoped, because the index covers the whole workspace while a result is about
+	 * the projects that were asked for. A workspace-wide list attached to a
+	 * project-scoped answer describes a limit that answer does not have, and invites
+	 * distrust of a result that was in fact fully judged.
+	 */
+	Set<String> pointsWithoutSchema(Collection<String> projects) {
+		Set<String> points = new TreeSet<>();
+		for (String project : projects) {
+			points.addAll(pointsWithoutSchema.getOrDefault(project, Set.of()));
+		}
+		return points;
+	}
+
+	/**
+	 * Where a class is named by an {@code instanceof} test rather than instantiated.
+	 * <p>
+	 * A type test is not a registry position and does not make a class live, so this
+	 * is kept apart from the evidence and never changes a verdict. It is reported
+	 * because deleting such a class breaks the expression silently: it stops
+	 * matching rather than failing to compile, which is worse than an error.
+	 */
+	List<Evidence> typeTestsFor(String name) {
+		return typeTests.getOrDefault(name, List.of());
 	}
 
 	List<String> dynamicReflection() {
@@ -182,6 +210,9 @@ final class RegistryIndex {
 		for (Element child : elements(parent, null)) {
 			String childPath = path + "/" + child.getTagName(); //$NON-NLS-1$
 			Map<String, String> javaAttributes = javaAttributes(point, child.getTagName());
+			if (javaAttributes == null) {
+				pointsWithoutSchema.computeIfAbsent(file.getProject().getName(), key -> new TreeSet<>()).add(point);
+			}
 			NamedNodeMap attributes = child.getAttributes();
 			for (int i = 0; i < attributes.getLength(); i++) {
 				Node attribute = attributes.item(i);
@@ -193,6 +224,11 @@ final class RegistryIndex {
 				String type = value.split(":", 2)[0].trim(); //$NON-NLS-1$
 				String name = attribute.getNodeName();
 				String position = childPath + "@" + name; //$NON-NLS-1$
+				if ("instanceof".equals(child.getTagName()) && "value".equals(name) && looksLikeType(type)) { //$NON-NLS-1$ //$NON-NLS-2$
+					typeTests.computeIfAbsent(type, key -> new ArrayList<>()).add(new Evidence("type test", //$NON-NLS-1$
+							file.getFullPath().toString(), position, name, null, true));
+					continue;
+				}
 				if (javaAttributes == null) {
 					if (looksLikeType(type)) {
 						add(type, new Evidence("plugin.xml", file.getFullPath().toString(), position, name, null, //$NON-NLS-1$
@@ -217,7 +253,6 @@ final class RegistryIndex {
 		}
 		Map<String, Map<String, String>> schema = schemas.get(point);
 		if (schema == null) {
-			pointsWithoutSchema.add(point);
 			return null;
 		}
 		return schema.getOrDefault(element, Map.of());

@@ -49,6 +49,8 @@ public final class ListDeclarationsTool implements IMcpTool {
 
 	private static final int MAX_REFLECTION_FILES = 4000;
 
+	private static final String EXTENSION_FACTORY = "org.eclipse.core.runtime.IExecutableExtensionFactory"; //$NON-NLS-1$
+
 	@Override
 	public String getName() {
 		return "eclipse_list_declarations"; //$NON-NLS-1$
@@ -164,7 +166,7 @@ public final class ListDeclarationsTool implements IMcpTool {
 				.put("truncated", Boolean.valueOf(total > declarations.size())) //$NON-NLS-1$
 				.put("projects", array(projectNames(roots))) //$NON-NLS-1$
 				.put("declarations", declarations); //$NON-NLS-1$
-		addCaveats(result, index, includeReflection);
+		addCaveats(result, index, includeReflection, projectNames(roots));
 		return result;
 	}
 
@@ -220,6 +222,16 @@ public final class ListDeclarationsTool implements IMcpTool {
 		if (evidence.size() > 0) {
 			entry.put("registryEvidence", evidence); //$NON-NLS-1$
 		}
+		JsonArray typeTests = new JsonArray();
+		for (RegistryIndex.Evidence test : index.typeTestsFor(name)) {
+			typeTests.add(new JsonObject().put("file", test.file()) //$NON-NLS-1$
+					.put("xpathOrHeader", test.position())); //$NON-NLS-1$
+		}
+		if (typeTests.size() > 0) {
+			entry.put("typeTests", typeTests) //$NON-NLS-1$
+					.put("typeTestNote", //$NON-NLS-1$
+							"Named by an instanceof test in an enablement expression, which is not instantiation and does not make it live. Deleting it breaks the expression silently: it stops matching rather than failing to compile."); //$NON-NLS-1$
+		}
 		into.add(entry);
 		return 1;
 	}
@@ -236,13 +248,17 @@ public final class ListDeclarationsTool implements IMcpTool {
 		List<RegistryIndex.Evidence> evidence = index.evidenceFor(name);
 		boolean unjudgeable = false;
 		for (RegistryIndex.Evidence one : evidence) {
-			if (!one.schemaKnown()) {
-				unjudgeable = true;
-			} else if (!Boolean.FALSE.equals(satisfies(member, one.basedOn(), monitor))) {
-				// unverifiable is not refuted: a supertype that is not on this project's
-				// build path cannot be checked, and must not be read as a stale entry
+			// an unsatisfied basedOn does not demote. It is a single-valued hint that
+			// several real schemas cannot express: org.eclipse.ui.decorators says
+			// ILabelDecorator while every lightweight="true" decorator implements
+			// ILightweightLabelDecorator instead, and the schema is not lying, only
+			// incapable of saying what it means. Unverifiable is not refuted, and
+			// unsatisfied is not refuted either; basedOnSatisfied stays as a flag for
+			// a person to read
+			if (one.schemaKnown()) {
 				return LIVE;
 			}
+			unjudgeable = true;
 		}
 		if (unjudgeable) {
 			return UNDECIDABLE;
@@ -288,9 +304,18 @@ public final class ListDeclarationsTool implements IMcpTool {
 			return null;
 		}
 		Set<String> supertypes = new LinkedHashSet<>();
+		// the type itself: a class satisfies basedOn X when it IS X, which
+		// getAllSupertypes does not report
+		supertypes.add(type.getFullyQualifiedName());
 		ITypeHierarchy hierarchy = type.newSupertypeHierarchy(monitor);
 		for (IType supertype : hierarchy.getAllSupertypes(type)) {
 			supertypes.add(supertype.getFullyQualifiedName());
+		}
+		if (supertypes.contains(EXTENSION_FACTORY)) {
+			// class="a.b.Factory:product" names a factory, and basedOn describes what
+			// the factory produces rather than the factory itself, so there is nothing
+			// here to check against this class
+			return null;
 		}
 		for (String name : required) {
 			if (supertypes.contains(name)) {
@@ -308,7 +333,8 @@ public final class ListDeclarationsTool implements IMcpTool {
 		return Boolean.TRUE;
 	}
 
-	private static void addCaveats(JsonObject result, RegistryIndex index, boolean includeReflection) {
+	private static void addCaveats(JsonObject result, RegistryIndex index, boolean includeReflection,
+			List<String> projects) {
 		JsonArray caveats = new JsonArray();
 		if (!includeReflection) {
 			caveats.add("Reflection was not scanned, so a class loaded only through Class.forName is reported dead."); //$NON-NLS-1$
@@ -327,16 +353,16 @@ public final class ListDeclarationsTool implements IMcpTool {
 			caveats.add("The reflection scan stopped at %d files, so later files were not read." //$NON-NLS-1$
 					.formatted(Integer.valueOf(index.reflectionFilesScanned())));
 		}
-		if (!index.pointsWithoutSchema().isEmpty()) {
+		Set<String> unknownPoints = index.pointsWithoutSchema(projects);
+		if (!unknownPoints.isEmpty()) {
 			JsonArray points = new JsonArray();
-			for (String point : List.copyOf(index.pointsWithoutSchema()).subList(0,
-					Math.min(20, index.pointsWithoutSchema().size()))) {
+			for (String point : List.copyOf(unknownPoints).subList(0, Math.min(20, unknownPoints.size()))) {
 				points.add(point);
 			}
 			result.put("extensionPointsWithoutSchema", points); //$NON-NLS-1$
 			caveats.add(
-					"%d extension points are contributed to from this workspace but declared outside it, so their schemas could not be read. Class-looking attribute values under those points are reported as undecidable rather than judged." //$NON-NLS-1$
-							.formatted(Integer.valueOf(index.pointsWithoutSchema().size())));
+					"%d extension points these projects contribute to are declared outside this workspace, so their schemas could not be read. Class-looking attribute values under those points are reported as undecidable rather than judged." //$NON-NLS-1$
+							.formatted(Integer.valueOf(unknownPoints.size())));
 		}
 		caveats.add(
 				"'dead' means no registry position this tool understands names it. Confirm with eclipse_find_references before deleting anything, and remember that neither answers whether the code is reachable."); //$NON-NLS-1$

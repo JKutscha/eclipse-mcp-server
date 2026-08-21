@@ -511,7 +511,13 @@ A boolean verdict would report the undecidable cases as dead, which is the one f
 </attribute>
 ```
 
-`basedOn` buys verification rather than trust. If the named class does not extend the declared supertype, the entry is stale and keeps nothing alive, and `basedOnSatisfied` says so. It is `null` when the supertype is not resolvable in that project at all, because unverifiable is not the same as refuted: treating it as refuted would report every `Bundle-Activator` in a project that does not compile against OSGi as dead.
+`basedOn` is verified and reported, but it **never demotes a verdict**. It is a single-valued hint that several real schemas cannot express: `org.eclipse.ui.decorators` names `ILabelDecorator`, while every decorator declared `lightweight="true"` implements `ILightweightLabelDecorator` instead. The schema is not lying, it is incapable of saying what it means. So `basedOnSatisfied` is a flag for a person to read, not an input to the status: unverifiable is not refuted, and unsatisfied is not refuted either.
+
+It is `null` in two cases: the supertype is not resolvable in that project at all, and the named class is an `IExecutableExtensionFactory`, where `class="a.b.Factory:product"` means `basedOn` describes what the factory produces rather than the factory itself.
+
+A class satisfies a `basedOn` that names the class itself.
+
+`typeTests` is reported separately from `registryEvidence` and never changes a verdict. A class named only by `<instanceof value="..."/>` in an enablement expression is `dead` by the rule above, because a type test is not instantiation, but deleting it breaks the expression *silently*: it stops matching rather than failing to compile, which is worse than an error.
 
 The other positions read are declarative services (`implementation@class`, `provide@interface`, and the lifecycle and binding method names), `Bundle-Activator`, `META-INF/services` (the file name is the interface, each line a provider), and reflective loads whose argument is a single string literal.
 
@@ -519,7 +525,7 @@ A name built at runtime is not resolvable by any static analysis, so those sites
 
 Members of a live type are `undecidable`, not dead: the framework holds the instance and calls whatever its contract says, and no declaration list can see that.
 
-Extension points contributed to from this workspace but declared outside it have no readable schema. Class-looking attribute values under those points come back `undecidable`, and the points are listed in `extensionPointsWithoutSchema`.
+Extension points these projects contribute to but that are declared outside the workspace have no readable schema. Class-looking attribute values under those points come back `undecidable`, and the points are listed in `extensionPointsWithoutSchema`, scoped to the projects that were asked about rather than to the whole workspace.
 
 ### `eclipse_get_call_hierarchy`
 
