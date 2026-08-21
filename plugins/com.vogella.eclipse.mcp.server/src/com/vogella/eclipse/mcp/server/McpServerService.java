@@ -147,7 +147,7 @@ public final class McpServerService {
 				.build();
 
 		mcpServer = McpServer.sync(transport).serverInfo("eclipse-mcp", version()) //$NON-NLS-1$
-				.instructions("Access to the Java model, the problem markers, the Error Log, the preferences and the editor context of a running Eclipse IDE. Most tools only read. The ones that change something say so in their own description: they format and organize imports, run builds, open and close projects, write preferences within an allowlist and set plug-in execution environments. There is no general file writing, no refactoring, no terminal and no debugger control.") //$NON-NLS-1$
+				.instructions("Access to the Java model, the problem markers, the Error Log, the preferences, the workbench and the editor context of a running Eclipse IDE, plus its files and text search. Most tools only read, and the ones that change something say so in their own description in capitals. Those are: renaming and deleting Java elements through the refactoring engine, formatting and organizing imports, running builds and tests, opening and closing projects, writing preferences within an allowlist, setting plug-in execution environments, updating the installation, clearing the Error Log, and showing, hiding or restarting the IDE itself. Every one of those is a dry run by default where a dry run makes sense. There is still no general file writing, no terminal and no debugger control. When several clients are connected, pass ids explicitly rather than relying on a tool's most-recent default.") //$NON-NLS-1$
 				.capabilities(ServerCapabilities.builder().tools(false).build()).jsonMapper(jsonMapper)
 				.jsonSchemaValidator(new BundleJsonSchemaValidator()).tools(specifications).build();
 
