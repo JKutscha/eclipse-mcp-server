@@ -669,6 +669,10 @@ The uniform-pixel check is what makes this safe rather than quietly wrong: SWT r
 **These modify the installation.**
 `eclipse_check_for_updates` changes nothing and reports which installed units have an update, from which version to which, and the configured repositories with the timestamp of the metadata behind each one.
 
+Both take `units`. Naming the installed units you care about scopes the whole operation: `ProvisioningContext.getInstallableUnitSources` is asked which repositories can supply them, only those are refreshed, and the resolution is restricted to them with `setProvisioningContext`, so unlisted repositories are never loaded at all. On an IDE configured with a dozen update sites that is one network round trip instead of a dozen. Omitting `units` keeps the broad question broad, because narrowing it silently would be the same class of mistake as reporting a stale cache as up to date.
+
+Only the metadata manager is ever refreshed, never the artifact manager. An update check does not read artifact metadata, and refreshing both is what makes a check cost twice what it needs to.
+
 It re-reads that metadata first, by default. p2 caches repository metadata, and a cached miss comes back as "no updates found", which is exactly what a genuinely current IDE reports, so a stale cache is invisible and looks like success. That is worst in the self-update workflow these tools exist for: publish a build, check for updates, and be told there is nothing new. `refresh: false` gives the fast cached answer instead, and then says so in a `caveat` rather than letting the miss pass as a verdict. `eclipse_update` refreshes for the same reason, since otherwise it resolves against the cache and finds nothing to apply.
 `eclipse_update` applies updates to units that are already installed, from repositories already configured. `eclipse_install` adds a new unit.
 Both run as jobs and return an `operationId` polled through `eclipse_get_provisioning_status`, because p2 resolution can take minutes on a slow mirror.

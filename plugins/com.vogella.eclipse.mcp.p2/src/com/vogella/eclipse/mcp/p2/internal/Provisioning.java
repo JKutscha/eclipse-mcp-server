@@ -17,6 +17,7 @@ import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.core.runtime.jobs.JobChangeAdapter;
 import org.eclipse.equinox.p2.core.IProvisioningAgent;
 import org.eclipse.equinox.p2.engine.IProfileRegistry;
+import org.eclipse.equinox.p2.engine.ProvisioningContext;
 import org.eclipse.equinox.p2.repository.metadata.IMetadataRepositoryManager;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.FrameworkUtil;
@@ -207,13 +208,16 @@ final class Provisioning {
 	 * document itself has to be re-read, because a release replaces the child rather
 	 * than adding one.
 	 */
-	static JsonArray describeRepositories(IProvisioningAgent agent, boolean refresh, IProgressMonitor monitor) {
+	private static JsonArray describe(IProvisioningAgent agent, boolean refresh, List<URI> locations,
+			IProgressMonitor monitor) {
+		// the metadata manager only. An update check never reads artifact metadata, and
+		// refreshing both is what makes a check cost twice what it needs to
 		IMetadataRepositoryManager manager = agent.getService(IMetadataRepositoryManager.class);
 		JsonArray reported = new JsonArray();
 		if (manager == null) {
 			return reported;
 		}
-		for (URI uri : knownRepositories(agent)) {
+		for (URI uri : locations) {
 			JsonObject entry = new JsonObject().put("uri", uri.toString()); //$NON-NLS-1$
 			if (refresh) {
 				try {
@@ -238,6 +242,72 @@ final class Provisioning {
 		} catch (NumberFormatException e) {
 			return millis;
 		}
+	}
+
+	static List<String> stringList(Map<String, Object> arguments, String name) {
+		List<String> values = new ArrayList<>();
+		if (arguments != null && arguments.get(name) instanceof List<?> list) {
+			for (Object entry : list) {
+				String value = String.valueOf(entry).trim();
+				if (!value.isEmpty()) {
+					values.add(value);
+				}
+			}
+		}
+		return values;
+	}
+
+	/** The installed units matching {@code ids}, for scoping an update to named things. */
+	static java.util.Set<org.eclipse.equinox.p2.metadata.IInstallableUnit> installedUnits(IProvisioningAgent agent,
+			List<String> ids) {
+		IProfileRegistry registry = agent.getService(IProfileRegistry.class);
+		var profile = registry == null ? null : registry.getProfile(IProfileRegistry.SELF);
+		java.util.Set<org.eclipse.equinox.p2.metadata.IInstallableUnit> units = new java.util.LinkedHashSet<>();
+		if (profile == null) {
+			return units;
+		}
+		for (String id : ids) {
+			profile.query(org.eclipse.equinox.p2.query.QueryUtil.createIUQuery(id), null).forEach(units::add);
+		}
+		return units;
+	}
+
+	/**
+	 * The repositories that can supply {@code units}, resolved through composite
+	 * children and references.
+	 * <p>
+	 * Asking p2 which locations matter beats refreshing every configured site: an
+	 * IDE with a dozen of them pays a network round trip for each, and a targeted
+	 * check only ever needed one.
+	 */
+	static URI[] sourcesFor(IProvisioningAgent agent,
+			java.util.Collection<org.eclipse.equinox.p2.metadata.IInstallableUnit> units, IProgressMonitor monitor) {
+		if (units.isEmpty()) {
+			return null;
+		}
+		ProvisioningContext context = new ProvisioningContext(agent);
+		Map<URI, java.util.Set<org.eclipse.equinox.p2.metadata.IInstallableUnit>> sources = context
+				.getInstallableUnitSources(units, monitor);
+		return sources == null || sources.isEmpty() ? null : sources.keySet().toArray(URI[]::new);
+	}
+
+	/**
+	 * Restricts an operation to {@code locations}, or leaves it workspace wide when
+	 * {@code locations} is null. Only the named repositories are loaded at all.
+	 */
+	static ProvisioningContext scope(IProvisioningAgent agent, URI[] locations) {
+		ProvisioningContext context = new ProvisioningContext(agent);
+		if (locations != null && locations.length > 0) {
+			context.setMetadataRepositories(locations);
+		}
+		return context;
+	}
+
+	/** Refreshes just {@code locations}, or every configured repository when null. */
+	static JsonArray describeRepositories(IProvisioningAgent agent, boolean refresh, URI[] locations,
+			IProgressMonitor monitor) {
+		List<URI> scoped = locations == null ? knownRepositories(agent) : List.of(locations);
+		return describe(agent, refresh, scoped, monitor);
 	}
 
 	/** The timestamp of the current configuration, which is the revert point. */

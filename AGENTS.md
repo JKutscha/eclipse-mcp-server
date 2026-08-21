@@ -176,6 +176,8 @@ That is deliberate for `eclipse_restart`, which must never be invoked by a test,
 **p2 caches repository metadata, and a cached miss reads as success.**
 `UpdateOperation` resolves against whatever is cached, so a newly published build is invisible until something invalidates it, and the answer is the same "no updates found" a current IDE gives.
 `Provisioning.describeRepositories` refreshes before resolving, by default, and reports each repository's timestamp.
+Refresh the metadata manager only. An update check never reads artifact metadata, and `ColocatedRepositoryTracker` refreshes both, which is why `RepositoryTracker` is not used here.
+When units are named, `getInstallableUnitSources` says which repositories can supply them, and only those are refreshed and resolved against through `setProvisioningContext`; a broad call with no units stays broad on purpose.
 This matters most in the self-update loop, where the tool is used immediately after a publish. Do not make the refresh opt-in to save a round trip; a check that quietly lies is worse than a slow one.
 The update site is a composite whose child location changes per release rather than accumulating, so it is the composite document itself that has to be re-read.
 

@@ -35,7 +35,7 @@ public final class UpdateTool implements IMcpTool {
 				{
 				  "type": "object",
 				  "properties": {
-				    "units":          {"type":"array","items":{"type":"string"},"description":"Unit ids to update. Omit to update everything that has an update."},
+				    "units":          {"type":"array","items":{"type":"string"},"description":"Installed unit ids to update. Scopes the resolution to the repositories that can supply them, so a targeted update makes one network round trip instead of one per configured site. Omit to update everything that has an update."},
 				    "refresh":        {"type":"boolean","default":true,"description":"Re-read the repository metadata first. Without it the update resolves against p2's cache and may find nothing to apply."},
 				    "trustUnsigned":  {"type":"boolean","default":false,"description":"Accept unsigned content, or content signed by a certificate this IDE does not trust, for this one call. Refused by default: the repository allowlist restricts where code comes from, and trusting unsigned artifacts removes the remaining check on what that code is."},
 				    "wait":           {"type":"boolean","default":false,"description":"Wait for the job. Updates are slow, so this is off by default."},
@@ -54,8 +54,16 @@ public final class UpdateTool implements IMcpTool {
 		}
 		// refresh first for the same reason as the check tool: without it the update
 		// resolves against cached metadata and finds nothing to apply
-		Provisioning.describeRepositories(agent, args.getBoolean("refresh", true), monitor); //$NON-NLS-1$
-		UpdateOperation operation = new UpdateOperation(new ProvisioningSession(agent));
+		java.util.List<String> unitIds = Provisioning.stringList(arguments, "units"); //$NON-NLS-1$
+		var units = Provisioning.installedUnits(agent, unitIds);
+		if (!unitIds.isEmpty() && units.isEmpty()) {
+			return McpToolResult.error("None of %s is installed, so there is nothing to update.".formatted(unitIds)); //$NON-NLS-1$
+		}
+		java.net.URI[] locations = units.isEmpty() ? null : Provisioning.sourcesFor(agent, units, monitor);
+		Provisioning.describeRepositories(agent, args.getBoolean("refresh", true), locations, monitor); //$NON-NLS-1$
+		UpdateOperation operation = units.isEmpty() ? new UpdateOperation(new ProvisioningSession(agent))
+				: new UpdateOperation(new ProvisioningSession(agent), units);
+		operation.setProvisioningContext(Provisioning.scope(agent, locations));
 		IStatus resolution = operation.resolveModal(monitor);
 		Update[] possible = operation.getPossibleUpdates();
 		if (possible == null || possible.length == 0) {
