@@ -77,6 +77,15 @@ class UiToolsTest {
 		assertRefused(TestFixture.call("eclipse_hide_view", Map.of()), "'view' is required");
 	}
 
+	@Test
+	void visibilityNeedsItsArgumentAndAWorkbench() throws Exception {
+		assertRefused(TestFixture.call("eclipse_set_ide_visibility", Map.of()), "'visible' is required");
+		assertRefused(TestFixture.call("eclipse_set_ide_visibility", Map.of("visible", Boolean.FALSE, "mode", "gone")),
+				"Unknown mode");
+		assertRefused(TestFixture.call("eclipse_set_ide_visibility", Map.of("visible", Boolean.FALSE)),
+				"no running workbench");
+	}
+
 	private static IFile write(IProject project, String name, String content) throws Exception {
 		IFile file = project.getFile(name);
 		file.create(new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)), true,

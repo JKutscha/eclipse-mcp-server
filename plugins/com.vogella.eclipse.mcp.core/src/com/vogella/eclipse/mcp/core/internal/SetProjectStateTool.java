@@ -93,6 +93,7 @@ public final class SetProjectStateTool implements IMcpTool {
 			}
 		}
 
+		Set<String> closingTogether = closingTogether(candidates, state, force);
 		JsonArray reported = new JsonArray();
 		int changed = 0;
 		int skipped = 0;
@@ -101,7 +102,7 @@ public final class SetProjectStateTool implements IMcpTool {
 			if (monitor.isCanceled()) {
 				return McpToolResult.error("The request was cancelled."); //$NON-NLS-1$
 			}
-			Outcome outcome = act(project, state, platformMismatch, dryRun, force);
+			Outcome outcome = act(project, state, platformMismatch, dryRun, force, closingTogether);
 			if (outcome == null) {
 				continue;
 			}
@@ -140,9 +141,58 @@ public final class SetProjectStateTool implements IMcpTool {
 				false);
 	}
 
+	/**
+	 * The projects of this batch that will end up closed, as a fixpoint.
+	 * <p>
+	 * {@code getReferencingProjects} reports the projects that are open right now,
+	 * so a batch closing a whole cluster used to refuse every member whose
+	 * dependents were themselves in the same batch: the warning described a state
+	 * that would not exist once the call returned, and closing the cluster took one
+	 * pass per layer. Removing one project can block another, so this iterates
+	 * rather than subtracting the selection once, and it runs the same way for a dry
+	 * run as for a real one, where nothing has been closed yet either.
+	 */
+	private static Set<String> closingTogether(List<IProject> candidates, String state, boolean force) {
+		if (!"closed".equals(state)) { //$NON-NLS-1$
+			return Set.of();
+		}
+		Set<String> closing = new LinkedHashSet<>();
+		for (IProject project : candidates) {
+			if (project.isOpen()) {
+				closing.add(project.getName());
+			}
+		}
+		if (force) {
+			return closing;
+		}
+		boolean shrank = true;
+		while (shrank) {
+			shrank = false;
+			for (String name : List.copyOf(closing)) {
+				IProject project = ResourcesPlugin.getWorkspace().getRoot().getProject(name);
+				if (!blockingDependents(project, closing).isEmpty()) {
+					closing.remove(name);
+					shrank = true;
+				}
+			}
+		}
+		return closing;
+	}
+
+	/** The open dependents that will still be open after this batch. */
+	private static List<String> blockingDependents(IProject project, Set<String> closing) {
+		List<String> blocking = new ArrayList<>();
+		for (IProject referencing : project.getReferencingProjects()) {
+			if (!closing.contains(referencing.getName())) {
+				blocking.add(referencing.getName());
+			}
+		}
+		return blocking;
+	}
+
 	/** Returns {@code null} when the project is not part of the selection at all. */
 	private static Outcome act(IProject project, String state, boolean platformMismatch, boolean dryRun,
-			boolean force) {
+			boolean force, Set<String> closingTogether) {
 		String previous = project.isOpen() ? "open" : "closed"; //$NON-NLS-1$ //$NON-NLS-2$
 		PlatformFilters.Verdict verdict = platformMismatch ? PlatformFilters.evaluate(project) : null;
 		if (verdict != null && !verdict.mismatch()) {
@@ -158,14 +208,22 @@ public final class SetProjectStateTool implements IMcpTool {
 
 		if ("closed".equals(state)) { //$NON-NLS-1$
 			JsonArray dependents = new JsonArray();
+			JsonArray inBatch = new JsonArray();
 			for (IProject referencing : project.getReferencingProjects()) {
-				dependents.add(referencing.getName());
+				if (closingTogether.contains(referencing.getName())) {
+					inBatch.add(referencing.getName());
+				} else {
+					dependents.add(referencing.getName());
+				}
+			}
+			if (inBatch.size() > 0) {
+				entry.put("dependentsClosingTogether", inBatch); //$NON-NLS-1$
 			}
 			if (dependents.size() > 0) {
 				entry.put("openDependents", dependents); //$NON-NLS-1$
 				if (!force) {
 					return skip(entry, previous,
-							"Open projects reference it, and closing it would give them build path errors rather than removing errors. Pass force to close it anyway."); //$NON-NLS-1$
+							"Open projects reference it that this call does not also close, and closing it would give them build path errors rather than removing errors. Pass force to close it anyway."); //$NON-NLS-1$
 				}
 			}
 		}

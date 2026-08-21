@@ -28,6 +28,9 @@ public class McpUiPlugin extends AbstractUIPlugin {
 
 	@Override
 	public void stop(BundleContext context) throws Exception {
+		// a hidden window has no menu to bring it back, so the plug-in going away
+		// must not be the moment the IDE becomes unrecoverable
+		VisibilityTool.restoreIfHidden();
 		plugin = null;
 		serverPreferences = null;
 		super.stop(context);

@@ -14,6 +14,7 @@
       <tool class="com.vogella.eclipse.mcp.jdt.internal.RenameTool"/>
       <tool class="com.vogella.eclipse.mcp.jdt.internal.RunTestsTool"/>
       <tool class="com.vogella.eclipse.mcp.jdt.internal.GetTestResultsTool"/>
+      <tool class="com.vogella.eclipse.mcp.jdt.internal.ListDeclarationsTool"/>
    </extension>
 
 </plugin>

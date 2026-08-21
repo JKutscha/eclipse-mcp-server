@@ -139,9 +139,13 @@ No arguments.
 
 ```json
 {"projects":[{"name":"com.example.app","open":true,
-              "natures":["org.eclipse.jdt.core.javanature"],
+              "natures":["org.eclipse.jdt.core.javanature"],"natureSource":"model",
               "location":"/home/user/git/app"}]}
 ```
+
+A closed project still reports its natures, read from `.project` on disk, and `natureSource` says which of the two answered: `model`, `projectFile`, or `unknown` when the file could not be read.
+`IProject.getDescription` fails on a closed project, and reporting that as "no natures" is worse than saying nothing.
+A client classifying projects by nature otherwise gets a different answer for the same workspace depending on which projects happen to be open at the time, which is not a rule but a coin flip.
 
 ### `eclipse_get_problems`
 
@@ -333,6 +337,10 @@ At least one of `projects`, `namePattern` or `platformMismatch` is required; the
 
 Closing a project that open projects reference does not remove errors, it gives the dependents build path errors instead. So `openDependents` is always reported, from `IProject.getReferencingProjects()`, which covers both JDT build path references and PDE required bundles, and closing is refused unless `force` is passed.
 
+**A batch is resolved as a whole.** `getReferencingProjects()` reports the projects that are open right now, so closing a cluster used to refuse every member whose dependents were themselves in the same call: the refusal described a state that would not exist once the call returned, and closing a cluster took one pass per layer of the graph.
+The projects a call will actually close are now computed as a fixpoint first, and only dependents that will still be open afterwards block anything. Those appear in `openDependents` as before; the ones closing in the same call appear in `dependentsClosingTogether`, which is reported but never blocks.
+Removing one project from the set can block another, which is why this iterates rather than subtracting the selection once, and it resolves the same way for a dry run as for a real one.
+
 ### `eclipse_build`
 
 **Runs builders.**
@@ -465,6 +473,53 @@ This matters because the alternative is not a slower answer but a wrong one: tes
 The **UI test application is opt-in**. It opens a workbench window on the user's screen, and a launched IDE should never be a surprise. The runtime workspace is cleared without asking, since a prompt would block a call nobody is watching.
 
 Results are collected through `JUnitCore.addTestRunListener`, which is global and fires for every run in the IDE. Runs are matched by a launch configuration name generated per run, so a test run someone starts at the keyboard is never reported as one of ours.
+
+### `eclipse_list_declarations`
+
+Enumerates the types, methods or fields a project declares in its own source, and cross-checks each against the places an Eclipse runtime instantiates a class by name.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `project` | string | | Project to enumerate. |
+| `projects` | array of strings | | Several projects, instead of `project`. |
+| `kinds` | array of `types` \| `methods` \| `fields` | `["types"]` | |
+| `visibility` | array of `public` \| `protected` \| `package` \| `private` | all | |
+| `status` | `dead` \| `live-via-registry` \| `undecidable` \| `all` | `all` | Report only this verdict. |
+| `includeTest` | boolean | `false` | Include source folders the build path marks as test. |
+| `includeReflection` | boolean | `true` | Scan source for `Class.forName` and `loadClass`. |
+| `maxResults` | integer, 1 to 5000 | 500 | |
+
+This is the candidate generation step of a dead code sweep. `eclipse_find_references` is the confirm step, and neither replaces the other: search is fast and resolves overloads and inheritance, but it cannot enumerate, and zero references does not mean dead.
+
+Binary types are never listed. Only source package fragment roots are walked, so a class that exists a dozen times over inside built jars appears once, as source, rather than being deduplicated afterwards.
+
+**`registryStatus` is three-valued, and the distinction is the point.**
+
+- `dead` means only that no registry position this tool understands names it. It never means deleting it is safe.
+- `live-via-registry` means not provably dead. It does not mean anything still uses it: an extension can be contributed to a point nobody reads any more, in a bundle that ships in no feature.
+- `undecidable` means something names it in a position that cannot be judged.
+
+A boolean verdict would report the undecidable cases as dead, which is the one failure mode that makes a tool like this dangerous rather than merely incomplete.
+
+**Extension attributes are resolved through the schema, not grepped.** The rule is positional: a class name in a comment, a changelog or a `.txt` file keeps nothing alive. An element is resolved to its extension point, the point's `.exsd` says which of its attributes are java-typed, and only those count:
+
+```xml
+<attribute name="class" type="string" use="required">
+  <appInfo>
+    <meta.attribute kind="java" basedOn="org.eclipse.core.resources.filtermatchers.AbstractFileInfoMatcher:"/>
+  </appInfo>
+</attribute>
+```
+
+`basedOn` buys verification rather than trust. If the named class does not extend the declared supertype, the entry is stale and keeps nothing alive, and `basedOnSatisfied` says so. It is `null` when the supertype is not resolvable in that project at all, because unverifiable is not the same as refuted: treating it as refuted would report every `Bundle-Activator` in a project that does not compile against OSGi as dead.
+
+The other positions read are declarative services (`implementation@class`, `provide@interface`, and the lifecycle and binding method names), `Bundle-Activator`, `META-INF/services` (the file name is the interface, each line a provider), and reflective loads whose argument is a single string literal.
+
+A name built at runtime is not resolvable by any static analysis, so those sites are reported in `dynamicReflectionSites` and every `dead` verdict in that project is flagged provisional rather than silently downgraded.
+
+Members of a live type are `undecidable`, not dead: the framework holds the instance and calls whatever its contract says, and no declaration list can see that.
+
+Extension points contributed to from this workspace but declared outside it have no readable schema. Class-looking attribute values under those points come back `undecidable`, and the points are listed in `extensionPointsWithoutSchema`.
 
 ### `eclipse_get_call_hierarchy`
 
@@ -710,6 +765,24 @@ It is also the only way to answer "which dialog is open right now".
 
 With `includeAvailableViews` it also lists the views registered in this IDE whether or not they are open, which is where `eclipse_show_view` gets its ids.
 There are several hundred, so `filter` matches a substring of the id or the label and `maxResults` defaults to 100.
+
+### `eclipse_set_ide_visibility`
+
+**Changes what the user sees**, in the one way they cannot undo from the IDE.
+Takes the Eclipse window off the screen, or brings it back, for using the IDE as a backend rather than as something to look at.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `visible` | boolean, required | | `false` takes it off the screen, `true` brings it back and focuses it. |
+| `mode` | `hidden` \| `minimized` | `hidden` | How to take it off the screen. Ignored when showing. |
+
+The IDE keeps running while hidden. Builds, searches, tests and every other tool here work unchanged, because the workbench event loop belongs to the display and not to the window.
+
+`hidden` removes the window from the screen and the taskbar entirely; `minimized` leaves it reachable by hand, which is the safer choice when a person is at the machine.
+
+Hiding a window is easy to make unrecoverable, and that is the whole risk here: a hidden window has no menu and no taskbar entry, so the only way back is this tool. Two things make it safe. Calling it with `visible: true` restores it, and the plug-in restores every window it hid when it stops, so disabling or uninstalling the server cannot leave an IDE nobody can see and nothing can bring back.
+
+While hidden, dialogs are still raised and are still invisible. `eclipse_list_ui_targets` and `eclipse_dismiss_dialog` remain the way to see and answer them, and they are worth more than usual in this state.
 
 ### `eclipse_show_view` and `eclipse_hide_view`
 

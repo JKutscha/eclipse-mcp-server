@@ -33,6 +33,38 @@ class SetProjectStateToolTest {
 	}
 
 	@Test
+	void closesAWholeClusterInOneCall() throws Exception {
+		IProject depended = fixture.createProject(PROJECT + "-a");
+		IProject dependent = fixture.createProject(PROJECT + "-b");
+		reference(dependent, depended);
+
+		Map<String, Object> result = TestFixture.callAndParse(TOOL, Map.of("state", "closed", "dryRun", Boolean.FALSE,
+				"projects", List.of(depended.getName(), dependent.getName())));
+
+		// the dependent is closing in the same call, so the build path errors the
+		// refusal exists to prevent cannot happen and one pass is enough
+		assertEquals(Integer.valueOf(2), result.get("changed"), "expected both to close, got " + result);
+		assertEquals(Integer.valueOf(0), result.get("skipped"));
+		assertFalse(depended.isOpen(), "the depended-on project should be closed");
+		assertFalse(dependent.isOpen(), "the dependent should be closed");
+	}
+
+	@Test
+	void stillRefusesWhenTheDependentStaysOpen() throws Exception {
+		IProject depended = fixture.createProject(PROJECT + "-a");
+		IProject dependent = fixture.createProject(PROJECT + "-b");
+		reference(dependent, depended);
+
+		Map<String, Object> result = TestFixture.callAndParse(TOOL,
+				Map.of("state", "closed", "dryRun", Boolean.FALSE, "projects", List.of(depended.getName())));
+
+		assertEquals(Integer.valueOf(0), result.get("changed"));
+		assertTrue(depended.isOpen(), "the refusal is the whole point when the dependent stays open");
+		assertTrue(String.valueOf(only(result).get("skippedBecause")).contains("Pass force"),
+				"got " + only(result));
+	}
+
+	@Test
 	void aDryRunChangesNothing() throws Exception {
 		IProject project = fixture.createProject(PROJECT);
 

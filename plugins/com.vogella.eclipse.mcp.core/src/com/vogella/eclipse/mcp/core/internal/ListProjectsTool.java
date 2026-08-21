@@ -1,6 +1,12 @@
 package com.vogella.eclipse.mcp.core.internal;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
@@ -24,9 +30,12 @@ public final class ListProjectsTool implements IMcpTool {
 		return "eclipse_list_projects"; //$NON-NLS-1$
 	}
 
+	/** .project is machine written, so the element is enough and an XML parse is not. */
+	private static final Pattern NATURE = Pattern.compile("<nature>([^<]*)</nature>"); //$NON-NLS-1$
+
 	@Override
 	public String getDescription() {
-		return "Lists the projects in the Eclipse workspace, with their natures and open/closed state."; //$NON-NLS-1$
+		return "Lists the projects in the Eclipse workspace, with their natures and open/closed state. A closed project still reports its natures, read from its .project file on disk, because the Java model cannot answer for a project it has not opened. natureSource says which of the two answered, so 'has no natures' is never confused with 'could not be asked'."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -51,12 +60,50 @@ public final class ListProjectsTool implements IMcpTool {
 				} catch (CoreException e) {
 					throw new McpToolException("Could not read the natures of project " + project.getName(), e); //$NON-NLS-1$
 				}
-				entry.put("natures", natures); //$NON-NLS-1$
+				entry.put("natures", natures).put("natureSource", "model"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+			} else {
+				List<String> onDisk = naturesFromProjectFile(project);
+				JsonArray natures = null;
+				if (onDisk != null) {
+					natures = new JsonArray();
+					onDisk.forEach(natures::add);
+				}
+				entry.put("natures", natures) //$NON-NLS-1$
+						.put("natureSource", onDisk == null ? "unknown" : "projectFile"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 			}
 			IPath location = project.getLocation();
 			entry.put("location", location == null ? null : location.toOSString()); //$NON-NLS-1$
 			projects.add(entry);
 		}
 		return McpToolResult.of(new JsonObject().put("projects", projects).toString()); //$NON-NLS-1$
+	}
+
+	/**
+	 * The natures a closed project declares, or {@code null} when the file cannot be
+	 * read.
+	 * <p>
+	 * {@code IProject.getDescription} fails on a closed project, and reporting that
+	 * as "no natures" is worse than saying nothing: a client classifying projects
+	 * then gets a different answer for the same workspace depending on which
+	 * projects happen to be open. The file is the same information, and the closed
+	 * projects are exactly the ones a cleanup client needs to classify.
+	 */
+	private static List<String> naturesFromProjectFile(IProject project) {
+		IPath location = project.getLocation();
+		if (location == null) {
+			return null;
+		}
+		String content;
+		try {
+			content = Files.readString(location.append(".project").toFile().toPath()); //$NON-NLS-1$
+		} catch (IOException | RuntimeException e) {
+			return null;
+		}
+		List<String> natures = new ArrayList<>();
+		Matcher matcher = NATURE.matcher(content);
+		while (matcher.find()) {
+			natures.add(matcher.group(1).trim());
+		}
+		return natures;
 	}
 }

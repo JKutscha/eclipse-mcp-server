@@ -28,7 +28,7 @@ There is no faster partial build worth using: `mvn verify -pl` on a single bundl
 ```
 plugins/com.vogella.eclipse.mcp.core     tool API, registry, extension point, workspace tools
 plugins/com.vogella.eclipse.mcp.server   MCP protocol, embedded Jetty, bearer token
-plugins/com.vogella.eclipse.mcp.jdt      Java model tools
+plugins/com.vogella.eclipse.mcp.jdt      Java model tools, declaration sweep and registry index
 plugins/com.vogella.eclipse.mcp.ui       editor, view and compare tools, screenshots, preference page, startup hook
 plugins/com.vogella.eclipse.mcp.pde      PDE tools
 features/com.vogella.eclipse.mcp.feature
@@ -196,6 +196,35 @@ The update site is a composite whose child location changes per release rather t
 
 **`IWorkbench.restart()` relaunches without the original command line.**
 Use `restart(true)`. The no argument form drops `-data`, so the IDE comes back up showing the workspace chooser and waits for a person, which is exactly what an unattended restart must not do.
+
+**`getReferencingProjects()` answers about now, not about after the call.**
+It reports the projects that are open at the moment it is asked, so `SetProjectStateTool` closing a cluster refused every member whose dependents were themselves in the same batch, and the refusal described a state that would not exist once the call returned.
+`closingTogether` resolves the batch as a fixpoint before acting, and only dependents that will still be open afterwards block anything.
+It has to iterate rather than subtract the selection once, because removing one project from the set can block another, and it must resolve the same way for a dry run as for a real one, where nothing has been closed yet either.
+
+**A closed project cannot be asked what natures it has, and answering "none" is a lie a client cannot detect.**
+`IProject.getDescription` fails while closed, so `ListProjectsTool` reads `.project` from disk and reports `natureSource` as `model`, `projectFile` or `unknown`.
+Without it a client classifying projects by nature gets a different answer for the same workspace depending on which projects happen to be open, which was measured as 73 hits one hour and 185 the next on an unchanged workspace.
+Closed projects are exactly the ones a cleanup client needs to classify, so this is not an edge case.
+
+**A reflective load only counts as resolved when the literal is the whole argument.**
+`RegistryIndex.LITERAL_REFLECTION` requires a `,` or `)` after the closing quote.
+Without it `Class.forName("registry." + suffix)` matches as a resolved literal named `registry.`, and the one case that must stay `undecidable` is reported as live.
+The fixture in `ListDeclarationsToolTest` contains exactly that expression; it caught this, and it is the reason the test exists.
+
+**In `eclipse_list_declarations`, unverifiable is never refuted.**
+A schema's `basedOn` is checked against the type's supertype hierarchy, but a supertype that is not resolvable in that project cannot be checked at all, and `satisfies` returns `null` rather than `false`.
+Read as `false`, every `Bundle-Activator` in a project that does not compile against OSGi is reported dead, which is the one answer that tool must never give.
+The same rule is why the verdict has three values rather than two.
+
+**The extension point schemas are parsed here rather than read through PDE.**
+`org.eclipse.pde.internal.core.schema` and `.ischema` are exported `x-friends:="org.eclipse.pde.ui"`, so `SchemaAttribute` would resolve at runtime but is a discouraged access at compile time and a dependency PDE may break in any release.
+What is actually needed is `kind="java"` and `basedOn` on one element, which is far smaller to own than PDE's schema model.
+If a real case turns up that needs schema includes or inherited attributes, that is when this tradeoff is worth revisiting.
+
+**A hidden IDE must not be able to outlive the thing that can unhide it.**
+`eclipse_set_ide_visibility` can take the window off the screen and the taskbar, where no menu can bring it back, so `McpUiPlugin.stop` calls `VisibilityTool.restoreIfHidden`.
+Disabling or uninstalling the server must not be the moment the IDE becomes unrecoverable.
 
 **JGit is an optional dependency and every reference to it lives in `GitContent`.**
 `org.eclipse.jgit` is in the target platform to compile against and is required with `resolution:=optional`, so an IDE without EGit still installs the feature and loses only the `revision` argument of `eclipse_open_compare`.
