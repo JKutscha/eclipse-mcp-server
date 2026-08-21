@@ -74,6 +74,21 @@ final class TestFixture {
 		return project;
 	}
 
+	/**
+	 * Creates a project whose content lives at an existing location, which is how a
+	 * platform workspace nests projects inside one another and how one file on disk
+	 * becomes reachable through several workspace paths.
+	 */
+	IProject createProjectAt(String name, java.nio.file.Path location) throws CoreException {
+		IProject project = ResourcesPlugin.getWorkspace().getRoot().getProject(name);
+		IProjectDescription description = ResourcesPlugin.getWorkspace().newProjectDescription(name);
+		description.setLocationURI(location.toUri());
+		project.create(description, new NullProgressMonitor());
+		project.open(new NullProgressMonitor());
+		created.add(project);
+		return project;
+	}
+
 	IJavaProject createJavaProject(String name) throws CoreException {
 		IProject project = createProject(name);
 		IProjectDescription description = project.getDescription();

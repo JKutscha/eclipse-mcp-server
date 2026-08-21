@@ -119,10 +119,16 @@ public final class SearchTextTool implements IMcpTool {
 				.put("isRegex", Boolean.valueOf(isRegex)) //$NON-NLS-1$
 				.put("isCaseSensitive", Boolean.valueOf(caseSensitive)) //$NON-NLS-1$
 				.put("includeDerived", Boolean.valueOf(includeDerived)) //$NON-NLS-1$
-				.put("total", Integer.valueOf(collector.total)) //$NON-NLS-1$
-				.put("files", Integer.valueOf(collector.files.size())) //$NON-NLS-1$
-				.put("truncated", Boolean.valueOf(collector.total > collector.matches.size())) //$NON-NLS-1$
-				.put("matches", collector.matches); //$NON-NLS-1$
+				.put("total", Integer.valueOf(collector.distinct.size())) //$NON-NLS-1$
+				.put("files", Integer.valueOf(collector.locations.size())) //$NON-NLS-1$
+				.put("duplicatePathsCollapsed", Integer.valueOf(collector.collapsed)) //$NON-NLS-1$
+				.put("truncated", Boolean.valueOf(collector.distinct.size() > maxResults)) //$NON-NLS-1$
+				.put("matches", collector.matches(maxResults)); //$NON-NLS-1$
+		if (collector.collapsed > 0) {
+			result.put("note", //$NON-NLS-1$
+					"%d further workspace path(s) reach the same file on disk and were collapsed. Nested projects make one file reachable through several paths, and counting those separately inflates a result in a way a client cannot detect without a filesystem. alsoVisibleAs lists the other paths." //$NON-NLS-1$
+							.formatted(Integer.valueOf(collector.collapsed)));
+		}
 		return McpToolResult.of(result.toString());
 	}
 
@@ -133,13 +139,16 @@ public final class SearchTextTool implements IMcpTool {
 	 */
 	private static final class Collector extends TextSearchRequestor {
 
-		private final JsonArray matches = new JsonArray();
+		/** Keyed by physical location and offset, so one file counts once. */
+		private final java.util.Map<String, JsonObject> distinct = new java.util.LinkedHashMap<>();
 
-		private final List<String> files = new ArrayList<>();
+		private final java.util.Map<String, JsonArray> alsoVisibleAs = new java.util.HashMap<>();
+
+		private final java.util.Set<String> locations = new java.util.LinkedHashSet<>();
 
 		private final int maxResults;
 
-		private int total;
+		private int collapsed;
 
 		private IFile currentFile;
 
@@ -170,16 +179,23 @@ public final class SearchTextTool implements IMcpTool {
 
 		@Override
 		public boolean acceptPatternMatch(TextSearchMatchAccess match) {
-			total++;
 			IFile file = match.getFile();
 			String path = file.getFullPath().toString();
-			if (!files.contains(path)) {
-				files.add(path);
-			}
-			if (matches.size() >= maxResults) {
+			int offset = match.getMatchOffset();
+			// 754 of 755 projects in a platform workspace are nested inside another
+			// one, so a single file on disk is reachable through several workspace
+			// paths and the same match arrives once per path. Counting those as
+			// separate results inflates the answer by an unpredictable factor, and a
+			// client cannot see it without a filesystem, which is what this tool
+			// exists to do without
+			String location = file.getLocationURI() == null ? path : file.getLocationURI().toString();
+			locations.add(location);
+			String key = location + "@" + offset; //$NON-NLS-1$
+			if (distinct.containsKey(key)) {
+				collapsed++;
+				alsoVisibleAs.computeIfAbsent(key, ignored -> new JsonArray()).add(path);
 				return true;
 			}
-			int offset = match.getMatchOffset();
 			int start = offset;
 			while (start > 0 && match.getFileContentChar(start - 1) != '\n') {
 				start--;
@@ -190,11 +206,26 @@ public final class SearchTextTool implements IMcpTool {
 				end++;
 			}
 			String line = match.getFileContent(start, Math.min(end, length) - start).stripTrailing();
-			matches.add(new JsonObject().put("file", path) //$NON-NLS-1$
+			distinct.put(key, new JsonObject().put("file", path) //$NON-NLS-1$
 					.put("line", Integer.valueOf(lineOf(match, offset))) //$NON-NLS-1$
 					.put("offset", Integer.valueOf(offset)) //$NON-NLS-1$
 					.put("text", line.length() > MAX_LINE_LENGTH ? line.substring(0, MAX_LINE_LENGTH) : line)); //$NON-NLS-1$
 			return true;
+		}
+
+		JsonArray matches(int limit) {
+			JsonArray array = new JsonArray();
+			for (java.util.Map.Entry<String, JsonObject> entry : distinct.entrySet()) {
+				if (array.size() >= limit) {
+					break;
+				}
+				JsonArray others = alsoVisibleAs.get(entry.getKey());
+				if (others != null) {
+					entry.getValue().put("alsoVisibleAs", others); //$NON-NLS-1$
+				}
+				array.add(entry.getValue());
+			}
+			return array;
 		}
 
 		/** Line starts are computed once per file, since matches arrive grouped by file. */

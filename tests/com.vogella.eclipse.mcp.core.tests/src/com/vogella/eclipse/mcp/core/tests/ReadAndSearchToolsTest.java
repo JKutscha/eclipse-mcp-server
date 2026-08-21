@@ -2,6 +2,7 @@ package com.vogella.eclipse.mcp.core.tests;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
@@ -154,6 +155,25 @@ class ReadAndSearchToolsTest {
 				Map.of("pattern", "anything", "projects", List.of("no-such-project")));
 		assertTrue(result.isError());
 		assertFalse(result.text().isBlank());
+	}
+
+	@Test
+	void countsOneFileOnceEvenWhenSeveralProjectsReachIt() throws Exception {
+		IProject outer = fixture.createProject(PROJECT);
+		outer.getFolder("inner").create(false, true, new NullProgressMonitor());
+		write(outer, "inner/plugin.xml", "<plugin>a.b.Matcher</plugin>\n");
+		// a project nested inside another one, which is the normal shape of a platform
+		// workspace: the same file on disk is reachable through two workspace paths
+		IProject nested = fixture.createProjectAt(PROJECT + "-nested",
+				outer.getLocation().append("inner").toFile().toPath());
+
+		Map<String, Object> result = TestFixture.callAndParse("eclipse_search_text",
+				Map.of("pattern", "a.b.Matcher", "projects", List.of(PROJECT, nested.getName())));
+
+		assertEquals(Integer.valueOf(1), result.get("total"), "one file on disk is one match, got " + result);
+		assertEquals(Integer.valueOf(1), result.get("files"));
+		assertEquals(Integer.valueOf(1), result.get("duplicatePathsCollapsed"));
+		assertNotNull(first(result).get("alsoVisibleAs"), "the other path should be reported, got " + first(result));
 	}
 
 	private static IFile write(IProject project, String name, String content) throws Exception {

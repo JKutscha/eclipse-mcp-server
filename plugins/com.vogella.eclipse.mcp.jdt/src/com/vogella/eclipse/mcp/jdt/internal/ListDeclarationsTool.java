@@ -263,7 +263,14 @@ public final class ListDeclarationsTool implements IMcpTool {
 		PackageExports.Export export = exports.of(type.getJavaProject().getProject(),
 				type.getPackageFragment().getElementName());
 		JsonObject api = new JsonObject().put("tier", export.tier()); //$NON-NLS-1$
-		boolean authoritative = PackageExports.NOT_EXPORTED.equals(export.tier());
+		// x-internal counts as authoritative too. It declares that NO bundle should
+		// use the package, which is a stronger statement than an x-friends list that
+		// happens to be enumerable, so crediting the enumerable one and not the
+		// absolute one had it backwards. Both rest on a compile time access rule
+		// rather than on anything OSGi enforces at runtime, which is why the caveat
+		// says so rather than the field pretending to more than it has
+		boolean authoritative = PackageExports.NOT_EXPORTED.equals(export.tier())
+				|| PackageExports.INTERNAL.equals(export.tier());
 		if (PackageExports.FRIENDS.equals(export.tier())) {
 			JsonArray friends = new JsonArray();
 			export.friends().forEach(friends::add);
@@ -441,6 +448,8 @@ public final class ListDeclarationsTool implements IMcpTool {
 					"%d extension points these projects contribute to are declared outside this workspace, so their schemas could not be read. Class-looking attribute values under those points are reported as undecidable rather than judged." //$NON-NLS-1$
 							.formatted(Integer.valueOf(unknownPoints.size())));
 		}
+		caveats.add(
+				"searchIsAuthoritative rests on a declared access rule, not on runtime enforcement: x-internal and x-friends are checked by JDT and PDE when consumers compile, and OSGi exports the package either way, so a consumer that ignores the rule is still possible."); //$NON-NLS-1$
 		caveats.add(
 				"apiTier qualifies every verdict: 'dead' in a public-api package proves nothing, because consumers may exist outside this workspace entirely, while 'dead' where searchIsAuthoritative is true has nowhere else to hide."); //$NON-NLS-1$
 		caveats.add(

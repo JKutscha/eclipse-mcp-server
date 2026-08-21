@@ -524,9 +524,11 @@ A class satisfies a `basedOn` that names the class itself.
 | `apiTier` | Meaning | `searchIsAuthoritative` |
 |---|---|---|
 | `not-exported` | nothing outside the bundle may reference it | `true` |
-| `internal-api` | exported `x-internal`, no legitimate outside consumer | `false` |
+| `internal-api` | exported `x-internal`, no legitimate outside consumer | `true` |
 | `internal-api-friends` | exported `x-friends`, and the list is enumerable | `true` when every friend is a project here |
 | `public-api` | consumers may exist anywhere | `false` |
+
+`x-internal` counts as authoritative for the same reason `not-exported` does, and it is the stronger declaration of the two internal tiers: it says *no* bundle should use the package, where `x-friends` names some that may. Both rest on an access rule JDT and PDE check when consumers compile, not on anything OSGi enforces at runtime, and the answer's caveats say so rather than the field claiming more than it has.
 
 `dead` on a `public-api` type proves nothing at all: `org.eclipse.ui.ide.IGotoMarker` has no workspace references and is implemented across the ecosystem. `dead` where `searchIsAuthoritative` is `true` has nowhere left to hide, and for `x-friends` that is exact rather than a heuristic, because the friend list names every bundle allowed to reference the package.
 
@@ -537,9 +539,11 @@ A class satisfies a `basedOn` that names the class itself.
 | `apiTier` | Meaning | `searchIsAuthoritative` |
 |---|---|---|
 | `not-exported` | nothing outside the bundle may reference it | `true` |
-| `internal-api` | exported `x-internal`, no legitimate outside consumer | `false` |
+| `internal-api` | exported `x-internal`, no legitimate outside consumer | `true` |
 | `internal-api-friends` | exported `x-friends`, and the list is enumerable | `true` when every friend is a project here |
 | `public-api` | consumers may exist anywhere | `false` |
+
+`x-internal` counts as authoritative for the same reason `not-exported` does, and it is the stronger declaration of the two internal tiers: it says *no* bundle should use the package, where `x-friends` names some that may. Both rest on an access rule JDT and PDE check when consumers compile, not on anything OSGi enforces at runtime, and the answer's caveats say so rather than the field claiming more than it has.
 
 `dead` on a `public-api` type proves nothing at all: `org.eclipse.ui.ide.IGotoMarker` has no workspace references and is implemented across the ecosystem. `dead` where `searchIsAuthoritative` is `true` has nowhere left to hide, and for `x-friends` that is exact rather than a heuristic, because the friend list names every bundle allowed to reference the package.
 
@@ -630,6 +634,23 @@ Use it to turn a simple name into a fully qualified one.
   {"fullyQualifiedName":"org.eclipse.jface.viewers.TreeViewer","simpleName":"TreeViewer",
    "packageName":"org.eclipse.jface.viewers","path":"/.../org.eclipse.jface_3.35.0.jar","binary":true}]}
 ```
+
+### `eclipse_delete`
+
+**Deletes a source file from the workspace.** Runs as a dry run unless `dryRun` is set to `false`.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `typeName` | string, required | | Fully qualified name of the type whose file to delete. |
+| `project` | string | every Java project | Project to resolve the name in. |
+| `dryRun` | boolean | `true` | |
+| `force` | boolean | `false` | Delete despite references, a registry position, or a public API package. |
+
+The last step of a dead code sweep, after `eclipse_list_declarations` finds candidates and `eclipse_find_references` confirms them. It reports `references`, `registryEvidence` and `apiTier` on every call, and **refuses unless `force`** when any of the three says the type is still wanted: references remaining make a deletion a compile break rather than a cleanup, a registry position fails at runtime instead of at compile time, and a public API package can have consumers no search here can see.
+
+A file declaring more than one top level type is refused outright. This tool deletes files, not declarations.
+
+**Read this limitation.** The deletion goes through LTK as a *resource* delete, and PDE's manifest participants are enabled on `IType` and `IPackageFragment` rather than on `IResource`, so **`plugin.xml` class attributes and `Export-Package` are not updated.** Whatever `registryEvidence` the answer reports is what will be left naming a class that no longer exists, and `danglingAfterDelete` says so on any call that would go through. The reason it works this way is that JDT's own delete refactoring, the one PDE's participants are written for, has no usable public API: `DeleteDescriptor` carries no setters and its processor is internal to `org.eclipse.jdt.ui`.
 
 ### `eclipse_rename`
 
@@ -729,6 +750,8 @@ For Java elements `eclipse_find_references` answers better, because it resolves 
 It runs through Eclipse's own `TextSearchEngine`, so **derived resources are excluded by default**. That is the difference between this and a raw grep of the same tree, where every type comes back once per copy under a build output directory.
 
 Each match reports the file, the line number and the line, capped at 500 characters.
+
+**One file on disk counts once.** In a platform workspace almost every project is nested inside another, so a single file is reachable through several workspace paths and the same match arrives once per path. Matches are deduplicated by physical location and offset, the other paths come back as `alsoVisibleAs`, and `duplicatePathsCollapsed` says how many were folded away. Without this a count is inflated by an unpredictable factor that a client cannot detect without a filesystem, which is the thing this tool exists to do without.
 
 ### `eclipse_list_editors` and `eclipse_close_editor`
 

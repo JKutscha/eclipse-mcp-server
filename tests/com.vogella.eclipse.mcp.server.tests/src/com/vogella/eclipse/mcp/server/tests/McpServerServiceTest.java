@@ -241,6 +241,9 @@ class McpServerServiceTest {
 		case "eclipse_set_project_state" -> Map.of("state", "open", "namePattern", "no-such-project-*");
 		case "eclipse_organize_imports", "eclipse_format" -> Map.of("path", SAMPLE);
 		case "eclipse_read_file" -> Map.of("path", SAMPLE);
+		// dryRun defaults true, so the smoke test deletes nothing; naming the fixture
+		// type keeps the refusal specific rather than a resolution failure
+		case "eclipse_delete" -> Map.of("typeName", "example.Sample");
 		// scoped to the fixture: an unscoped text search reads every file in the
 		// workspace and outruns the client timeout
 		case "eclipse_search_text" -> Map.of("pattern", "class", "projects", List.of(PROJECT));

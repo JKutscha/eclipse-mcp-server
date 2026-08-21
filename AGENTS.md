@@ -241,6 +241,18 @@ Disabling or uninstalling the server must not be the moment the IDE becomes unre
 That only works while the jgit imports stay inside that one class: the caller catches `LinkageError`, which is what a missing optional bundle produces when the class is first linked.
 Spreading a jgit type into a signature `CompareTool` touches would turn the missing bundle into a failure of the whole tool.
 
+**One file on disk is many workspace paths, and `eclipse_search_text` has to collapse them.**
+754 of 755 projects in a platform workspace are nested inside another project, so the same file arrives once per path and a raw count is inflated by an unpredictable factor.
+Matches are keyed by `getLocationURI()` plus offset, the extra paths become `alsoVisibleAs`, and `duplicatePathsCollapsed` reports the fold.
+Derived-resource exclusion does not help here, because none of the duplicates is build output.
+This matters more for this tool than the others: telling the paths apart needs a filesystem, which is exactly what the tool exists to remove the need for.
+
+**`eclipse_delete` is a resource delete, and PDE's participants do not fire on it.**
+JDT's delete refactoring, which is what `ManifestTypeDeleteParticipant` is written for, has no usable public API: `DeleteDescriptor` carries no setters and the processor is x-friends to `org.eclipse.jdt.ui`.
+So the tool uses LTK's `DeleteResourcesDescriptor`, which passes `IResource`, while the participants enable on `IType` and `IPackageFragment`.
+`plugin.xml` and `Export-Package` are therefore not updated, the description says so, and the answer reports the evidence that will dangle.
+Do not "fix" this by driving the internal processor without deciding to own that dependency.
+
 **A self update runs inside the bundles it is replacing.**
 Every bundle here is in the same feature, so `eclipse_update` on that feature stops both the bundle serving the request and the bundle running the provisioning job.
 It happened: one log line, `MCP server stopped`, no install, no rollback, and an IDE left with no server and no way to reach it.

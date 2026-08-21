@@ -179,7 +179,10 @@ class ListDeclarationsToolTest {
 		assertEquals("not-exported", hidden.get("apiTier"));
 		assertEquals(Boolean.TRUE, hidden.get("searchIsAuthoritative"));
 
+		// x-internal declares that no bundle should use the package at all, which is a
+		// stronger statement than an enumerable x-friends list, so it is authoritative too
 		assertEquals("internal-api", declaration("registry.Unused").get("apiTier"));
+		assertEquals(Boolean.TRUE, declaration("registry.Unused").get("searchIsAuthoritative"));
 	}
 
 	@Test
