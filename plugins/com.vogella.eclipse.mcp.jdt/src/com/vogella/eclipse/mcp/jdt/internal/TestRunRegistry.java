@@ -235,9 +235,13 @@ public final class TestRunRegistry {
 					return;
 				}
 				if (System.currentTimeMillis() > deadline && !anyResult) {
+					// kill it, do not merely stop waiting: an abandoned plug-in launch is
+					// a second Eclipse holding half a gigabyte, its workspace and its port
+					boolean killed = terminate(run);
 					run.state = "failed"; //$NON-NLS-1$
-					run.fail("No test event arrived within %d seconds, so the run was abandoned rather than left blocking further runs." //$NON-NLS-1$
-							.formatted(staleAfterSeconds));
+					run.fail("No test event arrived within %d seconds, so the run was abandoned. %s" //$NON-NLS-1$
+							.formatted(staleAfterSeconds, killed ? "Its launch was terminated." //$NON-NLS-1$
+									: "Its launch could NOT be terminated and may still be running; check for an orphaned process.")); //$NON-NLS-1$
 					return;
 				}
 			}
@@ -246,21 +250,37 @@ public final class TestRunRegistry {
 		watchdog.start();
 	}
 
-	/** Abandons a run, terminating its launch if it still has one. */
+	/** Abandons a run and kills what it launched. */
 	public static boolean abandon(Run run) {
 		if (!run.running) {
 			return false;
 		}
+		boolean killed = terminate(run);
+		run.state = "cancelled"; //$NON-NLS-1$
+		run.fail(killed ? "Abandoned on request; its launch was terminated." //$NON-NLS-1$
+				: "Abandoned on request, but its launch could NOT be terminated and may still be running."); //$NON-NLS-1$
+		return true;
+	}
+
+	/** Terminates the launch and its processes. Reports whether anything is still alive. */
+	private static boolean terminate(Run run) {
+		org.eclipse.debug.core.ILaunch launch = run.launch;
+		if (launch == null) {
+			return false;
+		}
 		try {
-			if (run.launch != null && run.launch.canTerminate()) {
-				run.launch.terminate();
+			if (launch.canTerminate()) {
+				launch.terminate();
+			}
+			for (org.eclipse.debug.core.model.IProcess process : launch.getProcesses()) {
+				if (process.canTerminate()) {
+					process.terminate();
+				}
 			}
 		} catch (org.eclipse.core.runtime.CoreException e) {
-			// terminating is best effort; the run is abandoned either way
+			return false;
 		}
-		run.state = "cancelled"; //$NON-NLS-1$
-		run.fail("Abandoned on request."); //$NON-NLS-1$
-		return true;
+		return launch.isTerminated();
 	}
 
 	/** Failures first, since that is what a caller asked the question for. */

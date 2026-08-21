@@ -293,6 +293,11 @@ public final class RunTestsTool implements IMcpTool {
 	 */
 	private static void configurePlatform(ILaunchConfigurationWorkingCopy configuration, String runtimeWorkspace,
 			boolean ui) {
+		// APP_TO_TEST is what the delegate actually reads: it compares that against the
+		// core test application to decide headless, and setting only APPLICATION left
+		// it defaulting to the product's workbench and starting a full IDE
+		configuration.setAttribute(IPDELauncherConstants.APP_TO_TEST,
+				ui ? "org.eclipse.ui.ide.workbench" : CORE_TEST_APPLICATION); //$NON-NLS-1$
 		configuration.setAttribute(IPDELauncherConstants.APPLICATION, ui ? UI_TEST_APPLICATION : CORE_TEST_APPLICATION);
 		configuration.setAttribute(IPDELauncherConstants.USE_PRODUCT, false);
 		configuration.setAttribute(IPDELauncherConstants.LOCATION,
