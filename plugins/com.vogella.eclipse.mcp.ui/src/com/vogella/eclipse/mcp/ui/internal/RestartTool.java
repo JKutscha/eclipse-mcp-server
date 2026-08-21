@@ -38,7 +38,7 @@ public final class RestartTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Restarts the Eclipse IDE into the same workspace, which is what makes an installed or updated feature active. The answer names the workspace it will return to. THE CONNECTION WILL DROP BY DESIGN: this tool answers first and restarts a couple of seconds later, so a dropped connection right after a successful result is the expected outcome and not a failure. Reconnect with the same bearer token, which survives restarts and updates. Refuses when editors have unsaved changes or a modal dialog is open, unless save or force is passed. It works independently of eclipse_update, so a half applied update can still be recovered by restarting."; //$NON-NLS-1$
+		return "Restarts the Eclipse IDE into the same workspace, which is what makes an installed or updated feature active. The answer names the workspace it will return to. THE CONNECTION WILL DROP BY DESIGN: this tool answers first and restarts a couple of seconds later, so a dropped connection right after a successful result is the expected outcome and not a failure. Reconnect with the same bearer token, which survives restarts and updates. Refuses when editors have unsaved changes or a modal dialog is open, naming which of the two fired, unless save or force is passed. A blocking dialog is better cleared with eclipse_dismiss_dialog than forced past. It works independently of eclipse_update, so a half applied update can still be recovered by restarting."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -111,11 +111,22 @@ public final class RestartTool implements IMcpTool {
 			dirty = new JsonArray();
 		}
 		if (!force && (dirty.size() > 0 || modal.size() > 0)) {
+			// compose from whichever guard actually fired: naming unsaved work when the
+			// blocker is a dialog sends the caller to save, which changes nothing
+			StringBuilder reason = new StringBuilder("Refused: "); //$NON-NLS-1$
+			if (dirty.size() > 0) {
+				reason.append("editors have unsaved changes, which restarting would discard. Pass save to save them first, or force to discard them."); //$NON-NLS-1$
+			}
+			if (modal.size() > 0) {
+				if (dirty.size() > 0) {
+					reason.append(' ');
+				}
+				reason.append("a modal dialog is open, and restarting under one loses whatever is in it. Close it with eclipse_dismiss_dialog, or pass force."); //$NON-NLS-1$
+			}
 			return new JsonObject().put("restarting", Boolean.FALSE) //$NON-NLS-1$
 					.put("dirtyEditors", dirty) //$NON-NLS-1$
 					.put("openModalDialogs", modal) //$NON-NLS-1$
-					.put("reason", //$NON-NLS-1$
-							"Refused: restarting now would lose unsaved work. Pass save to save the editors first, or force to discard."); //$NON-NLS-1$
+					.put("reason", reason.toString()); //$NON-NLS-1$
 		}
 		// answer first, restart after: the server dies with the IDE, so restarting
 		// inside the call gives the caller a dropped connection instead of a result

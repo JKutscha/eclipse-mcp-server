@@ -50,7 +50,8 @@ public final class RunTestsTool implements IMcpTool {
 	 */
 	private static final String DEBUG_UI = "org.eclipse.debug.ui"; //$NON-NLS-1$
 
-	private static final String CONTINUE_WITH_COMPILE_ERROR = "org.eclipse.debug.ui.PREF_CONTINUE_WITH_COMPILE_ERROR"; //$NON-NLS-1$
+	/** The constant is named PREF_CONTINUE_WITH_COMPILE_ERROR; its value is not. */
+	private static final String CONTINUE_WITH_COMPILE_ERROR = "org.eclipse.debug.ui.cancel_launch_with_compile_errors"; //$NON-NLS-1$
 
 	/** Launch configuration attributes of the JUnit launcher, which are a stable contract. */
 	private static final String ATTR_CONTAINER = "org.eclipse.jdt.junit.CONTAINER"; //$NON-NLS-1$
@@ -135,6 +136,7 @@ public final class RunTestsTool implements IMcpTool {
 			boolean asPlugin = "true".equals(pluginTest) //$NON-NLS-1$
 					|| ("auto".equals(pluginTest) && project.hasNature(PLUGIN_NATURE)); //$NON-NLS-1$
 			boolean ui = args.getBoolean("ui", false); //$NON-NLS-1$
+			String launchedAs = asPlugin ? (ui ? "pluginTest-ui" : "pluginTest") : "junit"; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 			TestRunRegistry.Run run = TestRunRegistry.getInstance()
 					.create(testClass == null ? projectName : testClass + (testMethod == null ? "" : "#" + testMethod)); //$NON-NLS-1$ //$NON-NLS-2$
 
@@ -160,10 +162,12 @@ public final class RunTestsTool implements IMcpTool {
 			}
 			// launching happens in a job: preLaunchCheck alone can take a while, and
 			// doing it here would defeat wait:false exactly as the p2 refresh once did
+			run.launchedAs(launchedAs);
 			org.eclipse.core.runtime.jobs.Job.create("MCP test launch " + run.id(), progress -> { //$NON-NLS-1$
 				Object previous = suppressCompileErrorPrompt();
 				try {
-					configuration.launch(ILaunchManager.RUN_MODE, null);
+					org.eclipse.debug.core.ILaunch launch = configuration.launch(ILaunchManager.RUN_MODE, null);
+					TestRunRegistry.watch(run, launch, asPlugin ? 300 : 120);
 				} catch (CoreException | RuntimeException e) {
 					// the runner bundles ship with the SDK, and JDT reports a missing one
 					// as an assertion rather than a CoreException
@@ -184,7 +188,7 @@ public final class RunTestsTool implements IMcpTool {
 			}
 			JsonObject result = TestRunRegistry.toJson(run, args.getInt("maxResults", 50, 1, 2000), false) //$NON-NLS-1$
 					.put("testKind", kind) //$NON-NLS-1$
-					.put("launchedAs", asPlugin ? (ui ? "pluginTest-ui" : "pluginTest") : "junit"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+					;
 			if (asPlugin && run.running()) {
 				result.put("note", //$NON-NLS-1$
 						"A second Eclipse is starting, which takes tens of seconds before the first test runs. Poll eclipse_get_test_results with this runId."); //$NON-NLS-1$

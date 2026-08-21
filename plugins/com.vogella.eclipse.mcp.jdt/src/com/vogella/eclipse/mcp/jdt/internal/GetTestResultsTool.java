@@ -19,7 +19,7 @@ public final class GetTestResultsTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Reports a test run started through eclipse_run_tests: how many passed, failed, errored and were ignored, and the failing cases with their stack traces and expected and actual values. Passing tests are omitted by default, because the failures are what the question was about."; //$NON-NLS-1$
+		return "Reports a test run started through eclipse_run_tests: how many passed, failed, errored and were ignored, and the failing cases with their stack traces and expected and actual values. Passing tests are omitted by default, because the failures are what the question was about. Pass abandon to give up on a run that is still going: only one run may be active at a time, so a run that never reports would otherwise block every later one."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -30,7 +30,8 @@ public final class GetTestResultsTool implements IMcpTool {
 				  "properties": {
 				    "runId":         {"type":"string","description":"Identifier returned by eclipse_run_tests. Omit for the most recent run."},
 				    "includePassed": {"type":"boolean","default":false},
-				    "maxResults":    {"type":"integer","default":50,"minimum":1,"maximum":2000}
+				    "maxResults":    {"type":"integer","default":50,"minimum":1,"maximum":2000},
+				    "abandon":       {"type":"boolean","default":false,"description":"Give up on a run that is still going, terminating its launch. Only one run may be active at a time, so a run that never reports would otherwise block every later run."}
 				  },
 				  "additionalProperties": false
 				}"""; //$NON-NLS-1$
@@ -49,8 +50,14 @@ public final class GetTestResultsTool implements IMcpTool {
 			return McpToolResult.of(new JsonObject().put("state", "none") //$NON-NLS-1$ //$NON-NLS-2$
 					.put("message", "No test run has been started.").toString()); //$NON-NLS-1$ //$NON-NLS-2$
 		}
-		return McpToolResult.of(TestRunRegistry
-				.toJson(run, args.getInt("maxResults", 50, 1, 2000), args.getBoolean("includePassed", false)) //$NON-NLS-1$ //$NON-NLS-2$
-				.toString());
+		boolean abandoned = args.getBoolean("abandon", false) && TestRunRegistry.abandon(run); //$NON-NLS-1$
+		JsonObject result = TestRunRegistry.toJson(run, args.getInt("maxResults", 50, 1, 2000), //$NON-NLS-1$
+				args.getBoolean("includePassed", false)); //$NON-NLS-1$
+		if (args.getBoolean("abandon", false)) { //$NON-NLS-1$
+			result.put("abandoned", abandoned) //$NON-NLS-1$
+					.put("abandonNote", abandoned ? "The run was abandoned and its launch terminated." //$NON-NLS-1$ //$NON-NLS-2$
+							: "Nothing to abandon; the run had already finished."); //$NON-NLS-1$
+		}
+		return McpToolResult.of(result.toString());
 	}
 }

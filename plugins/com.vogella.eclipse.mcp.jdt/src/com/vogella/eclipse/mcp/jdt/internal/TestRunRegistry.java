@@ -67,6 +67,8 @@ public final class TestRunRegistry {
 		private volatile long endedAt;
 		private volatile String state = "running"; //$NON-NLS-1$
 		private volatile String message;
+		private volatile String launchedAs;
+		private volatile org.eclipse.debug.core.ILaunch launch;
 
 		Run(String id, String launchName, String scope) {
 			this.id = id;
@@ -82,6 +84,11 @@ public final class TestRunRegistry {
 			return running;
 		}
 
+		/** Which launcher was used, kept so a polled result can say what it is waiting on. */
+		public void launchedAs(String value) {
+			launchedAs = value;
+		}
+
 		String launchName() {
 			return launchName;
 		}
@@ -92,7 +99,9 @@ public final class TestRunRegistry {
 
 		void fail(String reason) {
 			message = reason;
-			state = "failed"; //$NON-NLS-1$
+			if ("running".equals(state)) { //$NON-NLS-1$
+				state = "failed"; //$NON-NLS-1$
+			}
 			end();
 		}
 
@@ -195,6 +204,65 @@ public final class TestRunRegistry {
 		run.fail(reason);
 	}
 
+	/**
+	 * Ends a run whose launch died or never reported.
+	 * <p>
+	 * A launch cancelled at the compile error prompt terminates without ever
+	 * producing a test event, and without this the run sits in {@code running}
+	 * forever. Combined with the one-run-at-a-time guard that disabled the tool for
+	 * the rest of the session, recoverable only by restarting the IDE.
+	 */
+	static void watch(Run run, org.eclipse.debug.core.ILaunch launch, int staleAfterSeconds) {
+		run.launch = launch;
+		Thread watchdog = new Thread(() -> {
+			long deadline = System.currentTimeMillis() + staleAfterSeconds * 1000L;
+			while (run.running) {
+				try {
+					if (run.await(2)) {
+						return;
+					}
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					return;
+				}
+				boolean anyResult;
+				synchronized (run.cases) {
+					anyResult = !run.cases.isEmpty();
+				}
+				if (launch != null && launch.isTerminated() && !anyResult) {
+					run.state = "cancelled"; //$NON-NLS-1$
+					run.fail("The launch ended without producing any test event. It was most likely cancelled, at the 'Errors in Workspace' prompt or otherwise."); //$NON-NLS-1$
+					return;
+				}
+				if (System.currentTimeMillis() > deadline && !anyResult) {
+					run.state = "failed"; //$NON-NLS-1$
+					run.fail("No test event arrived within %d seconds, so the run was abandoned rather than left blocking further runs." //$NON-NLS-1$
+							.formatted(staleAfterSeconds));
+					return;
+				}
+			}
+		}, "MCP test watchdog " + run.id()); //$NON-NLS-1$
+		watchdog.setDaemon(true);
+		watchdog.start();
+	}
+
+	/** Abandons a run, terminating its launch if it still has one. */
+	public static boolean abandon(Run run) {
+		if (!run.running) {
+			return false;
+		}
+		try {
+			if (run.launch != null && run.launch.canTerminate()) {
+				run.launch.terminate();
+			}
+		} catch (org.eclipse.core.runtime.CoreException e) {
+			// terminating is best effort; the run is abandoned either way
+		}
+		run.state = "cancelled"; //$NON-NLS-1$
+		run.fail("Abandoned on request."); //$NON-NLS-1$
+		return true;
+	}
+
 	/** Failures first, since that is what a caller asked the question for. */
 	public static JsonObject toJson(Run run, int maxResults, boolean includePassed) {
 		List<Case> cases;
@@ -245,6 +313,7 @@ public final class TestRunRegistry {
 		}
 		return counted.put("runId", run.id) //$NON-NLS-1$
 				.put("scope", run.scope) //$NON-NLS-1$
+				.put("launchedAs", run.launchedAs) //$NON-NLS-1$
 				.put("state", run.state) //$NON-NLS-1$
 				.put("elapsedMillis", (run.endedAt == 0 ? System.currentTimeMillis() : run.endedAt) - run.startedAt)
 				.put("total", cases.size()) //$NON-NLS-1$

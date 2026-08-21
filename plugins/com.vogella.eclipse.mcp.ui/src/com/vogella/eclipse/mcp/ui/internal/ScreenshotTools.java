@@ -251,6 +251,18 @@ public final class ScreenshotTools {
 				} finally {
 					gc.dispose();
 				}
+				if (isBlank(image.getImageData()) && printable instanceof Shell shell
+						&& shell.getChildren().length > 0) {
+					// Shell.print returns blank under a compositing window manager while
+					// Composite.print does not, so paint the shell's content instead.
+					// Trim and decorations are lost, which does not matter for reading a
+					// dialog, and it is the only path that produces pixels here.
+					printable = shell.getChildren()[0];
+					Rectangle inner = printable.getBounds();
+					if (inner.width > 0 && inner.height > 0) {
+						area = new Rectangle(area.x, area.y, inner.width, inner.height);
+					}
+				}
 				if (isBlank(image.getImageData()) && printable != null) {
 					// A compositing window manager redirects window contents into an
 					// offscreen pixmap, so reading the X11 root drawable yields nothing.
@@ -325,6 +337,13 @@ public final class ScreenshotTools {
 
 		private static Shell findShell(Display display, String title) {
 			if (title == null) {
+				// the modal one is what is blocking, otherwise whatever is active
+				for (Shell candidate : display.getShells()) {
+					if (candidate.isVisible() && (candidate.getStyle()
+							& (SWT.APPLICATION_MODAL | SWT.PRIMARY_MODAL | SWT.SYSTEM_MODAL)) != 0) {
+						return candidate;
+					}
+				}
 				return display.getActiveShell();
 			}
 			for (Shell shell : display.getShells()) {
