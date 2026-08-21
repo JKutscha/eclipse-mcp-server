@@ -11,6 +11,9 @@
       <tool class="com.vogella.eclipse.mcp.ui.internal.ScreenshotTools$Capture"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.RestartTool"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.DismissDialogTool"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.ViewTools$Show"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.ViewTools$Hide"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.CompareTool"/>
    </extension>
 
    <extension point="org.eclipse.ui.preferencePages">

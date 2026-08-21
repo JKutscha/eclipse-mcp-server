@@ -29,7 +29,7 @@ There is no faster partial build worth using: `mvn verify -pl` on a single bundl
 plugins/com.vogella.eclipse.mcp.core     tool API, registry, extension point, workspace tools
 plugins/com.vogella.eclipse.mcp.server   MCP protocol, embedded Jetty, bearer token
 plugins/com.vogella.eclipse.mcp.jdt      Java model tools
-plugins/com.vogella.eclipse.mcp.ui       editor context tool, preference page, startup hook
+plugins/com.vogella.eclipse.mcp.ui       editor, view and compare tools, screenshots, preference page, startup hook
 plugins/com.vogella.eclipse.mcp.pde      PDE tools
 features/com.vogella.eclipse.mcp.feature
 tests/com.vogella.eclipse.mcp.core.tests    the tools, headless
@@ -177,6 +177,11 @@ Write and compare exactly `COMPLIANCE_KEYS`.
 It looks up `IBundleProjectService` from its own `BundleContext`, which is null while the bundle is merely resolved.
 The tool falls back to PDE's own context and then to a readable error, rather than a `NullPointerException`.
 
+**The ui bundle is required by `com.vogella.eclipse.mcp.core.tests`, and that run is headless.**
+It is there so the registry tests cover the ui tools' names and schemas, and so the argument handling that happens before the UI thread is reached can be tested at all.
+Nothing in that bundle may call a ui tool that needs a workbench, and nothing there may ever call `eclipse_restart`, which is registered in that run even though the smoke test that would reach it lives elsewhere.
+Loading a ui tool class headlessly is safe; every one of them refuses with "There is no running workbench" rather than touching `PlatformUI`.
+
 **`callsEveryRegisteredTool` does not call every tool.**
 `com.vogella.eclipse.mcp.server.tests` requires only core, server and jdt, so the ui, pde and p2 tools are not registered in that headless run and the smoke test cannot see them.
 That is deliberate for `eclipse_restart`, which must never be invoked by a test, but do not read a green smoke test as protocol level coverage of the other bundles.
@@ -192,9 +197,15 @@ The update site is a composite whose child location changes per release rather t
 **`IWorkbench.restart()` relaunches without the original command line.**
 Use `restart(true)`. The no argument form drops `-data`, so the IDE comes back up showing the workspace chooser and waits for a person, which is exactly what an unattended restart must not do.
 
+**JGit is an optional dependency and every reference to it lives in `GitContent`.**
+`org.eclipse.jgit` is in the target platform to compile against and is required with `resolution:=optional`, so an IDE without EGit still installs the feature and loses only the `revision` argument of `eclipse_open_compare`.
+That only works while the jgit imports stay inside that one class: the caller catches `LinkageError`, which is what a missing optional bundle produces when the class is first linked.
+Spreading a jgit type into a signature `CompareTool` touches would turn the missing bundle into a failure of the whole tool.
+
 **Every long running IDE operation a client drives has a dialog in it somewhere.**
-Three so far: p2's unsigned content prompt, the workspace chooser on restart, and the launch time "Errors in Workspace" prompt raised by the `org.eclipse.debug.ui` status handler.
+Four so far: p2's unsigned content prompt, the workspace chooser on restart, the launch time "Errors in Workspace" prompt raised by the `org.eclipse.debug.ui` status handler, and the compare framework's "no differences" message when a `CompareEditorInput` has a null result.
 Each blocked a call nobody was watching, and each was invisible in the protocol until someone looked at the screen.
+The compare one is the cheapest to avoid and the easiest to walk into: `CompareTool` always returns a `DiffNode`, so the framework never has an empty result to complain about, and the answer carries `identical` instead.
 The answer is always the same: do not let the dialog be raised on a path a client drives, answer it, and report what was answered.
 Before adding a tool that runs project code or touches the installation, look for a prompting `IStatusHandler` on that path rather than waiting for it to surface.
 

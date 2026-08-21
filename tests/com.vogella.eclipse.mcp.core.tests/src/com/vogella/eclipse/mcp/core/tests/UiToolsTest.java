@@ -1,0 +1,92 @@
+package com.vogella.eclipse.mcp.core.tests;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.runtime.NullProgressMonitor;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+import com.vogella.eclipse.mcp.core.McpToolResult;
+
+/**
+ * The UI tools, as far as they can be reached without a workbench.
+ * <p>
+ * This run is headless, so anything that touches the workbench can only be
+ * checked for refusing cleanly. What is worth testing here is the argument
+ * handling that happens before the UI thread is involved, because that is where
+ * a caller learns it asked for something impossible.
+ */
+class UiToolsTest {
+
+	private static final String COMPARE = "eclipse_open_compare";
+
+	private static final String PROJECT = "mcp-ui-tools-test";
+
+	private final TestFixture fixture = new TestFixture();
+
+	@AfterEach
+	void deleteTestProjects() throws Exception {
+		fixture.dispose();
+	}
+
+	@Test
+	void compareNeedsExactlyOneRightHandSide() throws Exception {
+		IProject project = fixture.createProject(PROJECT);
+		IFile file = write(project, "a.txt", "one");
+
+		assertRefused(TestFixture.call(COMPARE, Map.of("left", file.getFullPath().toString())),
+				"exactly one");
+		assertRefused(TestFixture.call(COMPARE, Map.of("left", file.getFullPath().toString(), //
+				"content", "other", "revision", "HEAD")), "exactly one");
+	}
+
+	@Test
+	void compareReportsAPathThatIsNotThere() throws Exception {
+		fixture.createProject(PROJECT);
+		assertRefused(TestFixture.call(COMPARE, Map.of("left", "/" + PROJECT + "/missing.txt", "content", "x")),
+				"No file at the workspace path");
+	}
+
+	@Test
+	void compareReportsAMissingRightHandFile() throws Exception {
+		IProject project = fixture.createProject(PROJECT);
+		IFile file = write(project, "a.txt", "one");
+		assertRefused(
+				TestFixture.call(COMPARE,
+						Map.of("left", file.getFullPath().toString(), "right", "/" + PROJECT + "/missing.txt")),
+				"No file at the workspace path");
+	}
+
+	@Test
+	void theViewToolsRefuseWithoutAWorkbench() throws Exception {
+		assertRefused(TestFixture.call("eclipse_show_view", Map.of("view", "org.eclipse.ui.views.ProblemView")),
+				"no running workbench");
+		assertRefused(TestFixture.call("eclipse_hide_view", Map.of("view", "org.eclipse.ui.views.ProblemView")),
+				"no running workbench");
+	}
+
+	@Test
+	void theViewToolsNameTheirRequiredArgument() throws Exception {
+		assertRefused(TestFixture.call("eclipse_show_view", Map.of()), "'view' is required");
+		assertRefused(TestFixture.call("eclipse_hide_view", Map.of()), "'view' is required");
+	}
+
+	private static IFile write(IProject project, String name, String content) throws Exception {
+		IFile file = project.getFile(name);
+		file.create(new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)), true,
+				new NullProgressMonitor());
+		return file;
+	}
+
+	private static void assertRefused(McpToolResult result, String expected) {
+		assertTrue(result.isError(), "expected an error, got " + result.text());
+		assertTrue(result.text().toLowerCase().contains(expected.toLowerCase()),
+				"expected a message about '%s', got %s".formatted(expected, result.text()));
+	}
+}

@@ -644,6 +644,35 @@ Opens a workspace file in an editor and optionally reveals a line, so the person
 
 `revealedLine` reports the line actually revealed, which is clamped to the end of the file.
 
+### `eclipse_open_compare`
+
+**Changes what the IDE shows**, writes nothing.
+Opens Eclipse's compare editor on a workspace file, against another file, against content you supply, or against a Git revision.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `left` | string, required | | Workspace path of the file to compare. |
+| `right` | string | | Workspace path to compare it against. |
+| `content` | string | | Text to compare it against. |
+| `revision` | string | | Git revision to compare it against, such as `HEAD`, `HEAD~1`, a branch, a tag or a commit id. |
+| `leftLabel` | string | the workspace path | Label over the left side. |
+| `rightLabel` | string | what the right side is | Label over the right side. |
+| `activate` | boolean | `true` | Bring the compare editor to the front. |
+
+Exactly one of `right`, `content` and `revision` is required.
+
+`content` is the interesting one: it shows a proposed edit side by side with the file, with syntax colouring and the structural Java compare, before anything is written.
+A diff pasted into a chat window is the same information in a form nobody reviews carefully.
+
+Both sides are read-only. The editor is a view of a difference, not a merge tool, so no path through this tool can modify a file.
+
+`identical` reports that the two sides are byte for byte the same.
+The editor still opens and shows nothing, which is confusing enough to be worth saying in the answer rather than leaving the caller to wonder.
+The compare input is also always built as a real difference node for the same reason the p2 tools install their own trust callback: an empty result makes the compare framework raise a modal "no differences" dialog, and a dialog on a path a client drives is a hang nobody is there to clear.
+
+`revision` needs the `org.eclipse.jgit` bundle, which is an **optional** dependency: every Eclipse with EGit has it, a bare Platform SDK does not, and where it is missing this one argument is refused with an explanation while everything else keeps working.
+The repository is found by walking up from the file, so it does not matter whether the project is shared in the IDE.
+
 ### `eclipse_get_editor_context`
 
 Returns the file in the active editor, the cursor position and the current selection.
@@ -678,6 +707,23 @@ The result is **aggregated, not dumped**: the frames where time was actually spe
 
 Lists every open shell with its title, modality and bounds, and every workbench part with its id, title and visibility.
 It is also the only way to answer "which dialog is open right now".
+
+With `includeAvailableViews` it also lists the views registered in this IDE whether or not they are open, which is where `eclipse_show_view` gets its ids.
+There are several hundred, so `filter` matches a substring of the id or the label and `maxResults` defaults to 100.
+
+### `eclipse_show_view` and `eclipse_hide_view`
+
+**These change the perspective layout**, which Eclipse remembers across restarts. They write nothing to the workspace.
+
+`eclipse_show_view` opens a view in the active perspective and `eclipse_hide_view` closes one.
+Both take `view`, which is an id or the label a person reads, so `Problems` works as well as `org.eclipse.ui.views.ProblemView`.
+`eclipse_show_view` also takes `activate` (`true`) and both take `secondaryId`, for views such as the Console that can be open more than once.
+
+A name is resolved by exact id, then by exact label, then by substring, and stops at the first of those that matches anything.
+Without the ordering an exact id that also occurs inside three other ids comes back ambiguous.
+An ambiguous name is **refused with the candidates** rather than guessed, and a name that matches nothing open is refused with the list of what is open.
+
+There is no tool for closing editors. An editor can hold unsaved work, and losing it is not something a client should be able to do by accident.
 
 ### `eclipse_screenshot`
 

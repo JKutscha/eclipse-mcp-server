@@ -3,7 +3,10 @@ package com.vogella.eclipse.mcp.ui.internal;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -27,6 +30,7 @@ import org.eclipse.ui.IWorkbenchPart;
 import org.eclipse.ui.IWorkbenchPartReference;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PlatformUI;
+import org.eclipse.ui.views.IViewDescriptor;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolResult;
@@ -102,21 +106,33 @@ public final class ScreenshotTools {
 
 		@Override
 		public String getDescription() {
-			return "Lists what eclipse_screenshot can capture: every open shell with its title, whether it is modal and its bounds, and every workbench part with its id, title and whether it is currently visible. Also the answer to 'which dialog is open right now', which nothing else here can tell you."; //$NON-NLS-1$
+			return "Lists what the UI tools can address: every open shell with its title, whether it is modal and its bounds, and every workbench part with its id, title and whether it is currently visible. With includeAvailableViews it also lists the views that are registered but not open, which is where eclipse_show_view gets its ids. Also the answer to 'which dialog is open right now', which nothing else here can tell you."; //$NON-NLS-1$
 		}
 
 		@Override
 		public String getInputSchema() {
 			return """
-					{"type":"object","properties":{},"additionalProperties":false}"""; //$NON-NLS-1$
+					{
+					  "type": "object",
+					  "properties": {
+					    "includeAvailableViews": {"type":"boolean","default":false,"description":"Also list every view registered in this IDE, open or not. There are hundreds, so pass a filter with it."},
+					    "filter":                {"type":"string","description":"Substring of the id or the label, case insensitive, applied to availableViews only."},
+					    "maxResults":            {"type":"integer","default":100,"minimum":1,"maximum":1000}
+					  },
+					  "additionalProperties": false
+					}"""; //$NON-NLS-1$
 		}
 
 		@Override
 		public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
-			return onUi(ListTargets::collect, JsonObject::toString);
+			ToolArguments args = ToolArguments.of(arguments);
+			boolean includeAvailableViews = args.getBoolean("includeAvailableViews", false); //$NON-NLS-1$
+			String filter = args.getString("filter"); //$NON-NLS-1$
+			int maxResults = args.getInt("maxResults", 100, 1, 1000); //$NON-NLS-1$
+			return onUi(() -> collect(includeAvailableViews, filter, maxResults), JsonObject::toString);
 		}
 
-		private static JsonObject collect() {
+		private static JsonObject collect(boolean includeAvailableViews, String filter, int maxResults) {
 			Display display = PlatformUI.getWorkbench().getDisplay();
 			JsonArray shells = new JsonArray();
 			for (Shell shell : display.getShells()) {
@@ -139,11 +155,30 @@ public final class ScreenshotTools {
 				}
 			}
 			JsonObject result = new JsonObject().put("shells", shells).put("parts", parts); //$NON-NLS-1$ //$NON-NLS-2$
+			if (includeAvailableViews) {
+				addAvailableViews(result, filter, maxResults);
+			}
 			String unsupported = unsupportedReason();
 			if (unsupported != null) {
 				result.put("captureUnsupported", unsupported); //$NON-NLS-1$
 			}
 			return result;
+		}
+
+		/** Every registered view, which is the set eclipse_show_view can open. */
+		private static void addAvailableViews(JsonObject result, String filter, int maxResults) {
+			String needle = filter == null ? null : filter.toLowerCase(Locale.ROOT);
+			List<IViewDescriptor> matching = new ArrayList<>();
+			for (IViewDescriptor descriptor : PlatformUI.getWorkbench().getViewRegistry().getViews()) {
+				if (needle == null || descriptor.getId().toLowerCase(Locale.ROOT).contains(needle)
+						|| descriptor.getLabel().toLowerCase(Locale.ROOT).contains(needle)) {
+					matching.add(descriptor);
+				}
+			}
+			matching.sort((a, b) -> a.getLabel().compareToIgnoreCase(b.getLabel()));
+			result.put("availableViews", ViewTools.describe(matching, maxResults)) //$NON-NLS-1$
+					.put("availableViewsTotal", Integer.valueOf(matching.size())) //$NON-NLS-1$
+					.put("availableViewsTruncated", Boolean.valueOf(matching.size() > maxResults)); //$NON-NLS-1$
 		}
 
 		private static java.util.List<IWorkbenchPartReference> allReferences(IWorkbenchPage page) {
