@@ -451,7 +451,15 @@ The JUnit version is detected from the project's own build path and the runtime 
 
 `eclipse_get_test_results` reports a run by `runId`, or the most recent, with counts and the failing cases. Passing tests are omitted unless `includePassed` is set, because the failures are what the question was about.
 
-**This is plain JUnit on a Java project.** It does not launch a second Eclipse, so it will not run plug-in tests that need a target platform. That is a separate and much larger job.
+| `pluginTest` | `auto` \| `true` \| `false` | `auto` | Run as a JUnit Plug-in Test. `auto` uses it for plug-in projects. |
+| `ui` | boolean | `false` | Use the UI test application, which opens a workbench window. |
+| `runtimeWorkspace` | string | a sibling `mcp-junit-workspace` | Workspace for the launched platform, cleared each run. |
+
+A **plug-in project is run as a JUnit Plug-in Test by default**, launching a second Eclipse with a running platform in its own cleared workspace, through `org.eclipse.pde.ui.JunitLaunchConfig`. That type is declared by `org.eclipse.pde.launching`, which despite the historical id has no UI dependency, so it works headlessly.
+
+This matters because the alternative is not a slower answer but a wrong one: tests needing OSGi fail under a plain JUnit launch with `The application has not been initialized`, a null `IExtensionRegistry` or `NoClassDefFoundError`, which read as broken tests rather than as the platform being absent. `launchedAs` says which launcher ran, and forcing `pluginTest: false` on a plug-in project adds a `caveat` explaining why the results are suspect.
+
+The **UI test application is opt-in**. It opens a workbench window on the user's screen, and a launched IDE should never be a surprise. The runtime workspace is cleared without asking, since a prompt would block a call nobody is watching.
 
 Results are collected through `JUnitCore.addTestRunListener`, which is global and fires for every run in the IDE. Runs are matched by a launch configuration name generated per run, so a test run someone starts at the keyboard is never reported as one of ours.
 

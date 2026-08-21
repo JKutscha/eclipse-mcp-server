@@ -16,6 +16,7 @@ import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.junit.JUnitCore;
 import org.eclipse.jdt.launching.IJavaLaunchConfigurationConstants;
+import org.eclipse.pde.launching.IPDELauncherConstants;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolException;
@@ -31,6 +32,17 @@ public final class RunTestsTool implements IMcpTool {
 
 	private static final String LAUNCH_TYPE = "org.eclipse.jdt.junit.launchconfig"; //$NON-NLS-1$
 
+	/** Declared by org.eclipse.pde.launching, which despite the id has no UI dependency. */
+	private static final String PLUGIN_LAUNCH_TYPE = "org.eclipse.pde.ui.JunitLaunchConfig"; //$NON-NLS-1$
+
+	/** Runs the tests in a platform with no workbench. */
+	private static final String CORE_TEST_APPLICATION = "org.eclipse.pde.junit.runtime.coretestapplication"; //$NON-NLS-1$
+
+	/** Opens a workbench window, so it is never the default. */
+	private static final String UI_TEST_APPLICATION = "org.eclipse.pde.junit.runtime.uitestapplication"; //$NON-NLS-1$
+
+	private static final String PLUGIN_NATURE = "org.eclipse.pde.PluginNature"; //$NON-NLS-1$
+
 	/** Launch configuration attributes of the JUnit launcher, which are a stable contract. */
 	private static final String ATTR_CONTAINER = "org.eclipse.jdt.junit.CONTAINER"; //$NON-NLS-1$
 
@@ -45,7 +57,7 @@ public final class RunTestsTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Runs JUnit tests through the IDE's own test runner and reports the failures with their stack traces, expected and actual values. RUNS PROJECT CODE. The JUnit version is detected from the project's own build path and the runtime classpath is the one Run As > JUnit Test would use, so nothing has to be configured. Runs as a launched JVM and returns a runId to poll through eclipse_get_test_results. This is plain JUnit on a Java project. It does not launch a second Eclipse, so tests that need a running platform fail with OSGi errors rather than real results; the answer says so when the project is a plug-in project."; //$NON-NLS-1$
+		return "Runs JUnit tests through the IDE's own test runner and reports the failures with their stack traces, expected and actual values. RUNS PROJECT CODE. The JUnit version is detected from the project's own build path and the runtime classpath is the one Run As > JUnit Test would use, so nothing has to be configured. Runs as a launched JVM and returns a runId to poll through eclipse_get_test_results. A plug-in project is run as a JUnit Plug-in Test by default, which launches a second Eclipse with a running platform in its own cleared workspace, because tests needing OSGi produce meaningless errors under a plain JUnit launch. That is slower. The UI test application, which opens a workbench window, is opt-in. launchedAs in the answer says which was used."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -58,6 +70,9 @@ public final class RunTestsTool implements IMcpTool {
 				    "project":        {"type":"string","description":"Project holding the tests."},
 				    "testClass":      {"type":"string","description":"Fully qualified test class. Omit to run every test in the project."},
 				    "testMethod":     {"type":"string","description":"Single method of testClass."},
+				    "pluginTest":     {"type":"string","enum":["auto","true","false"],"default":"auto","description":"Run as a JUnit Plug-in Test, which launches a second Eclipse with a running platform. 'auto' uses it when the project is a plug-in project. Tests that need OSGi fail as plain JUnit with errors that look like broken tests rather than real results."},
+				    "ui":             {"type":"boolean","default":false,"description":"Use the UI test application, which opens a workbench window on the user's screen. Off by default: a launched IDE should never be a surprise."},
+				    "runtimeWorkspace": {"type":"string","description":"Workspace directory for the launched platform. Defaults to a sibling junit-workspace, and it is cleared on every run."},
 				    "dryRun":         {"type":"boolean","default":false,"description":"List the test types that would run, without running anything."},
 				    "wait":           {"type":"boolean","default":true},
 				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":3600,"description":"Keep below the server's tool call timeout; poll with eclipse_get_test_results for longer runs."}
@@ -100,13 +115,20 @@ public final class RunTestsTool implements IMcpTool {
 			}
 
 			String kind = testKind(javaProject);
+			String pluginTest = args.getString("pluginTest", "auto"); //$NON-NLS-1$ //$NON-NLS-2$
+			boolean asPlugin = "true".equals(pluginTest) //$NON-NLS-1$
+					|| ("auto".equals(pluginTest) && project.hasNature(PLUGIN_NATURE)); //$NON-NLS-1$
+			boolean ui = args.getBoolean("ui", false); //$NON-NLS-1$
 			TestRunRegistry.Run run = TestRunRegistry.getInstance()
 					.create(testClass == null ? projectName : testClass + (testMethod == null ? "" : "#" + testMethod)); //$NON-NLS-1$ //$NON-NLS-2$
 
 			ILaunchManager manager = DebugPlugin.getDefault().getLaunchManager();
-			ILaunchConfigurationType launchType = manager.getLaunchConfigurationType(LAUNCH_TYPE);
+			ILaunchConfigurationType launchType = manager
+					.getLaunchConfigurationType(asPlugin ? PLUGIN_LAUNCH_TYPE : LAUNCH_TYPE);
 			if (launchType == null) {
-				return McpToolResult.error("This IDE has no JUnit launch configuration type."); //$NON-NLS-1$
+				return McpToolResult.error(asPlugin
+						? "This IDE has no plug-in JUnit launch configuration type, so PDE is probably not installed. Pass pluginTest false to run as plain JUnit." //$NON-NLS-1$
+						: "This IDE has no JUnit launch configuration type."); //$NON-NLS-1$
 			}
 			ILaunchConfigurationWorkingCopy configuration = launchType.newInstance(null, run.launchName());
 			configuration.setAttribute(IJavaLaunchConfigurationConstants.ATTR_PROJECT_NAME, projectName);
@@ -139,16 +161,37 @@ public final class RunTestsTool implements IMcpTool {
 					Thread.currentThread().interrupt();
 				}
 			}
-			JsonObject result = TestRunRegistry.toJson(run, 50, false).put("testKind", kind); //$NON-NLS-1$
-			if (project.hasNature("org.eclipse.pde.PluginNature")) { //$NON-NLS-1$
+			JsonObject result = TestRunRegistry.toJson(run, 50, false).put("testKind", kind) //$NON-NLS-1$
+					.put("launchedAs", asPlugin ? (ui ? "pluginTest-ui" : "pluginTest") : "junit"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+			if (!asPlugin && project.hasNature(PLUGIN_NATURE)) {
 				result.put("caveat", //$NON-NLS-1$
-						"'%s' is a plug-in project, and this runs its tests as a plain JUnit launch with no running platform. Tests that need OSGi fail here with errors such as 'The application has not been initialized', a null IExtensionRegistry or NoClassDefFoundError, which are not test failures. Those need Run As > JUnit Plug-in Test, which launches a second Eclipse and is not implemented." //$NON-NLS-1$
+						"'%s' is a plug-in project but was run as plain JUnit, so tests needing OSGi fail with errors such as 'The application has not been initialized', a null IExtensionRegistry or NoClassDefFoundError. Those are not test failures. Omit pluginTest to launch a platform." //$NON-NLS-1$
 								.formatted(projectName));
 			}
 			return McpToolResult.of(result.toString());
 		} catch (CoreException e) {
 			throw new McpToolException("Could not run the tests of " + projectName, e); //$NON-NLS-1$
 		}
+	}
+
+	/**
+	 * A plug-in test launches a second Eclipse, so it needs its own workspace and an
+	 * application to run. The workbench one is opt-in: it opens a window on the
+	 * user's screen, which should never happen by surprise.
+	 */
+	private static void configurePlatform(ILaunchConfigurationWorkingCopy configuration, String runtimeWorkspace,
+			boolean ui) {
+		configuration.setAttribute(IPDELauncherConstants.APPLICATION, ui ? UI_TEST_APPLICATION : CORE_TEST_APPLICATION);
+		configuration.setAttribute(IPDELauncherConstants.USE_PRODUCT, false);
+		configuration.setAttribute(IPDELauncherConstants.LOCATION,
+				runtimeWorkspace == null ? "${workspace_loc}/../mcp-junit-workspace" : runtimeWorkspace); //$NON-NLS-1$
+		// cleared and never asked about: a prompt would block a call nobody is watching
+		configuration.setAttribute(IPDELauncherConstants.DOCLEAR, true);
+		configuration.setAttribute(IPDELauncherConstants.ASKCLEAR, false);
+		configuration.setAttribute(IPDELauncherConstants.CONFIG_CLEAR_AREA, true);
+		// take the whole target platform plus the workspace plug-ins, which is what
+		// the launch tab does by default and what makes an unconfigured run resolve
+		configuration.setAttribute(IPDELauncherConstants.AUTOMATIC_ADD, true);
 	}
 
 	private static JsonObject dryRun(IJavaProject javaProject, IType type, IProgressMonitor monitor)

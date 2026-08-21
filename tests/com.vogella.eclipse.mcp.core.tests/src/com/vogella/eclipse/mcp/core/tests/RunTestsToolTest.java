@@ -145,6 +145,35 @@ class RunTestsToolTest {
 	}
 
 	@Test
+	void aPlainJavaProjectRunsAsPlainJUnit() throws Exception {
+		withTests();
+
+		Map<String, Object> result = TestFixture.callAndParse(TOOL,
+				Map.of("project", PROJECT, "testClass", "sample.SampleTest", "timeoutSeconds", Integer.valueOf(120)));
+
+		assertEquals("junit", result.get("launchedAs"));
+		assertEquals(null, result.get("caveat"), "a project with no PDE nature needs no warning");
+	}
+
+	@Test
+	void aPlugInProjectRunAsPlainJUnitSaysWhyItsResultsAreSuspect() throws Exception {
+		IJavaProject project = withTests();
+		org.eclipse.core.resources.IProjectDescription description = project.getProject().getDescription();
+		description.setNatureIds(
+				new String[] { JavaCore.NATURE_ID, "org.eclipse.pde.PluginNature" });
+		project.getProject().setDescription(description, new org.eclipse.core.runtime.NullProgressMonitor());
+
+		// pluginTest false forces the plain launcher, which is the misleading case:
+		// OSGi errors that read as broken tests. Launching a real platform here would
+		// start a second Eclipse, which is too heavy for this suite.
+		Map<String, Object> result = TestFixture.callAndParse(TOOL, Map.of("project", PROJECT, "testClass",
+				"sample.SampleTest", "pluginTest", "false", "timeoutSeconds", Integer.valueOf(120)));
+
+		assertEquals("junit", result.get("launchedAs"));
+		assertTrue(String.valueOf(result.get("caveat")).contains("plain JUnit"), String.valueOf(result.get("caveat")));
+	}
+
+	@Test
 	void rejectsAMethodWithoutAClass() throws Exception {
 		withTests();
 
