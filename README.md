@@ -517,6 +517,32 @@ It is `null` in two cases: the supertype is not resolvable in that project at al
 
 A class satisfies a `basedOn` that names the class itself.
 
+**`apiTier` says what a workspace search can prove**, and it qualifies every verdict rather than replacing it. For an OSGi bundle the declaring package's export decides whether consumers can exist where you cannot see them:
+
+| `apiTier` | Meaning | `searchIsAuthoritative` |
+|---|---|---|
+| `not-exported` | nothing outside the bundle may reference it | `true` |
+| `internal-api` | exported `x-internal`, no legitimate outside consumer | `false` |
+| `internal-api-friends` | exported `x-friends`, and the list is enumerable | `true` when every friend is a project here |
+| `public-api` | consumers may exist anywhere | `false` |
+
+`dead` on a `public-api` type proves nothing at all: `org.eclipse.ui.ide.IGotoMarker` has no workspace references and is implemented across the ecosystem. `dead` where `searchIsAuthoritative` is `true` has nowhere left to hide, and for `x-friends` that is exact rather than a heuristic, because the friend list names every bundle allowed to reference the package.
+
+`apiRestrictions` reports the PDE API Tools javadoc tags on a type (`noreference`, `noextend`, `noimplement`, `noinstantiate`, `nooverride`). A type in a public package tagged `@noreference` is documented as not for consumption, so no references means more there than it does for untagged public API. The tags are read from the source; no API baseline is involved, since comparing against a baseline answers the different question of whether removing something breaks anyone.
+
+**`apiTier` says what a workspace search can prove**, and it qualifies every verdict rather than replacing it. For an OSGi bundle the declaring package's export decides whether consumers can exist where you cannot see them:
+
+| `apiTier` | Meaning | `searchIsAuthoritative` |
+|---|---|---|
+| `not-exported` | nothing outside the bundle may reference it | `true` |
+| `internal-api` | exported `x-internal`, no legitimate outside consumer | `false` |
+| `internal-api-friends` | exported `x-friends`, and the list is enumerable | `true` when every friend is a project here |
+| `public-api` | consumers may exist anywhere | `false` |
+
+`dead` on a `public-api` type proves nothing at all: `org.eclipse.ui.ide.IGotoMarker` has no workspace references and is implemented across the ecosystem. `dead` where `searchIsAuthoritative` is `true` has nowhere left to hide, and for `x-friends` that is exact rather than a heuristic, because the friend list names every bundle allowed to reference the package.
+
+`apiRestrictions` reports the PDE API Tools javadoc tags on a type (`noreference`, `noextend`, `noimplement`, `noinstantiate`, `nooverride`). A type in a public package tagged `@noreference` is documented as not for consumption, so no references means more there than it does for untagged public API. The tags are read from source; no API baseline is involved, since comparing against a baseline answers the different question of whether removing something breaks anyone.
+
 `typeTests` is reported separately from `registryEvidence` and never changes a verdict. A class named only by `<instanceof value="..."/>` in an enablement expression is `dead` by the rule above, because a type test is not instantiation, but deleting it breaks the expression *silently*: it stops matching rather than failing to compile, which is worse than an error.
 
 The other positions read are declarative services (`implementation@class`, `provide@interface`, and the lifecycle and binding method names), `Bundle-Activator`, `META-INF/services` (the file name is the interface, each line a provider), and reflective loads whose argument is a single string literal.
@@ -662,6 +688,55 @@ Formats a Java file with the formatter settings of its own project and saves it.
 ```json
 {"path":"/app/src/com/example/Main.java","changed":true}
 ```
+
+### `eclipse_read_file`
+
+Reads a workspace file by workspace path, the same path form `eclipse_open` takes. Read-only.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `path` | string, required | | Workspace path of the file. |
+| `offset` | integer | 1 | First line to return, 1 based. |
+| `limit` | integer | rest of file | How many lines to return. |
+| `maxBytes` | integer | 1000000 | Refuse rather than return more than this. |
+| `refresh` | boolean | `true` | Read outside changes into the workspace first. |
+
+This exists because a client is not always on the same machine as the IDE, and once the window is hidden there is no filesystem to fall back on. It is also the only way to look at the `plugin.xml` or `.exsd` that `eclipse_list_declarations` cites as evidence, in the same IDE the verdict came from rather than in your own copy of the tree, which may not even be the same revision.
+
+The file is read through the workspace, so it uses the encoding Eclipse has for it. A naive read of the bytes gets that wrong silently for properties files and anything not UTF-8.
+
+Binary files are reported as `binary` rather than returned as a mangled string.
+
+### `eclipse_search_text`
+
+Searches the text of workspace files, including the ones the Java model cannot see: `plugin.xml`, `.exsd`, `.project`, manifests, properties. Read-only.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `pattern` | string, required | | Text, or a regular expression when `isRegex`. |
+| `isRegex` | boolean | `false` | |
+| `isCaseSensitive` | boolean | `false` | |
+| `projects` | array of strings | whole workspace | |
+| `path` | string | | Restrict to a workspace folder or file. |
+| `fileNamePattern` | string | every file | Glob over file names, e.g. `*.exsd`. |
+| `includeDerived` | boolean | `false` | Include build output. |
+| `maxResults` | integer, 1 to 5000 | 200 | |
+
+For Java elements `eclipse_find_references` answers better, because it resolves overloads and inheritance and this does not. This is for everything that is not Java.
+
+It runs through Eclipse's own `TextSearchEngine`, so **derived resources are excluded by default**. That is the difference between this and a raw grep of the same tree, where every type comes back once per copy under a build output directory.
+
+Each match reports the file, the line number and the line, capped at 500 characters.
+
+### `eclipse_list_editors` and `eclipse_close_editor`
+
+`eclipse_list_editors` lists the open editors in tab order, with the file each shows, which is active, which are pinned, and which have unsaved changes. Read-only, no arguments.
+
+It is the tool that answers "is there unsaved work", which `eclipse_restart` refuses on and which nothing else reported on its own. It matters more once the IDE can be hidden, since nobody can look at a window they cannot see.
+
+`eclipse_close_editor` **changes what the IDE shows**. It selects by `path`, by `title` substring, or `all`, and refuses to act on omission.
+
+A clean editor closes with no ceremony, because closing it loses nothing. **A dirty editor is refused** unless `save` is passed, which saves it first, or `discardUnsaved`, which throws the changes away and is never a default. The save goes through the editor rather than through `closeEditors(refs, true)`, so no save prompt is ever raised: an unattended call cannot leave a dialog waiting for somebody who is not there.
 
 ### `eclipse_get_project_dependencies`
 

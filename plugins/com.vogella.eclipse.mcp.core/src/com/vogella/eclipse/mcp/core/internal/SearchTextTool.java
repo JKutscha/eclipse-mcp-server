@@ -1,0 +1,230 @@
+package com.vogella.eclipse.mcp.core.internal;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
+
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.search.core.text.TextSearchEngine;
+import org.eclipse.search.core.text.TextSearchMatchAccess;
+import org.eclipse.search.core.text.TextSearchRequestor;
+import org.eclipse.search.core.text.TextSearchScope;
+
+import com.vogella.eclipse.mcp.core.Globs;
+import com.vogella.eclipse.mcp.core.IMcpTool;
+import com.vogella.eclipse.mcp.core.McpToolResult;
+import com.vogella.eclipse.mcp.core.ToolArguments;
+import com.vogella.eclipse.mcp.core.json.JsonArray;
+import com.vogella.eclipse.mcp.core.json.JsonObject;
+
+/**
+ * Searches the text of workspace files.
+ */
+public final class SearchTextTool implements IMcpTool {
+
+	private static final int MAX_LINE_LENGTH = 500;
+
+	@Override
+	public String getName() {
+		return "eclipse_search_text"; //$NON-NLS-1$
+	}
+
+	@Override
+	public String getDescription() {
+		return "Searches the text of workspace files, including the ones the Java model cannot see: plugin.xml, .exsd schemas, .project, manifests, properties. Read-only. For Java elements eclipse_find_references answers better, because it resolves overloads and inheritance and this does not; this is for everything that is not Java, and for a client that has no filesystem of its own because the IDE is on another machine or hidden. It searches through Eclipse's own text search, so derived resources such as build output are excluded by default rather than returned as duplicate noise, and fileNamePattern narrows to the files that matter."; //$NON-NLS-1$
+	}
+
+	@Override
+	public String getInputSchema() {
+		return """
+				{
+				  "type": "object",
+				  "required": ["pattern"],
+				  "properties": {
+				    "pattern":         {"type":"string","description":"Text to find, or a regular expression when isRegex is true."},
+				    "isRegex":         {"type":"boolean","default":false},
+				    "isCaseSensitive": {"type":"boolean","default":false},
+				    "projects":        {"type":"array","items":{"type":"string"},"description":"Restrict to these projects. Omit for the whole workspace."},
+				    "path":            {"type":"string","description":"Restrict to this workspace folder or file, e.g. /app/src."},
+				    "fileNamePattern": {"type":"string","description":"Glob over file names, e.g. *.exsd or plugin.xml. Omit for every file."},
+				    "includeDerived":  {"type":"boolean","default":false,"description":"Include derived resources, which is build output."},
+				    "maxResults":      {"type":"integer","default":200,"minimum":1,"maximum":5000}
+				  },
+				  "additionalProperties": false
+				}"""; //$NON-NLS-1$
+	}
+
+	@Override
+	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
+		ToolArguments args = ToolArguments.of(arguments);
+		String text = args.getString("pattern"); //$NON-NLS-1$
+		if (text == null) {
+			return McpToolResult.error("The argument 'pattern' is required."); //$NON-NLS-1$
+		}
+		boolean isRegex = args.getBoolean("isRegex", false); //$NON-NLS-1$
+		boolean caseSensitive = args.getBoolean("isCaseSensitive", false); //$NON-NLS-1$
+		boolean includeDerived = args.getBoolean("includeDerived", false); //$NON-NLS-1$
+		int maxResults = args.getInt("maxResults", 200, 1, 5000); //$NON-NLS-1$
+
+		Pattern pattern;
+		try {
+			pattern = TextSearchEngine.createPattern(text, caseSensitive, isRegex);
+		} catch (PatternSyntaxException e) {
+			return McpToolResult.error("Could not read 'pattern' as a regular expression: " + e.getMessage()); //$NON-NLS-1$
+		}
+		Pattern fileNames;
+		try {
+			fileNames = Globs.compile(args.getString("fileNamePattern")); //$NON-NLS-1$
+		} catch (PatternSyntaxException e) {
+			return McpToolResult.error("Could not read 'fileNamePattern' as a glob: " + e.getMessage()); //$NON-NLS-1$
+		}
+
+		List<IResource> roots = new ArrayList<>();
+		String path = args.getString("path"); //$NON-NLS-1$
+		if (path != null) {
+			IResource resource = ResourcesPlugin.getWorkspace().getRoot()
+					.findMember(IPath.fromPortableString(path));
+			if (resource == null) {
+				return McpToolResult.error("No workspace resource at '%s'.".formatted(path)); //$NON-NLS-1$
+			}
+			roots.add(resource);
+		}
+		for (String name : names(arguments)) {
+			IProject project = ResourcesPlugin.getWorkspace().getRoot().getProject(name);
+			if (!project.isAccessible()) {
+				return McpToolResult.error("No open project named '%s' in this workspace.".formatted(name)); //$NON-NLS-1$
+			}
+			roots.add(project);
+		}
+		if (roots.isEmpty()) {
+			roots.add(ResourcesPlugin.getWorkspace().getRoot());
+		}
+
+		Collector collector = new Collector(maxResults);
+		// the scope matches every file name against this, so "no filter" has to be a
+		// pattern that matches rather than null, which it dereferences
+		TextSearchScope scope = TextSearchScope.newSearchScope(roots.toArray(IResource[]::new),
+				fileNames == null ? Pattern.compile(".*") : fileNames, includeDerived); //$NON-NLS-1$
+		TextSearchEngine.createDefault().search(scope, collector, pattern, monitor);
+
+		JsonObject result = new JsonObject().put("pattern", text) //$NON-NLS-1$
+				.put("isRegex", Boolean.valueOf(isRegex)) //$NON-NLS-1$
+				.put("isCaseSensitive", Boolean.valueOf(caseSensitive)) //$NON-NLS-1$
+				.put("includeDerived", Boolean.valueOf(includeDerived)) //$NON-NLS-1$
+				.put("total", Integer.valueOf(collector.total)) //$NON-NLS-1$
+				.put("files", Integer.valueOf(collector.files.size())) //$NON-NLS-1$
+				.put("truncated", Boolean.valueOf(collector.total > collector.matches.size())) //$NON-NLS-1$
+				.put("matches", collector.matches); //$NON-NLS-1$
+		return McpToolResult.of(result.toString());
+	}
+
+	/**
+	 * Reports one line per match. The line is found by walking out from the match
+	 * rather than by splitting the file, so a hit in a large file costs the length
+	 * of its line and not the length of the file.
+	 */
+	private static final class Collector extends TextSearchRequestor {
+
+		private final JsonArray matches = new JsonArray();
+
+		private final List<String> files = new ArrayList<>();
+
+		private final int maxResults;
+
+		private int total;
+
+		private IFile currentFile;
+
+		private int[] lineStarts;
+
+		Collector(int maxResults) {
+			this.maxResults = maxResults;
+		}
+
+		@Override
+		public boolean acceptFile(IFile file) {
+			currentFile = null;
+			lineStarts = null;
+			return true;
+		}
+
+		@Override
+		public boolean reportBinaryFile(IFile file) {
+			return false;
+		}
+
+		@Override
+		public boolean canRunInParallel() {
+			// the counters and the line cache below are not synchronised, and a text
+			// search is IO bound anyway
+			return false;
+		}
+
+		@Override
+		public boolean acceptPatternMatch(TextSearchMatchAccess match) {
+			total++;
+			IFile file = match.getFile();
+			String path = file.getFullPath().toString();
+			if (!files.contains(path)) {
+				files.add(path);
+			}
+			if (matches.size() >= maxResults) {
+				return true;
+			}
+			int offset = match.getMatchOffset();
+			int start = offset;
+			while (start > 0 && match.getFileContentChar(start - 1) != '\n') {
+				start--;
+			}
+			int length = match.getFileContentLength();
+			int end = offset + match.getMatchLength();
+			while (end < length && match.getFileContentChar(end) != '\n') {
+				end++;
+			}
+			String line = match.getFileContent(start, Math.min(end, length) - start).stripTrailing();
+			matches.add(new JsonObject().put("file", path) //$NON-NLS-1$
+					.put("line", Integer.valueOf(lineOf(match, offset))) //$NON-NLS-1$
+					.put("offset", Integer.valueOf(offset)) //$NON-NLS-1$
+					.put("text", line.length() > MAX_LINE_LENGTH ? line.substring(0, MAX_LINE_LENGTH) : line)); //$NON-NLS-1$
+			return true;
+		}
+
+		/** Line starts are computed once per file, since matches arrive grouped by file. */
+		private int lineOf(TextSearchMatchAccess match, int offset) {
+			if (currentFile != match.getFile() || lineStarts == null) {
+				currentFile = match.getFile();
+				List<Integer> starts = new ArrayList<>();
+				starts.add(Integer.valueOf(0));
+				int length = match.getFileContentLength();
+				for (int i = 0; i < length; i++) {
+					if (match.getFileContentChar(i) == '\n') {
+						starts.add(Integer.valueOf(i + 1));
+					}
+				}
+				lineStarts = starts.stream().mapToInt(Integer::intValue).toArray();
+			}
+			int index = Arrays.binarySearch(lineStarts, offset);
+			return index >= 0 ? index + 1 : -index - 1;
+		}
+	}
+
+	private static List<String> names(Map<String, Object> arguments) {
+		List<String> names = new ArrayList<>();
+		if (arguments != null && arguments.get("projects") instanceof List<?> list) { //$NON-NLS-1$
+			for (Object value : list) {
+				if (value != null && !String.valueOf(value).isBlank()) {
+					names.add(String.valueOf(value).trim());
+				}
+			}
+		}
+		return names;
+	}
+}

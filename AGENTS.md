@@ -217,6 +217,12 @@ It shipped doing exactly that and it reported 14 live classes in `org.eclipse.ui
 `basedOn` is a single-valued hint that real schemas cannot always express, so an unsatisfied constraint is a flag for a person and not evidence of a stale entry.
 Unverifiable is not refuted, and unsatisfied is not refuted either. The invariant to hold on to: a declaration with `registryEvidence` can never be `dead`, which `ListDeclarationsToolTest` asserts.
 
+**Export visibility decides what a workspace search can prove, and PDE's model throws it away.**
+`ExportPackageDescription.getName()` reports the package with its directives stripped, so a public package and an `x-internal` one come back indistinguishable, which is exactly the part the question needs.
+`eclipse_get_bundle_info` reports the directives, and `PackageExports` parses the header itself in the jdt bundle rather than taking a PDE dependency for two directives.
+The header parser has to split on commas outside quotes, because an `x-friends` list is a quoted comma-separated value inside a comma-separated header.
+A search is authoritative only where the package is not exported, or where every bundle its `x-friends` list names is a project in this workspace; everything exported plainly is unprovable no matter how many zero results you collect.
+
 **A scoped result must not carry a workspace-scoped caveat.**
 `extensionPointsWithoutSchema` is filtered to the projects that were asked about.
 It once reported the same four points for two projects that contributed to none of them, on results with zero undecidable declarations, so the caveat described a limit those answers did not have and invited distrust of a fully judged result.

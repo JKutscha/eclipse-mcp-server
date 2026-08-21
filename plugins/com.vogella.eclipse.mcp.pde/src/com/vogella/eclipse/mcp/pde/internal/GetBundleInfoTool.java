@@ -159,7 +159,24 @@ public final class GetBundleInfoTool implements IMcpTool {
 
 		JsonArray exports = new JsonArray();
 		for (ExportPackageDescription export : description.getExportPackages()) {
-			exports.add(export.getName());
+			// the directives, not just the name: x-internal and x-friends decide whether
+			// a package can have consumers outside this workspace at all, which is what
+			// makes a "no references" result mean something or nothing
+			Object internal = export.getDirective("x-internal"); //$NON-NLS-1$
+			Object friendly = export.getDirective("x-friends"); //$NON-NLS-1$
+			JsonObject entry = new JsonObject().put("package", export.getName()); //$NON-NLS-1$
+			if (friendly != null) {
+				JsonArray friends = new JsonArray();
+				for (Object friend : friendly instanceof Object[] many ? many : new Object[] { friendly }) {
+					friends.add(String.valueOf(friend));
+				}
+				entry.put("visibility", "x-friends").put("friends", friends); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+			} else if (internal != null && Boolean.parseBoolean(String.valueOf(internal))) {
+				entry.put("visibility", "x-internal"); //$NON-NLS-1$ //$NON-NLS-2$
+			} else {
+				entry.put("visibility", "public"); //$NON-NLS-1$ //$NON-NLS-2$
+			}
+			exports.add(entry);
 		}
 		json.put("exportPackage", exports); //$NON-NLS-1$
 		return json;

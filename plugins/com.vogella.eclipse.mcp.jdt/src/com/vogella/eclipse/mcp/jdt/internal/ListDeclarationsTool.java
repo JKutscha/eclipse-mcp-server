@@ -142,6 +142,8 @@ public final class ListDeclarationsTool implements IMcpTool {
 			Set<String> visibility, String status, int maxResults, boolean includeReflection, IProgressMonitor monitor)
 			throws CoreException {
 		LineIndex lines = new LineIndex();
+		PackageExports exports = new PackageExports();
+		Set<String> workspaceBundles = workspaceBundles();
 		JsonArray declarations = new JsonArray();
 		int total = 0;
 		for (IPackageFragmentRoot root : roots) {
@@ -155,7 +157,7 @@ public final class ListDeclarationsTool implements IMcpTool {
 				for (ICompilationUnit unit : fragment.getCompilationUnits()) {
 					for (IType type : unit.getTypes()) {
 						total += collect(type, index, kinds, visibility, status, maxResults, declarations, lines,
-								monitor);
+								exports, workspaceBundles, monitor);
 					}
 				}
 			}
@@ -172,33 +174,36 @@ public final class ListDeclarationsTool implements IMcpTool {
 
 	/** Returns how many declarations matched, which is not how many were reported. */
 	private int collect(IType type, RegistryIndex index, List<String> kinds, Set<String> visibility, String status,
-			int maxResults, JsonArray into, LineIndex lines, IProgressMonitor monitor) throws CoreException {
+			int maxResults, JsonArray into, LineIndex lines, PackageExports exports, Set<String> workspaceBundles,
+			IProgressMonitor monitor) throws CoreException {
 		int matched = 0;
 		String verdict = verdict(type, index, null, monitor);
+		JsonObject api = api(type, exports, workspaceBundles);
 		if (kinds.contains("types")) { //$NON-NLS-1$
 			matched += consider(type, type.getFullyQualifiedName(), "type", verdict, index, visibility, status, //$NON-NLS-1$
-					maxResults, into, lines, monitor);
+					maxResults, into, lines, api, monitor);
 		}
 		if (kinds.contains("methods")) { //$NON-NLS-1$
 			for (IMethod method : type.getMethods()) {
 				matched += consider(method, name(type, method), "method", verdict, index, visibility, status, //$NON-NLS-1$
-						maxResults, into, lines, monitor);
+						maxResults, into, lines, api, monitor);
 			}
 		}
 		if (kinds.contains("fields")) { //$NON-NLS-1$
 			for (IField field : type.getFields()) {
 				matched += consider(field, name(type, field), "field", verdict, index, visibility, status, maxResults, //$NON-NLS-1$
-						into, lines, monitor);
+						into, lines, api, monitor);
 			}
 		}
 		for (IType nested : type.getTypes()) {
-			matched += collect(nested, index, kinds, visibility, status, maxResults, into, lines, monitor);
+			matched += collect(nested, index, kinds, visibility, status, maxResults, into, lines, exports,
+					workspaceBundles, monitor);
 		}
 		return matched;
 	}
 
 	private int consider(IMember member, String name, String kind, String enclosingVerdict, RegistryIndex index,
-			Set<String> visibility, String status, int maxResults, JsonArray into, LineIndex lines,
+			Set<String> visibility, String status, int maxResults, JsonArray into, LineIndex lines, JsonObject api,
 			IProgressMonitor monitor) throws CoreException {
 		String visible = visibility(member.getFlags());
 		if (!visibility.isEmpty() && !visibility.contains(visible)) {
@@ -217,7 +222,17 @@ public final class ListDeclarationsTool implements IMcpTool {
 				.put("file", resource == null ? null : resource.getFullPath().toString()) //$NON-NLS-1$
 				.put("line", Integer.valueOf(line(member, resource, lines))) //$NON-NLS-1$
 				.put("visibility", visible) //$NON-NLS-1$
-				.put("registryStatus", verdict); //$NON-NLS-1$
+				.put("registryStatus", verdict) //$NON-NLS-1$
+				.put("apiTier", api.remove("tier")) //$NON-NLS-1$ //$NON-NLS-2$
+				.put("searchIsAuthoritative", api.remove("authoritative")); //$NON-NLS-1$ //$NON-NLS-2$
+		Object friends = api.remove("friends"); //$NON-NLS-1$
+		if (friends != null) {
+			entry.put("friends", friends); //$NON-NLS-1$
+		}
+		Object restrictions = "type".equals(kind) ? apiRestrictions((IType) member) : null; //$NON-NLS-1$
+		if (restrictions != null) {
+			entry.put("apiRestrictions", restrictions); //$NON-NLS-1$
+		}
 		JsonArray evidence = evidence(member, index, name, monitor);
 		if (evidence.size() > 0) {
 			entry.put("registryEvidence", evidence); //$NON-NLS-1$
@@ -234,6 +249,68 @@ public final class ListDeclarationsTool implements IMcpTool {
 		}
 		into.add(entry);
 		return 1;
+	}
+
+	/**
+	 * What the declaring package's export says a workspace search can prove.
+	 * <p>
+	 * A search is authoritative only when there is nowhere else a reference could
+	 * be: the package is not exported at all, or every bundle its x-friends list
+	 * names is itself a project here. Everything exported plainly is the opposite
+	 * case, and no number of zero results settles it.
+	 */
+	private static JsonObject api(IType type, PackageExports exports, Set<String> workspaceBundles) {
+		PackageExports.Export export = exports.of(type.getJavaProject().getProject(),
+				type.getPackageFragment().getElementName());
+		JsonObject api = new JsonObject().put("tier", export.tier()); //$NON-NLS-1$
+		boolean authoritative = PackageExports.NOT_EXPORTED.equals(export.tier());
+		if (PackageExports.FRIENDS.equals(export.tier())) {
+			JsonArray friends = new JsonArray();
+			export.friends().forEach(friends::add);
+			api.put("friends", friends); //$NON-NLS-1$
+			authoritative = !export.friends().isEmpty() && workspaceBundles.containsAll(export.friends());
+		}
+		return api.put("authoritative", Boolean.valueOf(authoritative)); //$NON-NLS-1$
+	}
+
+	/** The bundle symbolic names this workspace has open, for the x-friends check. */
+	private static Set<String> workspaceBundles() {
+		Set<String> names = new LinkedHashSet<>();
+		for (IProject project : ResourcesPlugin.getWorkspace().getRoot().getProjects()) {
+			if (project.isAccessible()) {
+				names.add(project.getName());
+			}
+		}
+		return names;
+	}
+
+	/**
+	 * The PDE API Tools javadoc tags on a type. A type in a public package tagged
+	 * {@code @noreference} is documented as not for consumption, so no references
+	 * means more there than it does for untagged public API.
+	 */
+	private static JsonArray apiRestrictions(IType type) {
+		try {
+			org.eclipse.jdt.core.ISourceRange range = type.getJavadocRange();
+			if (range == null || type.getCompilationUnit() == null) {
+				return null;
+			}
+			String source = type.getCompilationUnit().getSource();
+			if (source == null || range.getOffset() + range.getLength() > source.length()) {
+				return null;
+			}
+			String javadoc = source.substring(range.getOffset(), range.getOffset() + range.getLength());
+			JsonArray tags = new JsonArray();
+			for (String tag : new String[] { "@noreference", "@noextend", "@noimplement", "@noinstantiate", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+					"@nooverride" }) { //$NON-NLS-1$
+				if (javadoc.contains(tag)) {
+					tags.add(tag.substring(1));
+				}
+			}
+			return tags.size() > 0 ? tags : null;
+		} catch (JavaModelException e) {
+			return null;
+		}
 	}
 
 	/**
@@ -364,6 +441,8 @@ public final class ListDeclarationsTool implements IMcpTool {
 					"%d extension points these projects contribute to are declared outside this workspace, so their schemas could not be read. Class-looking attribute values under those points are reported as undecidable rather than judged." //$NON-NLS-1$
 							.formatted(Integer.valueOf(unknownPoints.size())));
 		}
+		caveats.add(
+				"apiTier qualifies every verdict: 'dead' in a public-api package proves nothing, because consumers may exist outside this workspace entirely, while 'dead' where searchIsAuthoritative is true has nowhere else to hide."); //$NON-NLS-1$
 		caveats.add(
 				"'dead' means no registry position this tool understands names it. Confirm with eclipse_find_references before deleting anything, and remember that neither answers whether the code is reachable."); //$NON-NLS-1$
 		result.put("caveats", caveats); //$NON-NLS-1$

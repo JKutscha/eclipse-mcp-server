@@ -223,6 +223,10 @@ class McpServerServiceTest {
 		// a dry run against a name that matches nothing, so the smoke test changes nothing
 		case "eclipse_set_project_state" -> Map.of("state", "open", "namePattern", "no-such-project-*");
 		case "eclipse_organize_imports", "eclipse_format" -> Map.of("path", SAMPLE);
+		case "eclipse_read_file" -> Map.of("path", SAMPLE);
+		// scoped to the fixture: an unscoped text search reads every file in the
+		// workspace and outruns the client timeout
+		case "eclipse_search_text" -> Map.of("pattern", "class", "projects", List.of(PROJECT));
 		default -> Map.of();
 		};
 	}

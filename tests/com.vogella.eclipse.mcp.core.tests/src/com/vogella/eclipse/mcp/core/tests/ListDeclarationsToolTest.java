@@ -167,6 +167,44 @@ class ListDeclarationsToolTest {
 	}
 
 	@Test
+	void theApiTierSaysWhatAWorkspaceSearchCanProve() throws Exception {
+		fixtureProject();
+
+		// exported plainly: consumers may exist anywhere, so no search settles it
+		assertEquals("public-api", declaration("published.Api").get("apiTier"));
+		assertEquals(Boolean.FALSE, declaration("published.Api").get("searchIsAuthoritative"));
+
+		// not exported at all: there is nowhere else a reference could be
+		Map<String, Object> hidden = declaration("hidden.NotExported");
+		assertEquals("not-exported", hidden.get("apiTier"));
+		assertEquals(Boolean.TRUE, hidden.get("searchIsAuthoritative"));
+
+		assertEquals("internal-api", declaration("registry.Unused").get("apiTier"));
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void anXFriendsPackageIsAuthoritativeWhenEveryFriendIsInTheWorkspace() throws Exception {
+		fixtureProject();
+		Map<String, Object> entry = declaration("friendly.ForFriends");
+
+		assertEquals("internal-api-friends", entry.get("apiTier"));
+		assertTrue(((List<String>) entry.get("friends")).contains(PROJECT));
+		// the friend list names every bundle allowed to reference the package, and it
+		// is in this workspace, so a zero result is proof rather than evidence
+		assertEquals(Boolean.TRUE, entry.get("searchIsAuthoritative"));
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void apiToolsRestrictionTagsAreReported() throws Exception {
+		fixtureProject();
+		List<String> tags = (List<String>) declaration("hidden.NotExported").get("apiRestrictions");
+		assertNotNull(tags, "the @noreference tag should be reported");
+		assertTrue(tags.contains("noreference"), "got " + tags);
+	}
+
+	@Test
 	void visibilityFilters() throws Exception {
 		fixtureProject();
 		Map<String, Object> result = TestFixture.callAndParse(TOOL,
@@ -212,6 +250,13 @@ class ListDeclarationsToolTest {
 						}
 						""");
 
+		TestFixture.addType(javaProject, "published", "Api",
+				"package published;\npublic class Api {\n}\n");
+		TestFixture.addType(javaProject, "friendly", "ForFriends",
+				"package friendly;\npublic class ForFriends {\n}\n");
+		TestFixture.addType(javaProject, "hidden", "NotExported",
+				"package hidden;\n/**\n * @noreference\n */\npublic class NotExported {\n}\n");
+
 		write(project, "notes.txt", "registry.Unused is mentioned in this file, which is not a registry position.");
 
 		IFolder metaInf = project.getFolder("META-INF");
@@ -222,6 +267,9 @@ class ListDeclarationsToolTest {
 				Bundle-SymbolicName: registry.host;singleton:=true
 				Bundle-Version: 1.0.0
 				Bundle-Activator: registry.Activator
+				Export-Package: registry;x-internal:=true,
+				 published,
+				 friendly;x-friends:="mcp-declarations-test"
 				""");
 
 		IFolder schema = project.getFolder("schema");
