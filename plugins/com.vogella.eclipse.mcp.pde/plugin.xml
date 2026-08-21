@@ -5,6 +5,7 @@
    <extension point="com.vogella.eclipse.mcp.core.tools">
       <tool class="com.vogella.eclipse.mcp.pde.internal.SetBreeTool"/>
       <tool class="com.vogella.eclipse.mcp.pde.internal.GetBundleInfoTool"/>
+      <tool class="com.vogella.eclipse.mcp.pde.internal.EditManifestTool"/>
    </extension>
 
 </plugin>

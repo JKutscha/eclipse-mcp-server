@@ -41,7 +41,7 @@ public final class GetProblemsTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Returns compilation errors and warnings from the Eclipse workspace, as computed by the incremental builder. By default the workspace is first refreshed from disk and the build is allowed to finish, so that edits made outside the IDE are taken into account."; //$NON-NLS-1$
+		return "Returns compilation errors and warnings from the Eclipse workspace, as computed by the incremental builder. Refreshing from disk and building are separate flags, both on by default and both restricted to the project when one is named: a client that has just written a file wants the refresh and not the build, and a client that has just called eclipse_build wants the wait and not the refresh. With auto-build off, 'build' is what costs the time, not 'refresh'. messageFilter narrows to problems whose message contains a substring, which is how to ask for deprecation warnings alone rather than pulling every warning and filtering them yourself."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -54,7 +54,9 @@ public final class GetProblemsTool implements IMcpTool {
 				    "project":    {"type":"string","description":"Restrict to this project name."},
 				    "pathPrefix": {"type":"string","description":"Restrict to workspace paths starting with this prefix."},
 				    "maxResults": {"type":"integer","default":200,"minimum":1,"maximum":2000},
-				    "refresh":    {"type":"boolean","default":true,"description":"Refresh the workspace from disk and wait for the build before reading the markers. Set to false for a faster answer that may be stale."}
+				    "messageFilter": {"type":"string","description":"Only problems whose message contains this text, case insensitive. Use 'deprecated' for deprecation warnings."},
+				    "refresh":    {"type":"boolean","default":true,"description":"Read changes made outside the IDE into the workspace first, restricted to 'project' when one is named. Cheap: seconds for the whole workspace."},
+				    "build":      {"type":"boolean","default":true,"description":"Build and wait before reading the markers, restricted to 'project' when one is named. This is the expensive half with auto-build off; set false for a fast answer that may be stale."}
 				  },
 				  "additionalProperties": false
 				}"""; //$NON-NLS-1$
@@ -72,14 +74,23 @@ public final class GetProblemsTool implements IMcpTool {
 		String pathPrefix = args.getString("pathPrefix"); //$NON-NLS-1$
 		int maxResults = args.getInt("maxResults", DEFAULT_MAX_RESULTS, 1, 2000); //$NON-NLS-1$
 		boolean refresh = args.getBoolean("refresh", true); //$NON-NLS-1$
+		boolean build = args.getBoolean("build", true); //$NON-NLS-1$
+		String messageFilter = args.getString("messageFilter"); //$NON-NLS-1$
 
 		boolean upToDate = false;
-		if (refresh) {
-			IResource scope = projectName == null ? ResourcesPlugin.getWorkspace().getRoot()
+		if (refresh || build) {
+			org.eclipse.core.resources.IProject project = projectName == null ? null
 					: ResourcesPlugin.getWorkspace().getRoot().getProject(projectName);
+			IResource scope = project == null ? ResourcesPlugin.getWorkspace().getRoot() : project;
 			try {
-				WorkspaceSync.refresh(scope, monitor);
-				upToDate = WorkspaceSync.build(monitor);
+				if (refresh) {
+					WorkspaceSync.refresh(scope, monitor);
+				}
+				// up to date means the markers reflect the files, which needs both: a
+				// build without a refresh has not seen edits made outside the IDE, and
+				// a refresh without a build has not turned them into markers
+				boolean built = !build || WorkspaceSync.build(project, monitor);
+				upToDate = refresh && build && built;
 			} catch (CoreException e) {
 				throw new McpToolException("Could not refresh and build the workspace", e); //$NON-NLS-1$
 			} catch (OperationCanceledException e) {
@@ -101,7 +112,8 @@ public final class GetProblemsTool implements IMcpTool {
 				return McpToolResult.error("The request was cancelled."); //$NON-NLS-1$
 			}
 			Problem problem = toProblem(marker, severity, projectName, pathPrefix);
-			if (problem != null) {
+			if (problem != null && (messageFilter == null || problem.message()
+					.toLowerCase(java.util.Locale.ROOT).contains(messageFilter.toLowerCase(java.util.Locale.ROOT)))) {
 				problems.add(problem);
 			}
 		}
@@ -119,6 +131,8 @@ public final class GetProblemsTool implements IMcpTool {
 		}
 		JsonObject result = new JsonObject().put("total", problems.size()) //$NON-NLS-1$
 				.put("truncated", problems.size() > reported.size()) //$NON-NLS-1$
+				.put("refreshed", Boolean.valueOf(refresh)) //$NON-NLS-1$
+				.put("built", Boolean.valueOf(build)) //$NON-NLS-1$
 				.put("upToDate", upToDate) //$NON-NLS-1$
 				.put("autoBuild", WorkspaceSync.isAutoBuilding()) //$NON-NLS-1$
 				.put("problems", reported); //$NON-NLS-1$

@@ -1,5 +1,6 @@
 package com.vogella.eclipse.mcp.core;
 
+import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.IWorkspace;
 import org.eclipse.core.resources.IncrementalProjectBuilder;
@@ -35,9 +36,28 @@ public final class WorkspaceSync {
 	 * @return {@code false} when the wait was cancelled, which leaves the markers stale
 	 */
 	public static boolean build(IProgressMonitor monitor) throws CoreException {
+		return build(null, monitor);
+	}
+
+	/**
+	 * Builds and waits, restricted to {@code scope} when one is given.
+	 * <p>
+	 * The scope is the whole point. {@code IWorkspace.build} takes no resource, so
+	 * building unconditionally means every project in the workspace: asking one
+	 * project for its markers rebuilt all 541 open ones and took the call past its
+	 * timeout, while the refresh it was blamed on costs three seconds for the entire
+	 * workspace.
+	 *
+	 * @return {@code false} when the wait was cancelled, which leaves the markers stale
+	 */
+	public static boolean build(IProject scope, IProgressMonitor monitor) throws CoreException {
 		IWorkspace workspace = ResourcesPlugin.getWorkspace();
 		if (!workspace.isAutoBuilding()) {
-			workspace.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, monitor);
+			if (scope != null && scope.isAccessible()) {
+				scope.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, monitor);
+			} else {
+				workspace.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, monitor);
+			}
 		}
 		return waitForBuild(monitor);
 	}

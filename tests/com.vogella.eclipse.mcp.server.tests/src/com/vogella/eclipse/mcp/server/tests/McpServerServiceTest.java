@@ -193,7 +193,10 @@ class McpServerServiceTest {
 			// client's and the wrong answer looks exactly like a right one
 			assertEquals(Boolean.TRUE, result.isError(), "expected a refusal");
 			String text = ((TextContent) result.content().get(0)).text();
-			assertTrue(text.contains("clients are connected"), text);
+			assertTrue(text.contains("MCP sessions"), text);
+			// sessions, not clients: a client opening one per call and never ending it
+			// otherwise reads as a room full of other agents
+			assertTrue(text.contains("HTTP DELETE"), "the refusal should say how a session ends: " + text);
 			assertTrue(text.contains("buildId"), "the refusal should name the argument to pass: " + text);
 		}
 	}
