@@ -431,6 +431,28 @@ Two details that matter if you act on the numbers.
 A field initializer is a write access but a declaration rather than a reference, so it is counted in `byKind` while being absent from `total` and from `matches`; the counts need not sum.
 And `read` or `write` on a type or a method is an error rather than an empty answer, because only fields are read and written.
 
+### `eclipse_run_tests` and `eclipse_get_test_results`
+
+**Runs project code.**
+Runs JUnit tests through the IDE's own test runner and reports the failures with their stack traces, expected and actual values.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `project` | string, required | | Project holding the tests. |
+| `testClass` | string | the whole project | Fully qualified test class. |
+| `testMethod` | string | | Single method of `testClass`. |
+| `dryRun` | boolean | `false` | List the test types that would run, without running them. |
+| `wait` | boolean | `true` | |
+| `timeoutSeconds` | integer, 1 to 3600 | 25 | |
+
+The JUnit version is detected from the project's own build path and the runtime classpath is the one *Run As > JUnit Test* would use, so nothing has to be configured and no JUnit dependency is resolved here. The launch configuration is never saved, so a run started this way does not appear in the user's launch history.
+
+`eclipse_get_test_results` reports a run by `runId`, or the most recent, with counts and the failing cases. Passing tests are omitted unless `includePassed` is set, because the failures are what the question was about.
+
+**This is plain JUnit on a Java project.** It does not launch a second Eclipse, so it will not run plug-in tests that need a target platform. That is a separate and much larger job.
+
+Results are collected through `JUnitCore.addTestRunListener`, which is global and fires for every run in the IDE. Runs are matched by a launch configuration name generated per run, so a test run someone starts at the keyboard is never reported as one of ours.
+
 ### `eclipse_get_call_hierarchy`
 
 Returns the callers of a Java method, to the requested depth.
