@@ -83,6 +83,8 @@ On startup the server writes a discovery file so that no value has to be copied 
 }
 ```
 
+`state` is `listening` or `stopped`. The file is left behind with a `stopped` record rather than deleted, because a missing file cannot be told from one that was never written, and the case that matters most is the one where the server does not come back.
+
 `startedAt` identifies the server process. It matters after `eclipse_restart`, which answers *before* it restarts: the old server keeps responding for a couple of seconds, so a plain reachability check succeeds against the process that is about to die. Compare `startedAt` across the reconnect to know the new one is really up.
 
 The file is created with owner-only permissions and deleted when the server stops.
@@ -915,6 +917,8 @@ Both take `units`. Naming the installed units you care about scopes the whole op
 Only the metadata manager is ever refreshed, never the artifact manager. An update check does not read artifact metadata, and refreshing both is what makes a check cost twice what it needs to.
 
 It re-reads that metadata first, by default. p2 caches repository metadata, and a cached miss comes back as "no updates found", which is exactly what a genuinely current IDE reports, so a stale cache is invisible and looks like success. That is worst in the self-update workflow these tools exist for: publish a build, check for updates, and be told there is nothing new. `refresh: false` gives the fast cached answer instead, and then says so in a `caveat` rather than letting the miss pass as a verdict. `eclipse_update` refreshes for the same reason, since otherwise it resolves against the cache and finds nothing to apply.
+**Updating the server itself is refused unless `acknowledgeSelfUpdate` is passed.** The provisioning job runs inside the bundles being replaced, so a self update stops the bundle answering the request, and if anything then fails there is nothing left running to finish the update or to report why. The result is an IDE with no server, no way in, and no recovery except restarting Eclipse by hand at the machine. That was survivable while the IDE was something a person could see; it is not once the window can be hidden. The connection dropping is expected and fine, and a client can wait for it to come back. The bundle staying stopped is the failure, and it has no path back from outside.
+
 `eclipse_update` applies updates to units that are already installed, from repositories already configured. `eclipse_install` adds a new unit.
 Both run as jobs and return an `operationId` polled through `eclipse_get_provisioning_status`, because p2 resolution can take minutes on a slow mirror.
 

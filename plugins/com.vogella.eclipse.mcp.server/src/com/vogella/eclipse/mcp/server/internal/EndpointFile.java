@@ -34,12 +34,37 @@ public final class EndpointFile {
 		// cannot tell "reachable" from "restarted", because the reply is sent before
 		// the restart begins and the old process answers until it dies; comparing this
 		// value across a reconnect is the cheap way to know the new one is up.
-		String json = new JsonObject().put("url", endpoint.url()).put("token", endpoint.token()) //$NON-NLS-1$ //$NON-NLS-2$
+		String json = new JsonObject().put("state", "listening") //$NON-NLS-1$ //$NON-NLS-2$
+				.put("url", endpoint.url()).put("token", endpoint.token()) //$NON-NLS-1$ //$NON-NLS-2$
 				.put("startedAt", System.currentTimeMillis()).toString(); //$NON-NLS-1$
 		try {
 			PrivateFiles.write(path, json);
 		} catch (IOException e) {
 			ILog.get().error("Could not write the MCP endpoint file " + path, e); //$NON-NLS-1$
+		}
+	}
+
+	/**
+	 * Records that the server stopped, rather than removing the file.
+	 * <p>
+	 * A missing file cannot be told from one that was never written, and the case
+	 * that matters most is the one where the server does not come back: a self
+	 * update stops this bundle, and if the update then fails there is nothing left
+	 * to say so. Leaving a stopped record makes the difference between "no server
+	 * here" and "the server stopped at this time" readable by a client that has
+	 * nothing else to go on.
+	 */
+	public static void markStopped() {
+		Path path = location();
+		String json = new JsonObject().put("state", "stopped") //$NON-NLS-1$ //$NON-NLS-2$
+				.put("stoppedAt", System.currentTimeMillis()) //$NON-NLS-1$
+				.put("note", //$NON-NLS-1$
+						"The MCP server is not listening. If this followed an update of the server itself, the update may have stopped this bundle without finishing; restarting Eclipse brings it back.") //$NON-NLS-1$
+				.toString();
+		try {
+			PrivateFiles.write(path, json);
+		} catch (IOException e) {
+			ILog.get().warn("Could not write the MCP endpoint file " + path, e); //$NON-NLS-1$
 		}
 	}
 

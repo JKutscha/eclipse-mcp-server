@@ -129,6 +129,23 @@ class McpServerServiceTest {
 		String content = Files.readString(McpServerService.getEndpointFile());
 		assertTrue(content.contains(endpoint().url()), "The endpoint file should carry the URL: " + content);
 		assertTrue(content.contains(endpoint().token()), "The endpoint file should carry the token");
+		assertTrue(content.contains("\"listening\""), "and say that it is listening: " + content);
+	}
+
+	@Test
+	void recordsThatTheServerStoppedRatherThanRemovingTheFile() throws Exception {
+		McpServerService service = McpServerService.getInstance();
+		try {
+			service.stop();
+			String content = Files.readString(McpServerService.getEndpointFile());
+			// a missing file cannot be told from one that was never written, and the
+			// case that matters is a self update that stops this bundle and does not
+			// finish: nothing else is left to say what happened
+			assertTrue(content.contains("\"stopped\""), "expected a stopped record, got " + content);
+			assertFalse(content.contains("\"url\""), "a stopped record should not advertise a URL: " + content);
+		} finally {
+			service.start();
+		}
 	}
 
 	@Test

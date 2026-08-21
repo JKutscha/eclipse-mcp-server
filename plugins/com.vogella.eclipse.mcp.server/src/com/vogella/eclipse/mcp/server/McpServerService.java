@@ -209,7 +209,7 @@ public final class McpServerService {
 	}
 
 	private void stopQuietly() {
-		EndpointFile.delete();
+		EndpointFile.markStopped();
 		endpoint = null;
 		runningPort = -1;
 		if (mcpServer != null) {

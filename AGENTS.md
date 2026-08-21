@@ -241,6 +241,13 @@ Disabling or uninstalling the server must not be the moment the IDE becomes unre
 That only works while the jgit imports stay inside that one class: the caller catches `LinkageError`, which is what a missing optional bundle produces when the class is first linked.
 Spreading a jgit type into a signature `CompareTool` touches would turn the missing bundle into a failure of the whole tool.
 
+**A self update runs inside the bundles it is replacing.**
+Every bundle here is in the same feature, so `eclipse_update` on that feature stops both the bundle serving the request and the bundle running the provisioning job.
+It happened: one log line, `MCP server stopped`, no install, no rollback, and an IDE left with no server and no way to reach it.
+`UpdateTool.selfUpdates` refuses unless `acknowledgeSelfUpdate` is passed, and `EndpointFile.markStopped` leaves a record instead of deleting the file, so a client has something to read afterwards.
+Neither of those makes a self update safe, they make it declared and legible. The real fix is to stop driving the operation from inside the feature, and it is not written yet.
+Do not treat the dropped connection as the bug; a client can wait that out. The bug is the bundle that never comes back.
+
 **Every long running IDE operation a client drives has a dialog in it somewhere.**
 Four so far: p2's unsigned content prompt, the workspace chooser on restart, the launch time "Errors in Workspace" prompt raised by the `org.eclipse.debug.ui` status handler, and the compare framework's "no differences" message when a `CompareEditorInput` has a null result.
 Each blocked a call nobody was watching, and each was invisible in the protocol until someone looked at the screen.

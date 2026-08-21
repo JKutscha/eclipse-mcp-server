@@ -35,6 +35,7 @@ public final class UpdateTool implements IMcpTool {
 				{
 				  "type": "object",
 				  "properties": {
+				    "acknowledgeSelfUpdate": {"type":"boolean","default":false,"description":"Required to update the MCP server itself, which can leave the IDE with no server until somebody restarts Eclipse by hand."},
 				    "units":          {"type":"array","items":{"type":"string"},"description":"Installed unit ids to update. Scopes the resolution to the repositories that can supply them, so a targeted update makes one network round trip instead of one per configured site. Omit to update everything that has an update."},
 				    "dryRun":         {"type":"boolean","default":true,"description":"Report what would be updated without changing anything. On by default: an update modifies the installation and there is no undo short of reverting the configuration, so the change list should be seen before it is committed to."},
 				    "refresh":        {"type":"boolean","default":true,"description":"Re-read the repository metadata first. Without it the update resolves against p2's cache and may find nothing to apply."},
@@ -110,6 +111,12 @@ public final class UpdateTool implements IMcpTool {
 					"Refused: the resolution wants to update %s, which you did not ask for. Only %s was named. Nothing was changed." //$NON-NLS-1$
 							.formatted(unexpected, unitIds));
 		}
+		java.util.List<String> self = selfUpdates(possible);
+		if (!self.isEmpty() && !args.getBoolean("acknowledgeSelfUpdate", false)) { //$NON-NLS-1$
+			return McpToolResult.error(
+					"Refused: %s is the MCP server itself, so applying this stops the bundle answering you while it does it. Nothing was changed. That is not merely a dropped connection: the provisioning job runs inside the bundles being replaced, so if anything goes wrong there is nothing left running to finish the update or to report why, and the IDE is then left with no server and no way to reach it except a restart by hand at the machine. Pass acknowledgeSelfUpdate true to accept that, and only when somebody can restart Eclipse if it does not come back." //$NON-NLS-1$
+							.formatted(self));
+		}
 		if (args.getBoolean("dryRun", true)) { //$NON-NLS-1$
 			return McpToolResult.of(Provisioning
 					.record("update", "dryRun", //$NON-NLS-1$ //$NON-NLS-2$
@@ -142,5 +149,25 @@ public final class UpdateTool implements IMcpTool {
 			}
 		}
 		return McpToolResult.of(handle.toJson().toString());
+	}
+
+	/**
+	 * The units in this update that are the server itself.
+	 * <p>
+	 * A self update stops the bundle serving the request, and the provisioning job
+	 * runs in a bundle of the same feature, so the operation can lose its own driver
+	 * half way through. What is left is an IDE with no server, no discovery file and
+	 * no way in: the one failure this machinery cannot talk its way out of, and it
+	 * has no recovery path at all once the window is hidden.
+	 */
+	private static java.util.List<String> selfUpdates(Update[] updates) {
+		java.util.List<String> self = new java.util.ArrayList<>();
+		for (Update update : updates) {
+			String id = update.toUpdate.getId();
+			if (id.startsWith("com.vogella.eclipse.mcp")) { //$NON-NLS-1$
+				self.add(id);
+			}
+		}
+		return self;
 	}
 }
