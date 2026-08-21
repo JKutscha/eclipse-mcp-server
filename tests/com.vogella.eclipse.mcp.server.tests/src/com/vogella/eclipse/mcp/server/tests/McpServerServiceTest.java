@@ -200,8 +200,10 @@ class McpServerServiceTest {
 	 */
 	private static Map<String, Object> arguments(String toolName) {
 		return switch (toolName) {
-		case "eclipse_find_references", "eclipse_get_type_hierarchy", "eclipse_get_source" ->
-			Map.of("typeName", "java.lang.Object");
+		case "eclipse_get_type_hierarchy", "eclipse_get_source" -> Map.of("typeName", "java.lang.Object");
+		// scoped to the fixture: a binary type is searched by name, so asking for
+		// references to java.lang.Object walks the whole workspace
+		case "eclipse_find_references" -> Map.of("typeName", "example.Sample", "project", PROJECT);
 		case "eclipse_search_types" -> Map.of("pattern", "java.lang.Object");
 		case "eclipse_get_preferences" -> Map.of("qualifier", "org.eclipse.core.resources");
 		case "eclipse_refresh", "eclipse_get_classpath" -> Map.of("project", PROJECT);

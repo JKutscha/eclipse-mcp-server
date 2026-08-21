@@ -191,6 +191,7 @@ public final class TestRunRegistry {
 		int failed = 0;
 		int errors = 0;
 		int ignored = 0;
+		int unclassified = 0;
 		List<Case> interesting = new ArrayList<>();
 		for (Case testCase : cases) {
 			switch (testCase.result()) {
@@ -198,8 +199,9 @@ public final class TestRunRegistry {
 			case "FAILURE" -> failed++; //$NON-NLS-1$
 			case "ERROR" -> errors++; //$NON-NLS-1$
 			case "IGNORED" -> ignored++; //$NON-NLS-1$
-			default -> {
-			}
+			// a result JDT names something else must still be counted: silently
+			// dropping it is how 38 errors were once summarised as zero
+			default -> unclassified++;
 			}
 			if (includePassed || !"OK".equals(testCase.result())) { //$NON-NLS-1$
 				interesting.add(testCase);
@@ -218,7 +220,16 @@ public final class TestRunRegistry {
 			}
 			reported.add(json);
 		}
-		return new JsonObject().put("runId", run.id) //$NON-NLS-1$
+		JsonObject counted = new JsonObject();
+		if (unclassified > 0) {
+			counted.put("unclassified", unclassified); //$NON-NLS-1$
+		}
+		// the counters must account for every case, or the summary contradicts the list
+		if (passed + failed + errors + ignored + unclassified != cases.size()) {
+			counted.put("countsInconsistent", //$NON-NLS-1$
+					"The counters do not sum to total; trust the tests array."); //$NON-NLS-1$
+		}
+		return counted.put("runId", run.id) //$NON-NLS-1$
 				.put("scope", run.scope) //$NON-NLS-1$
 				.put("state", run.state) //$NON-NLS-1$
 				.put("elapsedMillis", (run.endedAt == 0 ? System.currentTimeMillis() : run.endedAt) - run.startedAt)

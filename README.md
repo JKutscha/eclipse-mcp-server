@@ -414,6 +414,8 @@ That distinction is not cosmetic. `SearchMatch.getResource()` returns the *proje
 
 The `project` argument scopes the search to that project **and everything on its build path**, which includes other workspace projects and jars. It narrows less than it looks.
 
+A name based search is broader work than a binding based one, so asking for references to a very common JDK type across a large workspace is slow. Pass `project` to scope it.
+
 An unresolvable type name comes back as an error result naming the type, not as a protocol error.
 
 **Reads and writes.**

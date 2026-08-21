@@ -129,6 +129,22 @@ class RunTestsToolTest {
 	}
 
 	@Test
+	void theCountersAccountForEveryTest() throws Exception {
+		withTests();
+
+		Map<String, Object> result = TestFixture.callAndParse(TOOL,
+				Map.of("project", PROJECT, "testClass", "sample.SampleTest", "timeoutSeconds", Integer.valueOf(120)));
+
+		int total = ((Number) result.get("total")).intValue();
+		int counted = ((Number) result.get("passed")).intValue() + ((Number) result.get("failed")).intValue()
+				+ ((Number) result.get("errors")).intValue() + ((Number) result.get("ignored")).intValue();
+		// a summary that does not add up is how 38 errors were once reported as zero
+		assertEquals(total, counted, "the counters must account for every case: " + result);
+		assertEquals(null, result.get("countsInconsistent"));
+		assertEquals(null, result.get("unclassified"));
+	}
+
+	@Test
 	void rejectsAMethodWithoutAClass() throws Exception {
 		withTests();
 

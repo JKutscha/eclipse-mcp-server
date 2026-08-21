@@ -45,7 +45,7 @@ public final class RunTestsTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Runs JUnit tests through the IDE's own test runner and reports the failures with their stack traces, expected and actual values. RUNS PROJECT CODE. The JUnit version is detected from the project's own build path and the runtime classpath is the one Run As > JUnit Test would use, so nothing has to be configured. Runs as a launched JVM and returns a runId to poll through eclipse_get_test_results. This is plain JUnit on a Java project; it does not launch a second Eclipse, so it will not run plug-in tests that need a target platform."; //$NON-NLS-1$
+		return "Runs JUnit tests through the IDE's own test runner and reports the failures with their stack traces, expected and actual values. RUNS PROJECT CODE. The JUnit version is detected from the project's own build path and the runtime classpath is the one Run As > JUnit Test would use, so nothing has to be configured. Runs as a launched JVM and returns a runId to poll through eclipse_get_test_results. This is plain JUnit on a Java project. It does not launch a second Eclipse, so tests that need a running platform fail with OSGi errors rather than real results; the answer says so when the project is a plug-in project."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -139,7 +139,13 @@ public final class RunTestsTool implements IMcpTool {
 					Thread.currentThread().interrupt();
 				}
 			}
-			return McpToolResult.of(TestRunRegistry.toJson(run, 50, false).put("testKind", kind).toString()); //$NON-NLS-1$
+			JsonObject result = TestRunRegistry.toJson(run, 50, false).put("testKind", kind); //$NON-NLS-1$
+			if (project.hasNature("org.eclipse.pde.PluginNature")) { //$NON-NLS-1$
+				result.put("caveat", //$NON-NLS-1$
+						"'%s' is a plug-in project, and this runs its tests as a plain JUnit launch with no running platform. Tests that need OSGi fail here with errors such as 'The application has not been initialized', a null IExtensionRegistry or NoClassDefFoundError, which are not test failures. Those need Run As > JUnit Plug-in Test, which launches a second Eclipse and is not implemented." //$NON-NLS-1$
+								.formatted(projectName));
+			}
+			return McpToolResult.of(result.toString());
 		} catch (CoreException e) {
 			throw new McpToolException("Could not run the tests of " + projectName, e); //$NON-NLS-1$
 		}
