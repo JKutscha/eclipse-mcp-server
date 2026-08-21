@@ -234,35 +234,47 @@ public final class RunTestsTool implements IMcpTool {
 		}
 	}
 
-	/** The projects the launch depends on that do not compile. */
+	/**
+	 * The projects the launch depends on that do not compile, transitively.
+	 * <p>
+	 * Direct references are not enough: the launch delegate checks the whole
+	 * required closure, which is why the prompt named a project this field did not.
+	 */
 	private static JsonArray projectsWithErrors(IProject project) {
+		java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+		java.util.List<IProject> queue = new java.util.ArrayList<>(java.util.List.of(project));
 		JsonArray broken = new JsonArray();
-		java.util.List<IProject> scope = new java.util.ArrayList<>();
-		scope.add(project);
-		try {
-			scope.addAll(java.util.List.of(project.getReferencedProjects()));
-		} catch (CoreException | RuntimeException e) {
-			// PDE can throw computing dynamic references; the launch project alone will do
-		}
-		for (IProject candidate : scope) {
+		while (!queue.isEmpty() && seen.size() < 500) {
+			IProject current = queue.remove(0);
+			if (!current.isAccessible() || !seen.add(current.getName())) {
+				continue;
+			}
+			if (hasErrors(current)) {
+				broken.add(current.getName());
+			}
 			try {
-				if (!candidate.isAccessible()) {
-					continue;
-				}
-				for (org.eclipse.core.resources.IMarker marker : candidate.findMarkers(
-						org.eclipse.core.resources.IMarker.PROBLEM, true,
-						org.eclipse.core.resources.IResource.DEPTH_INFINITE)) {
-					if (marker.getAttribute(org.eclipse.core.resources.IMarker.SEVERITY,
-							-1) == org.eclipse.core.resources.IMarker.SEVERITY_ERROR) {
-						broken.add(candidate.getName());
-						break;
-					}
-				}
-			} catch (CoreException e) {
-				// a project whose markers cannot be read is not evidence either way
+				queue.addAll(java.util.List.of(current.getReferencedProjects()));
+			} catch (CoreException | RuntimeException e) {
+				// PDE can throw computing dynamic references on a stale bundle wiring
 			}
 		}
 		return broken;
+	}
+
+	private static boolean hasErrors(IProject project) {
+		try {
+			for (org.eclipse.core.resources.IMarker marker : project.findMarkers(
+					org.eclipse.core.resources.IMarker.PROBLEM, true,
+					org.eclipse.core.resources.IResource.DEPTH_INFINITE)) {
+				if (marker.getAttribute(org.eclipse.core.resources.IMarker.SEVERITY,
+						-1) == org.eclipse.core.resources.IMarker.SEVERITY_ERROR) {
+					return true;
+				}
+			}
+		} catch (CoreException e) {
+			// a project whose markers cannot be read is not evidence either way
+		}
+		return false;
 	}
 
 	/** An exception with no message is useless to a caller; name the type at least. */
