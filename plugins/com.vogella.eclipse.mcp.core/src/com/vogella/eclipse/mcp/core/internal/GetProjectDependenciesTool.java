@@ -115,7 +115,15 @@ public final class GetProjectDependenciesTool implements IMcpTool {
 		Set<String> seen = new java.util.LinkedHashSet<>(Set.of(start.getName()));
 		while (!queue.isEmpty()) {
 			IProject current = queue.remove(0);
-			for (IProject neighbour : forward ? current.getReferencedProjects() : current.getReferencingProjects()) {
+			IProject[] neighbours;
+			try {
+				neighbours = forward ? current.getReferencedProjects() : current.getReferencingProjects();
+			} catch (RuntimeException e) {
+				// PDE computes dynamic references here and can throw on a stale bundle
+				// wiring, which is not a reason to fail the whole graph
+				continue;
+			}
+			for (IProject neighbour : neighbours) {
 				if (!seen.add(neighbour.getName())) {
 					continue;
 				}

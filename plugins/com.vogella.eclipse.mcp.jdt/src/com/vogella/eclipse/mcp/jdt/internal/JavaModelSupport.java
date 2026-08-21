@@ -23,6 +23,7 @@ import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 
 import com.vogella.eclipse.mcp.core.McpToolException;
+import com.vogella.eclipse.mcp.core.json.JsonObject;
 
 /**
  * Shared resolution of projects, types and members for the Java model tools.
@@ -94,6 +95,35 @@ final class JavaModelSupport {
 				"Could not resolve the type '%s' on the classpath of %s. Use a fully qualified name." //$NON-NLS-1$
 						.formatted(typeName, projects.size() == 1 ? "project " + projects.get(0).getElementName() //$NON-NLS-1$
 								: "any Java project in the workspace")); //$NON-NLS-1$
+	}
+
+	/**
+	 * Records where a search match actually lives.
+	 * <p>
+	 * {@code SearchMatch.getResource()} returns the project that owns the classpath
+	 * entry for a match inside a jar, so its path is a bare project name with no
+	 * file. Reported unchanged that reads as a source match in a project whose
+	 * source does not contain the type at all, which is worse than useless because
+	 * nothing in the answer marks it as second hand.
+	 */
+	static void describeLocation(org.eclipse.jdt.core.search.SearchMatch match, JsonObject entry) {
+		org.eclipse.core.resources.IResource resource = match.getResource();
+		IJavaElement element = match.getElement() instanceof IJavaElement found ? found : null;
+		boolean binary = element != null && element.getAncestor(IJavaElement.CLASS_FILE) != null;
+		entry.put("origin", binary ? "binary" : "source"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		if (binary) {
+			IJavaElement root = element.getAncestor(IJavaElement.PACKAGE_FRAGMENT_ROOT);
+			// no path and no project: this match is in compiled code, and attributing it
+			// to the project that happens to reference the jar is what caused the bug
+			entry.put("path", null) //$NON-NLS-1$
+					.put("project", null) //$NON-NLS-1$
+					.put("library", root == null ? null : root.getPath().toString()); //$NON-NLS-1$
+			return;
+		}
+		entry.put("path", resource == null ? null : resource.getFullPath().toString()) //$NON-NLS-1$
+				.put("project", resource == null || resource.getProject() == null ? null //$NON-NLS-1$
+						: resource.getProject().getName())
+				.put("library", null); //$NON-NLS-1$
 	}
 
 	/**

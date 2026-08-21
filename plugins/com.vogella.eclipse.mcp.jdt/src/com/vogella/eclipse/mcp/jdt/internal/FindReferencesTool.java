@@ -52,7 +52,7 @@ public final class FindReferencesTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Finds all references to a Java type, method or field across the workspace, using the JDT search engine. Far more accurate than a text search because it resolves overloads and inheritance. For fields it also splits the references into reads and writes, which decides whether a field is actually used: one written in four places and read in none is dead, though a text search sees four live occurrences. A field initializer counts as a write but is a declaration rather than a reference, so byKind need not sum to total."; //$NON-NLS-1$
+		return "Finds all references to a Java type, method or field across the workspace, using the JDT search engine. Far more accurate than a text search because it resolves overloads and inheritance. For fields it also splits the references into reads and writes, which decides whether a field is actually used: one written in four places and read in none is dead, though a text search sees four live occurrences. A field initializer counts as a write but is a declaration rather than a reference, so byKind need not sum to total. Every match carries an origin of source or binary: a binary match is inside a compiled jar on some project's build path, not in anyone's source, and byOrigin counts the two separately. Judge 'how many consumers does this API have' from the source count."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -64,7 +64,7 @@ public final class FindReferencesTool implements IMcpTool {
 				  "properties": {
 				    "typeName":   {"type":"string","description":"Fully qualified type name, e.g. org.eclipse.jface.viewers.TreeViewer"},
 				    "memberName": {"type":"string","description":"Optional method or field name. Omit to find references to the type itself. All overloads of a method name are searched."},
-				    "project":    {"type":"string","description":"Optional project used to resolve the type and to scope the search. Defaults to the whole workspace."},
+				    "project":    {"type":"string","description":"Optional project used to resolve the type. It scopes the search to that project AND everything on its build path, which includes other workspace projects and jars, so it narrows less than it looks. Defaults to the whole workspace."},
 				    "maxResults": {"type":"integer","default":200,"minimum":1,"maximum":2000},
 				    "accessKind": {"type":"string","enum":["all","read","write"],"default":"all","description":"Restrict to read or to write accesses. Only meaningful for fields. With 'all', field results additionally carry a byKind summary and a kind per match. A field initializer is a write but not a reference, so byKind counts can exceed total."}
 				  },
@@ -136,10 +136,8 @@ public final class FindReferencesTool implements IMcpTool {
 		JsonArray reported = new JsonArray();
 		for (SearchMatch match : matches.subList(0, Math.min(maxResults, matches.size()))) {
 			IResource resource = match.getResource();
-			IProject project = resource == null ? null : resource.getProject();
 			JsonObject entry = new JsonObject();
-			entry.put("path", resource == null ? null : resource.getFullPath().toString()); //$NON-NLS-1$
-			entry.put("project", project == null ? null : project.getName()); //$NON-NLS-1$
+			JavaModelSupport.describeLocation(match, entry);
 			int line = lines.lineOf(resource, match.getOffset());
 			entry.put("line", line < 0 ? null : Integer.valueOf(line)); //$NON-NLS-1$
 			entry.put("offset", match.getOffset()); //$NON-NLS-1$
@@ -150,9 +148,17 @@ public final class FindReferencesTool implements IMcpTool {
 			reported.add(entry);
 		}
 
+		int binary = 0;
+		for (SearchMatch match : matches) {
+			if (match.getElement() instanceof IJavaElement element
+					&& element.getAncestor(IJavaElement.CLASS_FILE) != null) {
+				binary++;
+			}
+		}
 		JsonObject result = new JsonObject().put("resolved", resolved) //$NON-NLS-1$
 				.put("accessKind", accessKind) //$NON-NLS-1$
 				.put("total", matches.size()) //$NON-NLS-1$
+				.put("byOrigin", new JsonObject().put("source", matches.size() - binary).put("binary", binary)) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 				.put("truncated", matches.size() > reported.size()); //$NON-NLS-1$
 		if (reads != null) {
 			result.put("byKind", new JsonObject().put("read", reads.size()).put("write", writes.size())); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$

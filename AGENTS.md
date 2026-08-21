@@ -195,6 +195,11 @@ If a bad build lands, the tools that would fix it are the tools that just broke.
 `eclipse_install` refuses repositories the IDE is not already configured with: adding one fetches and runs code from a new source, which is the user's decision and not the server's.
 Do not replace that allowlist with a single opt-in preference; a switch flipped once is never flipped back.
 
+**`SearchMatch.getResource()` lies about where a binary match lives.**
+For a match inside a jar it returns the project that owns the classpath entry, so the path is a bare project name with no file component and the project attribution is affirmatively wrong.
+`JavaModelSupport.describeLocation` is the only place that should turn a match into path/project/library: it reports `origin` and puts the jar in `library` with path and project null.
+Never write `match.getResource().getFullPath()` into a result again.
+
 **Unscoped type resolution finds build output before source.**
 `IJavaProject.findType` happily returns a class file from a product jar under `target/`, whose `getCompilationUnit()` is null.
 `JavaModelSupport.findType` now prefers a source type and only falls back to a binary one, and `RenameTool` refuses a binary element outright, because `RenameTypeProcessor.checkInitialConditions` dereferences the compilation unit without checking and dies on a raw `NullPointerException`.

@@ -402,11 +402,17 @@ Far more accurate than a text search, because it resolves overloads and inherita
 
 ```json
 {"resolved":"org.eclipse.jface.viewers.TreeViewer#setInput","accessKind":"all",
- "total":17,"truncated":false,
+ "total":17,"byOrigin":{"source":15,"binary":2},"truncated":false,
  "matches":[{"path":"/app/src/com/example/View.java","project":"app","line":88,
              "offset":2451,"length":8,"kind":null,
              "enclosingElement":"com.example.View.createPartControl(Composite)"}]}
 ```
+
+Every match carries an `origin`. A `source` match has a workspace `path` and a `project`. A `binary` match is inside a compiled jar on some project's build path, and reports the jar as `library` with `path` and `project` both null.
+
+That distinction is not cosmetic. `SearchMatch.getResource()` returns the *project that owns the classpath entry* for a match inside a jar, so the raw path is a bare project name with no file. Reported as-is, a hit inside `org.eclipse.jdt.ui.jar` looks like a source reference in whichever project happens to depend on that jar, and nothing marks it as second hand. Judge "how many consumers does this API have" from the `source` count in `byOrigin`.
+
+The `project` argument scopes the search to that project **and everything on its build path**, which includes other workspace projects and jars. It narrows less than it looks.
 
 An unresolvable type name comes back as an error result naming the type, not as a protocol error.
 

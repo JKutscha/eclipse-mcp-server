@@ -165,13 +165,10 @@ public final class GetCallHierarchyTool implements IMcpTool {
 				// a caller already in the tree; recursing again would loop on mutual recursion
 				continue;
 			}
-			IResource resource = match.getResource();
 			JsonObject node = new JsonObject()
-					.put("caller", JavaModelSupport.describe(enclosing == null ? element : enclosing)) //$NON-NLS-1$
-					.put("path", resource == null ? null : resource.getFullPath().toString()) //$NON-NLS-1$
-					.put("project", resource == null || resource.getProject() == null ? null //$NON-NLS-1$
-							: resource.getProject().getName())
-					.put("offset", match.getOffset()); //$NON-NLS-1$
+					.put("caller", JavaModelSupport.describe(enclosing == null ? element : enclosing)); //$NON-NLS-1$
+			JavaModelSupport.describeLocation(match, node);
+			node.put("offset", match.getOffset()); //$NON-NLS-1$
 			if (enclosing != null && depth > 1) {
 				JsonArray deeper = callersOf(List.of(enclosing), scope, depth - 1, seen, counter, monitor);
 				if (deeper.size() > 0) {
