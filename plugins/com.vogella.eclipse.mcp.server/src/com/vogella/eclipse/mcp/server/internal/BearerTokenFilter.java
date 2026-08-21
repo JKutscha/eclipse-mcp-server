@@ -40,6 +40,15 @@ public final class BearerTokenFilter implements Filter {
 			httpResponse.sendError(HttpServletResponse.SC_UNAUTHORIZED, "A valid bearer token is required."); //$NON-NLS-1$
 			return;
 		}
+		// counted here because the SDK's transport does not expose its sessions, and
+		// tools that answer about "the most recent" anything need to know whether
+		// there is more than one client to be most recent for
+		String session = httpRequest.getHeader("Mcp-Session-Id"); //$NON-NLS-1$
+		if ("DELETE".equals(httpRequest.getMethod())) { //$NON-NLS-1$
+			ActiveSessions.ended(session);
+		} else {
+			ActiveSessions.seen(session);
+		}
 		chain.doFilter(request, response);
 	}
 }

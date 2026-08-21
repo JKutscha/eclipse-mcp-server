@@ -176,6 +176,11 @@ final class Provisioning {
 		return lastId == null ? null : OPERATIONS.get(lastId);
 	}
 
+	/** The ids still held, oldest first, for a caller that has to name one. */
+	static synchronized java.util.List<String> ids() {
+		return java.util.List.copyOf(OPERATIONS.keySet());
+	}
+
 	static void setChanges(Operation operation, JsonArray changes) {
 		operation.changes = changes;
 	}

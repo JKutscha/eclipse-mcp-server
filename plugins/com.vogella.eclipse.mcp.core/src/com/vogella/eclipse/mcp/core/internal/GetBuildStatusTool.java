@@ -40,6 +40,10 @@ public final class GetBuildStatusTool implements IMcpTool {
 	@Override
 	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
 		String buildId = ToolArguments.of(arguments).getString("buildId"); //$NON-NLS-1$
+		if (buildId == null && !com.vogella.eclipse.mcp.core.ClientSessions.canAssumeASingleClient()) {
+			return McpToolResult.error(com.vogella.eclipse.mcp.core.ClientSessions.ambiguousDefault("build", //$NON-NLS-1$
+					"buildId", BuildRegistry.getInstance().ids())); //$NON-NLS-1$
+		}
 		BuildRegistry.Build build = buildId == null ? BuildRegistry.getInstance().findLatest()
 				: BuildRegistry.getInstance().find(buildId);
 		if (build == null) {

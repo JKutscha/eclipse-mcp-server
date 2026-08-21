@@ -181,6 +181,24 @@ class McpServerServiceTest {
 	}
 
 	@Test
+	void refusesTheMostRecentDefaultWhileASecondClientIsConnected() throws Exception {
+		try (McpSyncClient first = connect(); McpSyncClient second = connect()) {
+			first.initialize();
+			second.initialize();
+
+			CallToolResult result = first
+					.callTool(new CallToolRequest("eclipse_get_build_status", Map.of()));
+
+			// the registries are global, so "the most recent build" may be the other
+			// client's and the wrong answer looks exactly like a right one
+			assertEquals(Boolean.TRUE, result.isError(), "expected a refusal");
+			String text = ((TextContent) result.content().get(0)).text();
+			assertTrue(text.contains("clients are connected"), text);
+			assertTrue(text.contains("buildId"), "the refusal should name the argument to pass: " + text);
+		}
+	}
+
+	@Test
 	void reportsToolFailuresAsErrorResults() throws Exception {
 		try (McpSyncClient client = connect()) {
 			client.initialize();

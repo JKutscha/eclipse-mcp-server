@@ -17,7 +17,9 @@ import org.osgi.framework.Bundle;
 import org.osgi.framework.FrameworkUtil;
 import org.osgi.framework.Version;
 
+import com.vogella.eclipse.mcp.core.ClientSessions;
 import com.vogella.eclipse.mcp.core.McpToolRegistry;
+import com.vogella.eclipse.mcp.server.internal.ActiveSessions;
 import com.vogella.eclipse.mcp.server.internal.BearerTokenFilter;
 import com.vogella.eclipse.mcp.server.internal.BundleJsonSchemaValidator;
 import com.vogella.eclipse.mcp.server.internal.EndpointFile;
@@ -162,6 +164,7 @@ public final class McpServerService {
 
 		runningPort = port;
 		endpoint = new McpEndpoint("http://%s:%d%s".formatted(LOOPBACK, port, ENDPOINT_PATH), token); //$NON-NLS-1$
+		ClientSessions.setProvider(ActiveSessions::count);
 		EndpointFile.write(endpoint);
 		ILog.get().info("MCP server listening on %s with %d tool(s)".formatted(endpoint.url(), specifications.size())); //$NON-NLS-1$
 	}
@@ -209,6 +212,8 @@ public final class McpServerService {
 	}
 
 	private void stopQuietly() {
+		ClientSessions.setProvider(null);
+		ActiveSessions.clear();
 		EndpointFile.markStopped();
 		endpoint = null;
 		runningPort = -1;

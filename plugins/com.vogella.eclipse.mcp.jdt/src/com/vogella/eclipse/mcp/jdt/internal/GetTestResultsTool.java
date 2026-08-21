@@ -41,6 +41,10 @@ public final class GetTestResultsTool implements IMcpTool {
 	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
 		ToolArguments args = ToolArguments.of(arguments);
 		String runId = args.getString("runId"); //$NON-NLS-1$
+		if (runId == null && !com.vogella.eclipse.mcp.core.ClientSessions.canAssumeASingleClient()) {
+			return McpToolResult.error(com.vogella.eclipse.mcp.core.ClientSessions.ambiguousDefault("test run", //$NON-NLS-1$
+					"runId", TestRunRegistry.getInstance().ids())); //$NON-NLS-1$
+		}
 		TestRunRegistry.Run run = runId == null ? TestRunRegistry.getInstance().findLatest()
 				: TestRunRegistry.getInstance().find(runId);
 		if (run == null) {

@@ -85,6 +85,12 @@ On startup the server writes a discovery file so that no value has to be copied 
 
 `state` is `listening` or `stopped`. The file is left behind with a `stopped` record rather than deleted, because a missing file cannot be told from one that was never written, and the case that matters most is the one where the server does not come back.
 
+**Several clients can use one server.** The transport is session based, so each client gets its own session over the same port, and the bearer token is the same for all of them: the server cannot tell them apart, and they all act on one workspace with no locking between them.
+
+The trap is not the connection, it is *the most recent*. `eclipse_get_build_status`, `eclipse_get_test_results`, `eclipse_stop_sampling` and `eclipse_get_provisioning_status` answer about the latest entry in a **global** registry when the id is omitted, so another client's run started in between would be reported as yours and would look entirely correct. While more than one client is connected those four **refuse the implicit default** and name the ids to choose from. Pass `buildId`, `runId`, `sessionId` or `operationId` explicitly and it never arises.
+
+A client is counted from the session id on its requests and drops out when it ends its session or after a minute of silence, so reconnecting, which is what a client does after `eclipse_restart`, does not make it look like two.
+
 `startedAt` identifies the server process. It matters after `eclipse_restart`, which answers *before* it restarts: the old server keeps responding for a couple of seconds, so a plain reachability check succeeds against the process that is about to die. Compare `startedAt` across the reconnect to know the new one is really up.
 
 The file is created with owner-only permissions and deleted when the server stops.

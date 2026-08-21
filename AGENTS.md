@@ -246,6 +246,13 @@ Equinox reopens the log file per write, so `eclipse_clear_log` deleting it leave
 The tool still writes an entry and reads it back on every real clear, and reports `stillLogging`, because the failure mode if that ever changes is silent: entries would go to an unlinked file and only surface as an empty log much later.
 `LogStateToolsTest.clearingLeavesTheLogWritableAndReadable` is what turns this from a belief into a check.
 
+**"The most recent" is a global answer, and more than one client makes it a wrong one.**
+The build, test run, sampling and provisioning registries are per IDE, not per client, so the latest entry may belong to somebody else while looking exactly like a correct answer.
+Those four tools consult `ClientSessions` and refuse the implicit default when a second client is connected, naming the ids instead.
+Sessions are counted in `ActiveSessions` from the `Mcp-Session-Id` header, because the SDK transport does not expose its own, and a session is dropped on the terminating DELETE rather than only by ageing out: without that, a client reconnecting after `eclipse_restart` counts as two for the length of the window and the defaults refuse for no reason.
+`ClientSessions` lives in core with the provider injected by the server bundle, since core cannot depend on it.
+With no provider the answer is one, which keeps the defaults working headless and in tests.
+
 **A timestamp from the caller is not a point in the IDE's log.**
 `eclipse_mark_log` records a byte position, and `eclipse_get_log_entries` takes it as `marker`.
 The `since` filter needs the caller's clock compared against timestamps the IDE wrote, which is the same shape as the UTC-versus-local mistake that cost a wrong conclusion about a published build.

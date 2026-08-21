@@ -345,4 +345,9 @@ public final class BuildRegistry {
 	public synchronized Build findLatest() {
 		return lastId == null ? null : builds.get(lastId);
 	}
+
+	/** The ids still held, oldest first, for a caller that has to name one. */
+	public synchronized java.util.List<String> ids() {
+		return java.util.List.copyOf(builds.keySet());
+	}
 }

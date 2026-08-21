@@ -161,6 +161,11 @@ public final class SamplingRegistry {
 		return sessions.get(id);
 	}
 
+	/** The ids still held, oldest first, for a caller that has to name one. */
+	public synchronized List<String> ids() {
+		return List.copyOf(sessions.keySet());
+	}
+
 	public synchronized Session findLatest() {
 		Session latest = null;
 		for (Session session : sessions.values()) {

@@ -201,6 +201,11 @@ public final class TestRunRegistry {
 		return lastId == null ? null : runs.get(lastId);
 	}
 
+	/** The ids still held, oldest first, for a caller that has to name one. */
+	public synchronized java.util.List<String> ids() {
+		return java.util.List.copyOf(runs.keySet());
+	}
+
 	public static void failed(Run run, String reason) {
 		run.finish("failed", reason); //$NON-NLS-1$
 	}
