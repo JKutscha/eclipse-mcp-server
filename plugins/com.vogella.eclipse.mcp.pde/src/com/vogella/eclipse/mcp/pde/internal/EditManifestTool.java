@@ -122,6 +122,16 @@ public final class EditManifestTool implements IMcpTool {
 			return McpToolResult.error("'%s' is not a plug-in project; it has no bundle manifest." //$NON-NLS-1$
 					.formatted(project.getName()));
 		}
+		// PDE's model carries name, version, friends and the api flag and nothing
+		// else, and apply() writes the WHOLE model back. Any attribute or directive it
+		// cannot represent is silently dropped from every other clause of the header,
+		// which on org.eclipse.ui.workbench meant losing the split-package attributes
+		// that make it resolve at all. Refusing is the only safe answer: this tool
+		// cannot edit a manifest it cannot faithfully rewrite
+		String unsupported = unsupported(project);
+		if (unsupported != null) {
+			return McpToolResult.error(unsupported);
+		}
 		List<String> removeExports = strings(arguments, "removeExportPackage"); //$NON-NLS-1$
 		List<String> removeRequires = strings(arguments, "removeRequireBundle"); //$NON-NLS-1$
 		List<String> removeImports = strings(arguments, "removeImportPackage"); //$NON-NLS-1$
@@ -132,12 +142,27 @@ public final class EditManifestTool implements IMcpTool {
 
 		// who would break, computed before anything is changed
 		JsonArray blocked = new JsonArray();
+		JsonArray dependents = new JsonArray();
 		for (String exported : removeExports) {
-			List<String> consumers = importersOf(exported, description.getSymbolicName());
-			if (!consumers.isEmpty()) {
+			List<String> importers = importersOf(exported, description.getSymbolicName());
+			List<String> requiring = requirersOf(description.getSymbolicName());
+			if (!importers.isEmpty()) {
 				blocked.add(new JsonObject().put("removing", "Export-Package " + exported) //$NON-NLS-1$ //$NON-NLS-2$
-						.put("consumedBy", array(consumers))); //$NON-NLS-1$
+						.put("importedBy", array(importers))); //$NON-NLS-1$
 			}
+			if (!requiring.isEmpty()) {
+				// these see every exported package of this bundle without naming one,
+				// so they MIGHT use it. Reporting that as consumption refused almost
+				// every removal on a platform bundle, where dozens of bundles require
+				// it and none touches the package in question
+				dependents.add(new JsonObject().put("package", exported) //$NON-NLS-1$
+						.put("requireBundleDependents", array(requiring)) //$NON-NLS-1$
+						.put("note", //$NON-NLS-1$
+								"These require this bundle rather than importing the package, so they may or may not use it. Confirm with eclipse_find_references on a type of the package before removing the export; this does not block.")); //$NON-NLS-1$
+			}
+		}
+		if (dependents.size() > 0) {
+			result.put("mightAlsoUseIt", dependents); //$NON-NLS-1$
 		}
 		// removing what THIS bundle requires cannot break anyone else, so only
 		// exports are checked for consumers
@@ -207,6 +232,73 @@ public final class EditManifestTool implements IMcpTool {
 		return McpToolResult.of(result.put("applied", Boolean.TRUE).toString()); //$NON-NLS-1$
 	}
 
+	/** Attributes and directives PDE's project model can carry, per header. */
+	private static final Map<String, Set<String>> SUPPORTED = Map.of( //
+			"Export-Package", Set.of("version", "x-internal", "x-friends"), //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+			"Require-Bundle", Set.of("bundle-version", "visibility", "resolution"), //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+			"Import-Package", Set.of("version", "resolution")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+
+	/**
+	 * The first thing in this manifest that a write would destroy, or {@code null}
+	 * when the file only uses what the model can hold.
+	 */
+	private static String unsupported(IProject project) {
+		org.eclipse.core.resources.IFile file = project.getFile("META-INF/MANIFEST.MF"); //$NON-NLS-1$
+		String content;
+		try (java.io.InputStream in = file.getContents(true)) {
+			content = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+		} catch (CoreException | java.io.IOException e) {
+			return "Could not read the manifest of %s: %s".formatted(project.getName(), e.getMessage()); //$NON-NLS-1$
+		}
+		// continuation lines start with a single space
+		String unfolded = content.replace("\r\n", "\n").replace("\n ", ""); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+		for (Map.Entry<String, Set<String>> header : SUPPORTED.entrySet()) {
+			String value = null;
+			for (String line : unfolded.split("\n")) { //$NON-NLS-1$
+				if (line.startsWith(header.getKey() + ":")) { //$NON-NLS-1$
+					value = line.substring(header.getKey().length() + 1).trim();
+				}
+			}
+			if (value == null || value.isBlank()) {
+				continue;
+			}
+			org.eclipse.osgi.util.ManifestElement[] elements;
+			try {
+				elements = org.eclipse.osgi.util.ManifestElement.parseHeader(header.getKey(), value);
+			} catch (org.osgi.framework.BundleException e) {
+				return "The %s header of %s could not be parsed, so this tool will not rewrite it: %s" //$NON-NLS-1$
+						.formatted(header.getKey(), project.getName(), e.getMessage());
+			}
+			for (org.eclipse.osgi.util.ManifestElement element : elements == null
+					? new org.eclipse.osgi.util.ManifestElement[0]
+					: elements) {
+				for (String key : java.util.Collections.list(element.getKeys() == null
+						? java.util.Collections.<String>emptyEnumeration()
+						: element.getKeys())) {
+					if (!header.getValue().contains(key)) {
+						return refusal(project, header.getKey(), element.getValue(), key, "attribute"); //$NON-NLS-1$
+					}
+				}
+				for (String key : java.util.Collections.list(element.getDirectiveKeys() == null
+						? java.util.Collections.<String>emptyEnumeration()
+						: element.getDirectiveKeys())) {
+					if (!header.getValue().contains(key)) {
+						return refusal(project, header.getKey(), element.getValue(), key, "directive"); //$NON-NLS-1$
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	private static String refusal(IProject project, String header, String clause, String key, String kind) {
+		return ("Refused, and nothing was changed. %s of %s has '%s' on '%s', and PDE's project model cannot carry it: "
+				+ "the model holds only the package or bundle name, a version, x-internal and x-friends, and applying it "
+				+ "rewrites the WHOLE header from the model, so every %s it cannot represent would be dropped from every "
+				+ "clause. On a bundle with split packages that alone stops it resolving. Edit this header by hand.")
+						.formatted(header, project.getName(), key, clause, kind);
+	}
+
 	/** The workspace bundles that import a package, which is what an export removal breaks. */
 	private static List<String> importersOf(String packageName, String exporter) {
 		Set<String> consumers = new LinkedHashSet<>();
@@ -221,11 +313,22 @@ public final class EditManifestTool implements IMcpTool {
 					consumers.add(description.getSymbolicName());
 				}
 			}
-			// Require-Bundle consumers see every exported package of the required
-			// bundle, so they consume this one without naming it
+		}
+		return List.copyOf(consumers);
+	}
+
+	/** Bundles that require this one, and so see its exports without naming them. */
+	private static List<String> requirersOf(String bundle) {
+		Set<String> consumers = new LinkedHashSet<>();
+		for (IPluginModelBase model : PluginRegistry.getWorkspaceModels()) {
+			BundleDescription description = model.getBundleDescription();
+			if (description == null || description.getSymbolicName() == null
+					|| description.getSymbolicName().equals(bundle)) {
+				continue;
+			}
 			for (org.eclipse.osgi.service.resolver.BundleSpecification specification : description
 					.getRequiredBundles()) {
-				if (exporter.equals(specification.getName())) {
+				if (bundle.equals(specification.getName())) {
 					consumers.add(description.getSymbolicName());
 				}
 			}

@@ -292,6 +292,16 @@ So the tool uses LTK's `DeleteResourcesDescriptor`, which passes `IResource`, wh
 `plugin.xml` and `Export-Package` are therefore not updated, the description says so, and the answer reports the evidence that will dangle.
 Do not "fix" this by driving the internal processor without deciding to own that dependency.
 
+**PDE's project model cannot round-trip a real manifest, so `eclipse_edit_manifest` refuses what it cannot rewrite.**
+`IPackageExportDescription` carries a name, a version, `friends` and an api flag, and nothing else; `apply()` rewrites the WHOLE header from the model.
+Shipped without a guard it dropped every `ui.workbench=split;mandatory:="ui.workbench"` attribute from `org.eclipse.ui.workbench`, which is what makes that bundle resolve at all, and re-sorted the `x-friends` lists because `friends()` is a `SortedSet`.
+`unsupported` parses the existing headers with `ManifestElement.parseHeader` and refuses when any attribute or directive outside `version`, `x-internal`, `x-friends`, `bundle-version`, `visibility` and `resolution` is present.
+That includes `uses:`, so most platform bundles are refused. Refusing is correct: this tool cannot safely edit a manifest it cannot faithfully rewrite, and the failure is silent corruption rather than an error.
+
+**Require-Bundle dependents are not consumers of a package.**
+The first version of the export-removal guard counted every bundle that requires the exporter, which on a platform bundle is dozens and refused almost every removal.
+`importedBy` is exact and blocks; `mightAlsoUseIt` lists the Require-Bundle dependents, says they may or may not use the package, and does not block.
+
 **A self update runs inside the bundles it is replacing.**
 Every bundle here is in the same feature, so `eclipse_update` on that feature stops both the bundle serving the request and the bundle running the provisioning job.
 It happened: one log line, `MCP server stopped`, no install, no rollback, and an IDE left with no server and no way to reach it.

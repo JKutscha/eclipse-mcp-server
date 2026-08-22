@@ -42,6 +42,14 @@ public final class SamplingRegistry {
 	private SamplingRegistry() {
 	}
 
+	/**
+	 * One stack, and whose it was. Without the thread, two workers collapse into one
+	 * entry in the aggregate and a saturated thread is indistinguishable from two
+	 * half-busy ones; without the state, a stall cannot be told from work.
+	 */
+	record Sample(long threadId, String threadName, Thread.State state, StackTraceElement[] stack) {
+	}
+
 	/** One sampling run. */
 	public static final class Session {
 
@@ -51,7 +59,13 @@ public final class SamplingRegistry {
 		private final int maxSamples;
 		private final int maxDepth;
 		private final long startedAt = System.currentTimeMillis();
-		private final List<StackTraceElement[]> samples = new ArrayList<>();
+			private final List<Sample> samples = new ArrayList<>();
+
+		private final Map<Long, long[]> cpuNanos = new LinkedHashMap<>();
+
+		private long firstTickAt;
+
+		private long lastTickAt;
 
 		private volatile boolean running = true;
 		private volatile long endedAt;
@@ -100,12 +114,28 @@ public final class SamplingRegistry {
 
 		void run() {
 			ThreadMXBean threads = ManagementFactory.getThreadMXBean();
+			boolean cpuSupported = threads.isThreadCpuTimeSupported() && threads.isThreadCpuTimeEnabled();
 			while (running) {
 				ThreadInfo[] infos = threads.getThreadInfo(threadIds, maxDepth);
+				long now = System.currentTimeMillis();
 				synchronized (samples) {
+					if (firstTickAt == 0) {
+						firstTickAt = now;
+					}
+					lastTickAt = now;
 					for (ThreadInfo info : infos) {
 						if (info != null && info.getStackTrace().length > 0) {
-							samples.add(info.getStackTrace());
+							samples.add(new Sample(info.getThreadId(), info.getThreadName(), info.getThreadState(),
+									info.getStackTrace()));
+							if (cpuSupported) {
+								long cpu = threads.getThreadCpuTime(info.getThreadId());
+								// first and last, so the reported time is the thread's
+								// own consumption over the run rather than a sum of
+								// overlapping readings
+								long[] range = cpuNanos.computeIfAbsent(Long.valueOf(info.getThreadId()),
+										id -> new long[] { cpu, cpu });
+								range[1] = cpu;
+							}
 						}
 					}
 					ticks++;
@@ -137,9 +167,27 @@ public final class SamplingRegistry {
 			}
 		}
 
-		List<StackTraceElement[]> snapshot() {
+		List<Sample> snapshot() {
 			synchronized (samples) {
 				return List.copyOf(samples);
+			}
+		}
+
+		Map<Long, long[]> cpuRanges() {
+			synchronized (samples) {
+				return new LinkedHashMap<>(cpuNanos);
+			}
+		}
+
+		/**
+		 * The interval actually achieved, which is not the one requested: sampling
+		 * every thread every 10ms does not fit in 10ms, and a caller drawing
+		 * conclusions from sample counts needs to know the clock drifted.
+		 */
+		long achievedIntervalMillis() {
+			synchronized (samples) {
+				int rounds = ticks;
+				return rounds < 2 ? intervalMillis : Math.round((lastTickAt - firstTickAt) / (double) (rounds - 1));
 			}
 		}
 	}
@@ -197,13 +245,14 @@ public final class SamplingRegistry {
 	 */
 	public static JsonObject aggregate(Session session, int topMethods, int minSamples, boolean includeRaw,
 			boolean includeIdle, String frameFilter) {
-		List<StackTraceElement[]> all = session.snapshot();
+		List<Sample> everything = session.snapshot();
+		List<Sample> all = everything;
 		int filtered = 0;
 		if (frameFilter != null) {
 			String needle = frameFilter.toLowerCase(java.util.Locale.ROOT);
-			List<StackTraceElement[]> matching = new ArrayList<>();
-			for (StackTraceElement[] sample : all) {
-				for (StackTraceElement element : sample) {
+			List<Sample> matching = new ArrayList<>();
+			for (Sample sample : all) {
+				for (StackTraceElement element : sample.stack()) {
 					if (frame(element).toLowerCase(java.util.Locale.ROOT).contains(needle)) {
 						matching.add(sample);
 						break;
@@ -214,9 +263,9 @@ public final class SamplingRegistry {
 			all = matching;
 		}
 		int idle = 0;
-		List<StackTraceElement[]> samples = new ArrayList<>();
-		for (StackTraceElement[] sample : all) {
-			if (isIdle(sample)) {
+		List<Sample> samples = new ArrayList<>();
+		for (Sample sample : all) {
+			if (isIdle(sample.stack())) {
 				idle++;
 				if (includeIdle) {
 					samples.add(sample);
@@ -231,7 +280,18 @@ public final class SamplingRegistry {
 				.put("samples", samples.size()) //$NON-NLS-1$
 				.put("idleSamplesExcluded", includeIdle ? 0 : idle) //$NON-NLS-1$
 				.put("intervalMillis", session.intervalMillis()) //$NON-NLS-1$
-				.put("elapsedMillis", session.elapsedMillis());
+				.put("achievedIntervalMillis", Long.valueOf(session.achievedIntervalMillis())) //$NON-NLS-1$
+				.put("elapsedMillis", session.elapsedMillis()) //$NON-NLS-1$
+				.put("byThread", byThread(everything, session)); //$NON-NLS-1$
+		long achieved = session.achievedIntervalMillis();
+		if (achieved > session.intervalMillis() * 1.2) {
+			// sampling every thread every 10ms does not fit in 10ms, and a caller
+			// drawing conclusions from sample counts has to know the clock drifted.
+			// The sampler also perturbs what it measures; both belong in the answer
+			result.put("intervalWarning", //$NON-NLS-1$
+					"Sampling could not keep the requested %d ms interval and achieved %d ms. Sample fewer threads or ask for a longer interval; note also that sampling itself slows the work being measured, measurably so at short intervals across many threads." //$NON-NLS-1$
+							.formatted(Integer.valueOf(session.intervalMillis()), Long.valueOf(achieved)));
+		}
 		if (frameFilter != null) {
 			result.put("frameFilter", frameFilter) //$NON-NLS-1$
 					.put("samplesWithoutTheFilteredFrame", Integer.valueOf(filtered)); //$NON-NLS-1$
@@ -250,7 +310,8 @@ public final class SamplingRegistry {
 		// self time: the innermost frame is where the thread actually was
 		Map<String, Integer> self = new LinkedHashMap<>();
 		Map<String, Integer> total = new LinkedHashMap<>();
-		for (StackTraceElement[] sample : samples) {
+		for (Sample entry : samples) {
+			StackTraceElement[] sample = entry.stack();
 			self.merge(frame(sample[0]), 1, Integer::sum);
 			java.util.Set<String> seen = new java.util.LinkedHashSet<>();
 			for (StackTraceElement element : sample) {
@@ -264,16 +325,58 @@ public final class SamplingRegistry {
 		result.put("tree", tree(samples, minSamples)); //$NON-NLS-1$
 		if (includeRaw) {
 			JsonArray raw = new JsonArray();
-			for (StackTraceElement[] sample : samples) {
+			for (Sample entry : samples) {
 				JsonArray frames = new JsonArray();
-				for (StackTraceElement element : sample) {
+				for (StackTraceElement element : entry.stack()) {
 					frames.add(frame(element));
 				}
-				raw.add(frames);
+				// the thread and its state travel with the stack: a bare frame array
+				// cannot say whose it was or whether it was running
+				raw.add(new JsonObject().put("thread", entry.threadName()) //$NON-NLS-1$
+						.put("state", String.valueOf(entry.state())) //$NON-NLS-1$
+						.put("frames", frames)); //$NON-NLS-1$
 			}
 			result.put("rawSamples", raw); //$NON-NLS-1$
 		}
 		return result;
+	}
+
+	/**
+	 * Per thread, with its states and the CPU time it actually burned.
+	 * <p>
+	 * Without this two workers collapse into one entry, so a saturated thread and
+	 * two half-busy ones look identical, and a 24 second stall cannot be told to
+	 * have been the UI thread. The states answer the other half: blocked on a lock
+	 * and burning CPU are the same number of samples and opposite diagnoses.
+	 */
+	private static JsonArray byThread(List<Sample> samples, Session session) {
+		Map<Long, String> names = new LinkedHashMap<>();
+		Map<Long, Integer> counts = new LinkedHashMap<>();
+		Map<Long, Map<String, Integer>> states = new LinkedHashMap<>();
+		for (Sample sample : samples) {
+			Long id = Long.valueOf(sample.threadId());
+			names.put(id, sample.threadName());
+			counts.merge(id, Integer.valueOf(1), Integer::sum);
+			states.computeIfAbsent(id, key -> new LinkedHashMap<>())
+					.merge(String.valueOf(sample.state()), Integer.valueOf(1), Integer::sum);
+		}
+		Map<Long, long[]> cpu = session.cpuRanges();
+		List<Map.Entry<Long, Integer>> sorted = new ArrayList<>(counts.entrySet());
+		sorted.sort(Map.Entry.<Long, Integer>comparingByValue().reversed());
+		JsonArray array = new JsonArray();
+		for (Map.Entry<Long, Integer> entry : sorted) {
+			JsonObject states0 = new JsonObject();
+			states.get(entry.getKey()).forEach(states0::put);
+			long[] range = cpu.get(entry.getKey());
+			array.add(new JsonObject().put("thread", names.get(entry.getKey())) //$NON-NLS-1$
+					.put("threadId", entry.getKey()) //$NON-NLS-1$
+					.put("samples", entry.getValue()) //$NON-NLS-1$
+					.put("states", states0) //$NON-NLS-1$
+					// wall clock samples cannot separate "slow" from "waited"; this can
+					.put("cpuMillis", range == null || range[0] < 0 ? null //$NON-NLS-1$
+							: Long.valueOf((range[1] - range[0]) / 1_000_000)));
+		}
+		return array;
 	}
 
 	/**
@@ -305,9 +408,10 @@ public final class SamplingRegistry {
 	}
 
 	/** Merges the samples into one call tree, outermost frame first. */
-	private static JsonArray tree(List<StackTraceElement[]> samples, int minSamples) {
+	private static JsonArray tree(List<Sample> samples, int minSamples) {
 		Node root = new Node("");  //$NON-NLS-1$
-		for (StackTraceElement[] sample : samples) {
+		for (Sample entry : samples) {
+			StackTraceElement[] sample = entry.stack();
 			Node current = root;
 			for (int i = sample.length - 1; i >= 0; i--) {
 				current = current.child(frame(sample[i]));

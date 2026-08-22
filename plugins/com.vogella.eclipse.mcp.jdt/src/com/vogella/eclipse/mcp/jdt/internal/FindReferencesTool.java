@@ -52,7 +52,7 @@ public final class FindReferencesTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Finds all references to a Java type, method or field across the workspace, using the JDT search engine. Far more accurate than a text search because it resolves overloads and inheritance. For fields it also splits the references into reads and writes, which decides whether a field is actually used: one written in four places and read in none is dead, though a text search sees four live occurrences. A field initializer counts as a write but is a declaration rather than a reference, so byKind need not sum to total. Every match carries an origin of source or binary: a binary match is inside a compiled jar on some project's build path, not in anyone's source, and byOrigin counts the two separately. Judge 'how many consumers does this API have' from the source count. resolvedFrom names the jar or source folder the type was resolved from, and matchedBy says whether the search followed the compiled binding or matched the qualified name; a type that exists only in jars is searched by name, because binding to one copy of a library silently misses every reference compiled against another."; //$NON-NLS-1$
+		return "Finds all references to a Java type, method or field across the workspace, using the JDT search engine. Far more accurate than a text search because it resolves overloads and inheritance. For fields it also splits the references into reads and writes, which decides whether a field is actually used: one written in four places and read in none is dead, though a text search sees four live occurrences. A field initializer counts as a write but is a declaration rather than a reference, so byKind need not sum to total; with accessKind 'write' the initializer IS among the matches, and it is marked with declaration true and counted separately in byKind, so 'is this ever assigned outside its own declaration', which is what decides whether a field can be final, is one call. Every match carries an origin of source or binary: a binary match is inside a compiled jar on some project's build path, not in anyone's source, and byOrigin counts the two separately. Judge 'how many consumers does this API have' from the source count. resolvedFrom names the jar or source folder the type was resolved from, and matchedBy says whether the search followed the compiled binding or matched the qualified name; a type that exists only in jars is searched by name, because binding to one copy of a library silently misses every reference compiled against another."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -66,7 +66,7 @@ public final class FindReferencesTool implements IMcpTool {
 				    "memberName": {"type":"string","description":"Optional method or field name. Omit to find references to the type itself. All overloads of a method name are searched."},
 				    "project":    {"type":"string","description":"Optional project used to resolve the type. It scopes the search to that project AND everything on its build path, which includes other workspace projects and jars, so it narrows less than it looks. Defaults to the whole workspace."},
 				    "maxResults": {"type":"integer","default":200,"minimum":1,"maximum":2000},
-				    "accessKind": {"type":"string","enum":["all","read","write"],"default":"all","description":"Restrict to read or to write accesses. Only meaningful for fields. With 'all', field results additionally carry a byKind summary and a kind per match. A field initializer is a write but not a reference, so byKind counts can exceed total."}
+				    "accessKind": {"type":"string","enum":["all","read","write"],"default":"all","description":"Restrict to read or to write accesses. Only meaningful for fields. With 'all', field results additionally carry a byKind summary and a kind per match. A field initializer is a write but not a reference, so byKind counts can exceed total. With 'read' or 'write' the matches include the declaration itself, marked with declaration true and counted under declaration in byKind."}
 				  },
 				  "additionalProperties": false
 				}"""; //$NON-NLS-1$
@@ -137,6 +137,11 @@ public final class FindReferencesTool implements IMcpTool {
 
 		// a field written but never read is dead while every text search sees live occurrences,
 		// so the split is reported without the caller having to ask for it twice
+		// the declarations, so that an initializer can be told from an assignment.
+		// A WRITE_ACCESSES search reports the field's own initializer, which is a
+		// declaration rather than a reference: "can this be final" is exactly the
+		// question that needs the two separated
+		Set<String> declarations = declarationsOf(fields);
 		Set<String> reads = null;
 		Set<String> writes = null;
 		if (ALL.equals(accessKind) && !fields.isEmpty()) {
@@ -157,6 +162,9 @@ public final class FindReferencesTool implements IMcpTool {
 			entry.put("enclosingElement", //$NON-NLS-1$
 					match.getElement() instanceof IJavaElement element ? JavaModelSupport.describe(element) : null);
 			entry.put("kind", kindOf(match, accessKind, reads, writes)); //$NON-NLS-1$
+			if (declarations.contains(locationOf(match))) {
+				entry.put("declaration", Boolean.TRUE); //$NON-NLS-1$
+			}
 			reported.add(entry);
 		}
 
@@ -176,6 +184,18 @@ public final class FindReferencesTool implements IMcpTool {
 				.put("truncated", matches.size() > reported.size()); //$NON-NLS-1$
 		if (reads != null) {
 			result.put("byKind", new JsonObject().put("read", reads.size()).put("write", writes.size())); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		} else if (!fields.isEmpty()) {
+			// a byKind here too, so that "is this ever assigned outside its
+			// declaration" is one call rather than a subtraction the caller has to
+			// know to make
+			int declared = 0;
+			for (SearchMatch match : matches) {
+				if (declarations.contains(locationOf(match))) {
+					declared++;
+				}
+			}
+			result.put("byKind", new JsonObject().put(accessKind, matches.size() - declared) //$NON-NLS-1$
+					.put("declaration", Integer.valueOf(declared))); //$NON-NLS-1$
 		}
 		if (type.isBinary() && memberName != null) {
 			result.put("caveat", //$NON-NLS-1$
@@ -213,6 +233,24 @@ public final class FindReferencesTool implements IMcpTool {
 			return "readWrite"; //$NON-NLS-1$
 		}
 		return read ? READ : written ? WRITE : null;
+	}
+
+	/** Where the fields themselves are declared, as match locations. */
+	private static Set<String> declarationsOf(List<? extends org.eclipse.jdt.core.IMember> fields) {
+		Set<String> locations = new java.util.LinkedHashSet<>();
+		for (org.eclipse.jdt.core.IMember field : fields) {
+			try {
+				org.eclipse.jdt.core.ISourceRange range = field.getNameRange();
+				IResource resource = field.getResource();
+				if (range != null && resource != null) {
+					locations.add(resource.getFullPath() + "@" + range.getOffset()); //$NON-NLS-1$
+				}
+			} catch (org.eclipse.jdt.core.JavaModelException e) {
+				// a field whose range cannot be read simply is not recognised as a
+				// declaration, which reports more rather than less
+			}
+		}
+		return locations;
 	}
 
 	private static Set<String> locationsOf(List<SearchMatch> matches) {
