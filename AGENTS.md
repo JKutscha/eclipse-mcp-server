@@ -88,6 +88,12 @@ accumulating as silent workarounds nobody dares remove.
 Before it existed the whole test suite ran only when somebody remembered to, and a regression could reach a release build undetected.
 `release.yml` has a `concurrency` group so two dispatches cannot race the gh-pages publish.
 
+`Jenkinsfile` is the same validation for an Eclipse-style Jenkins: `mvn clean verify`, publish the JUnit results, archive the test IDE's own log and the p2 repository.
+It assumes the tool names an Eclipse JIPP instance provides, `apache-maven-latest` and `temurin-jdk25-latest`; on any other Jenkins those are what to change.
+It deliberately does not wrap the build in `xvnc`, unlike the platform repositories: this suite runs with no `DISPLAY` at all, which was measured rather than assumed.
+A display would only mask a tool that had quietly started needing a workbench.
+It also does not pass `-Dmaven.test.failure.ignore=true`, because a red build is the point and this repository has already shipped a suite that ran zero tests while reporting success.
+
 ## Gotchas already paid for
 
 Do not undo these without understanding why they are there.
