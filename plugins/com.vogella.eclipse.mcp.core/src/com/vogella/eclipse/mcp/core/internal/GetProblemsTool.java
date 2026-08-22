@@ -129,11 +129,18 @@ public final class GetProblemsTool implements IMcpTool {
 			}
 		}
 		JsonArray resolved = new JsonArray();
+		int resolvedTotal = 0;
 		if (baseline != null) {
 			java.util.Set<String> now = new java.util.LinkedHashSet<>();
 			problems.forEach(problem -> now.add(key(problem)));
 			for (String gone : baseline) {
-				if (!now.contains(gone)) {
+				// the diff has to be taken over the scope the caller asked about, not
+				// over the whole workspace the marker recorded
+				if (!inScope(gone, projectName, pathPrefix, severity, messageFilter) || now.contains(gone)) {
+					continue;
+				}
+				resolvedTotal++;
+				if (resolved.size() < maxResults) {
 					resolved.add(gone);
 				}
 			}
@@ -162,7 +169,8 @@ public final class GetProblemsTool implements IMcpTool {
 		if (problemMarker != null) {
 			result.put("marker", problemMarker) //$NON-NLS-1$
 					.put("sinceMarker", Boolean.TRUE) //$NON-NLS-1$
-					.put("resolvedCount", Integer.valueOf(resolved.size())) //$NON-NLS-1$
+					.put("resolvedCount", Integer.valueOf(resolvedTotal)) //$NON-NLS-1$
+					.put("resolvedTruncated", Boolean.valueOf(resolvedTotal > resolved.size())) //$NON-NLS-1$
 					.put("resolved", resolved) //$NON-NLS-1$
 					.put("note", //$NON-NLS-1$
 							"'problems' are the ones that appeared since the marker and 'resolved' the ones that went away. Everything unchanged is omitted, which is the point."); //$NON-NLS-1$
@@ -170,10 +178,44 @@ public final class GetProblemsTool implements IMcpTool {
 		return McpToolResult.of(result.toString());
 	}
 
-	/** Identity of a problem across two builds: where it is and what it says. */
+	/**
+	 * Identity of a problem across two builds: where it is and what it says.
+	 * <p>
+	 * The four fields are parsed back out when a baseline is narrowed to a query's
+	 * scope, so the order matters: a workspace path never contains a colon and the
+	 * message may, which is why the message is last and the split is bounded.
+	 */
 	static String key(Problem problem) {
 		return "%s:%d:%d:%s".formatted(problem.path(), Integer.valueOf(problem.line()), //$NON-NLS-1$
 				Integer.valueOf(problem.severity()), problem.message());
+	}
+
+	/**
+	 * Whether a baseline entry is inside the scope this call is asking about.
+	 * <p>
+	 * A marker is taken workspace wide and a query is usually not. Diffing the two
+	 * as they stand reports every problem outside the scope as resolved: one
+	 * project-scoped call answered with three thousand problems it had never been
+	 * asked about, all of them still present.
+	 */
+	private static boolean inScope(String key, String projectName, String pathPrefix, String severity,
+			String messageFilter) {
+		String[] parts = key.split(":", 4); //$NON-NLS-1$
+		if (parts.length < 4) {
+			return true;
+		}
+		String path = parts[0];
+		if (projectName != null && !path.startsWith("/" + projectName + "/")) { //$NON-NLS-1$ //$NON-NLS-2$
+			return false;
+		}
+		if (pathPrefix != null && !path.startsWith(pathPrefix)) {
+			return false;
+		}
+		Integer wanted = severityOf(severity);
+		if (wanted != null && !String.valueOf(wanted).equals(parts[2])) {
+			return false;
+		}
+		return messageFilter == null || parts[3].toLowerCase(java.util.Locale.ROOT).contains(messageFilter.toLowerCase(java.util.Locale.ROOT));
 	}
 
 	/** Every problem in the workspace, as keys, for a baseline. */

@@ -71,6 +71,32 @@ class GetProblemsToolTest {
 	}
 
 	@Test
+	@SuppressWarnings("unchecked")
+	void aScopedQueryDiffsOnlyItsOwnScope() throws Exception {
+		IJavaProject asked = fixture.createJavaProject("mcp-marker-scope-asked");
+		IJavaProject other = fixture.createJavaProject("mcp-marker-scope-other");
+		TestFixture.addType(other, "example", "Broken", """
+				package example;
+				public class Broken {
+					Missing field;
+				}
+				""");
+		TestFixture.build(other.getProject());
+
+		String marker = String.valueOf(TestFixture.callAndParse("eclipse_mark_problems", Map.of()).get("marker"));
+
+		Map<String, Object> result = TestFixture.callAndParse("eclipse_get_problems",
+				Map.of("project", "mcp-marker-scope-asked", "marker", marker, "severity", "all"));
+
+		// the marker is taken workspace wide and the query is not: without narrowing
+		// the baseline to the scope asked about, every problem in every other project
+		// is reported as resolved while it is still sitting there
+		assertEquals(Integer.valueOf(0), result.get("resolvedCount"),
+				"another project's problems are not this query's business, got " + result.get("resolved"));
+		assertTrue(((List<Object>) result.get("problems")).isEmpty(), "got " + result);
+	}
+
+	@Test
 	void rejectsAMarkerItNoLongerHolds() throws Exception {
 		McpToolResult result = TestFixture.call("eclipse_get_problems", Map.of("marker", "mcpproblems-999999"));
 

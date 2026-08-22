@@ -187,6 +187,8 @@ Records the problems the workspace has right now and returns a marker. Changes n
 
 Pass it to `eclipse_get_problems` as `marker` and the answer is only what appeared since, plus `resolved`, the ones that went away. Everything unchanged is omitted, which is the point: the alternative is reading every problem before and after and diffing them client-side, which on a large project is a hundred kilobytes a call for an answer that is usually a few lines.
 
+The diff is taken over the scope of the `eclipse_get_problems` call, not over the whole workspace the marker recorded. A marker is workspace wide and a query usually is not, so without that narrowing a project-scoped call reports every problem in every other project as resolved while it is still sitting there. `severity`, `pathPrefix` and `messageFilter` narrow the baseline the same way. `resolved` honours `maxResults` and reports `resolvedTruncated`.
+
 It deliberately does not build or refresh. It records the state as it stands; making that state current is the caller's decision, through `eclipse_get_problems` or `eclipse_build`, which is where the cost belongs. Only the last few markers are kept, and an aged-out one is refused by name rather than silently treated as empty.
 
 ### `eclipse_get_log_entries`
