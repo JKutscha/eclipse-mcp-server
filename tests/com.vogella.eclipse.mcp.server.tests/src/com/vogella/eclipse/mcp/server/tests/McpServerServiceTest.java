@@ -264,6 +264,8 @@ class McpServerServiceTest {
 		case "eclipse_read_file" -> Map.of("path", SAMPLE);
 		// dryRun defaults true, so the smoke test rewrites nothing
 		case "eclipse_remove_unused_imports" -> Map.of("path", SAMPLE);
+		// dryRun defaults true, so the smoke test transforms nothing
+		case "eclipse_clean_up" -> Map.of("path", SAMPLE, "cleanUps", List.of("cleanup.remove_unused_imports"));
 		// dryRun defaults true, so the smoke test deletes nothing; naming the fixture
 		// type keeps the refusal specific rather than a resolution failure
 		case "eclipse_delete" -> Map.of("typeName", "example.Sample");

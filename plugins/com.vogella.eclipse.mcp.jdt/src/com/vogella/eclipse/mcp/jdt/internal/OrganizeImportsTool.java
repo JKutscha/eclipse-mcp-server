@@ -63,7 +63,7 @@ public final class OrganizeImportsTool implements IMcpTool {
 	 * node, which only that plug-in registers. Nothing here overrides a value the user or
 	 * the project already set, because the lookup falls through to the default scope last.
 	 */
-	private static void ensureCodeStylePreferences() {
+	static void ensureCodeStylePreferences() {
 		if (JavaManipulation.getPreferenceNodeId() == null) {
 			JavaManipulation.setPreferenceNodeId(JDT_UI_NODE);
 		}

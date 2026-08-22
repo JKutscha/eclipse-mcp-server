@@ -17,6 +17,7 @@
       <tool class="com.vogella.eclipse.mcp.jdt.internal.ListDeclarationsTool"/>
       <tool class="com.vogella.eclipse.mcp.jdt.internal.DeleteTool"/>
       <tool class="com.vogella.eclipse.mcp.jdt.internal.RemoveUnusedImportsTool"/>
+      <tool class="com.vogella.eclipse.mcp.jdt.internal.CleanUpTool"/>
    </extension>
 
 </plugin>

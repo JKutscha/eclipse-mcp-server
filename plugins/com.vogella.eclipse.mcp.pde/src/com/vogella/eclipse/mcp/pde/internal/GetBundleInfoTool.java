@@ -162,6 +162,10 @@ public final class GetBundleInfoTool implements IMcpTool {
 					.put("versionRange", //$NON-NLS-1$
 							specification.getVersionRange() == null ? null : specification.getVersionRange().toString())
 					.put("optional", specification.isOptional()) //$NON-NLS-1$
+					// visibility:=reexport, the other half of the directives this header
+					// carries. Without it a reexport cleanup has to parse manifests as
+					// text, and reexport is the whole subject of that question
+					.put("reexported", Boolean.valueOf(specification.isExported())) //$NON-NLS-1$
 					.put("resolved", specification.isResolved()) //$NON-NLS-1$
 					.put("boundTo", specification.getSupplier() == null ? null //$NON-NLS-1$
 							: specification.getSupplier().toString()));

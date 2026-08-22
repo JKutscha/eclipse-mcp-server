@@ -292,10 +292,18 @@ So the tool uses LTK's `DeleteResourcesDescriptor`, which passes `IResource`, wh
 `plugin.xml` and `Export-Package` are therefore not updated, the description says so, and the answer reports the evidence that will dangle.
 Do not "fix" this by driving the internal processor without deciding to own that dependency.
 
-**JDT's clean-up machinery is not reachable, and the way round it is better anyway.**
-`CleanUpConstants` with `REMOVE_UNUSED_CODE_IMPORTS` is in `org.eclipse.jdt.internal.corext.fix`, x-friends to `org.eclipse.jdt.ui`, and the clean-up implementations are in `org.eclipse.jdt.internal.ui.fix`; the one exported package, `org.eclipse.jdt.ui.cleanup`, is the SPI for contributing a clean-up rather than for running a built-in one.
-`RemoveUnusedImportsTool` reads the compiler's own `IProblem.UnusedImport` markers and deletes each `IImportDeclaration`, which is public API, leaves the import order alone, and lets the project's javadoc settings decide what counts.
-Check the export before designing around an internal entry point; this is the third time the answer has been x-friends to jdt.ui or pde.ui.
+**`eclipse_clean_up` takes a discouraged dependency on purpose, and it is the only one here.**
+`CleanUpConstants` and the `*CleanUpCore` classes are x-friends to `org.eclipse.jdt.ui`, and the friends list does not include JDT-LS despite JDT-LS using them, so "JDT-LS does it" is evidence that it works rather than that it is supported.
+That dependency was a deliberate decision, not an oversight: there is no public alternative, reimplementing JDT's transformations is not an option, and the value is a whole class of tooling.
+It compiles with a discouraged-access warning and can break in any JDT release with no compile-time signal. `CleanUpRefactoring` was rejected as the entry point because it lives in `org.eclipse.jdt.ui` and would drag the UI in.
+`RemoveUnusedImportsTool` stays as it is, on public API, since a targeted tool with no such dependency is worth keeping even though the clean-up can do the same job.
+
+**JDT's clean-up options are a tree, and enabling only the leaf does nothing.**
+`USE_LAMBDA` without `CONVERT_FUNCTIONAL_INTERFACES`, or `VARIABLE_DECLARATIONS_USE_FINAL` without its three sub-options, runs the clean-up and produces no edits, which is indistinguishable from the pattern not applying.
+`CleanUpEntry.companions` declares those per clean-up so a caller cannot hit it.
+
+**A clean-up that touches imports needs the jdt.ui preference node seeded.**
+The lambda clean-up died with `"order" is null` headless, which is the same NPE `OrganizeImportsTool` was already working around; `ensureCodeStylePreferences` is shared rather than duplicated.
 
 **PDE's project model cannot round-trip a real manifest, so `eclipse_edit_manifest` refuses what it cannot rewrite.**
 `IPackageExportDescription` carries a name, a version, `friends` and an api flag, and nothing else; `apply()` rewrites the WHOLE header from the model.

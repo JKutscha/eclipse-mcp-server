@@ -726,6 +726,27 @@ Preconditions are checked before anything is written. A rename that would collid
 
 An overloaded method is refused rather than guessed at, because a rename has to name exactly one member.
 
+### `eclipse_clean_up`
+
+**Modifies source files.** Runs as a dry run unless `dryRun` is `false`. Takes `cleanUps` (required), `path` or `project`, and `maxResults`.
+
+Applies JDT's own clean-ups, the transformations behind *Source > Clean Up*, so the result is what Eclipse itself produces rather than a rewrite of our own. Currently offered, by their JDT option key:
+
+| Key | Does |
+|---|---|
+| `cleanup.use_lambda` | anonymous class to lambda |
+| `cleanup.instanceof` | pattern matching for `instanceof` |
+| `cleanup.convert_to_enhanced_for_loop` | index loop to enhanced `for` |
+| `cleanup.remove_unused_imports` | remove unused imports |
+| `cleanup.make_variable_declarations_final` | add missing `final` |
+| `cleanup.stringbuffer_to_stringbuilder` | `StringBuffer` to `StringBuilder` |
+
+An unknown key is refused with the list. Each clean-up is a semantic transformation with conditions, so **a file reported with no edits is one where the pattern did not apply, not a failure.**
+
+This is the one place in the server that takes a **discouraged dependency**: `CleanUpConstants` and the `*CleanUpCore` classes are `x-friends` to `org.eclipse.jdt.ui`, and JDT-LS is not on that list either despite using them. It was a deliberate decision rather than an oversight, because there is no public alternative and reimplementing JDT's transformations is not one. It can break in any JDT release with no compile-time signal. `CleanUpRefactoring` was rejected as the entry point because it lives in `org.eclipse.jdt.ui` and would pull the UI in.
+
+`eclipse_remove_unused_imports` stays as it is, on public API, since a targeted tool with no such dependency is worth keeping.
+
 ### `eclipse_remove_unused_imports`
 
 **Modifies source files.** Runs as a dry run unless `dryRun` is `false`. Takes `path` for one file or `project` for every file in one, plus `build` (`true`) and `maxResults`.
