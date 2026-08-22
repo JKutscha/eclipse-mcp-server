@@ -57,9 +57,9 @@ public final class DeleteTool implements IMcpTool {
 		return """
 				{
 				  "type": "object",
-				  "required": ["typeName"],
 				  "properties": {
 				    "typeName": {"type":"string","description":"Fully qualified name of the type. Without memberName its whole source file is deleted."},
+				    "typeNames": {"type":"array","items":{"type":"string"},"description":"Delete several types in one call. The registry index, which walks every project in the workspace, is then built once for the batch instead of once per type. Each is reported separately with its own refusal; one that cannot be deleted does not stop the others."},
 				    "memberName": {"type":"string","description":"A field, method or nested type to delete instead of the file. Its javadoc goes with it. An overloaded method name is refused, since this tool cannot tell which one you mean."},
 				    "project":  {"type":"string","description":"Project to resolve the name in. Omit to search every Java project."},
 				    "dryRun":   {"type":"boolean","default":true,"description":"Report what would happen and change nothing."},
@@ -72,34 +72,79 @@ public final class DeleteTool implements IMcpTool {
 	@Override
 	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) throws McpToolException {
 		ToolArguments args = ToolArguments.of(arguments);
+		List<String> typeNames = new ArrayList<>();
+		if (arguments != null && arguments.get("typeNames") instanceof List<?> list) { //$NON-NLS-1$
+			list.forEach(value -> typeNames.add(String.valueOf(value).trim()));
+		}
 		String typeName = args.getString("typeName"); //$NON-NLS-1$
-		if (typeName == null) {
-			return McpToolResult.error("The argument 'typeName' is required."); //$NON-NLS-1$
+		if (typeName == null && typeNames.isEmpty()) {
+			return McpToolResult.error("Give 'typeName', or 'typeNames' to delete several."); //$NON-NLS-1$
 		}
 		String memberName = args.getString("memberName"); //$NON-NLS-1$
 		boolean dryRun = args.getBoolean("dryRun", true); //$NON-NLS-1$
 		boolean force = args.getBoolean("force", false); //$NON-NLS-1$
 		IProgressMonitor progress = monitor == null ? new NullProgressMonitor() : monitor;
 
-		IType type;
 		List<IJavaProject> projects;
 		try {
 			projects = JavaModelSupport.javaProjects(args.getString("project")); //$NON-NLS-1$
-			type = JavaModelSupport.findType(typeName, projects, monitor);
 		} catch (ToolInputException e) {
 			return McpToolResult.error(e.getMessage());
 		}
-		if (type.isBinary() || type.getCompilationUnit() == null) {
-			return McpToolResult.error(
-					"'%s' is a binary type, so there is no source file here to delete.".formatted(typeName)); //$NON-NLS-1$
+		if (!typeNames.isEmpty()) {
+			if (memberName != null) {
+				return McpToolResult.error("'memberName' names one member of one type, so it cannot be combined with 'typeNames'."); //$NON-NLS-1$
+			}
+			// built once for the whole batch: it walks every project in the workspace,
+			// which is the cost batching exists to avoid paying per type
+			RegistryIndex index = RegistryIndex.build(progress);
+			JsonArray reported = new JsonArray();
+			for (String name : typeNames) {
+				reported.add(deleteOne(name, projects, index, dryRun, force, progress));
+			}
+			return McpToolResult.of(new JsonObject().put("dryRun", Boolean.valueOf(dryRun)) //$NON-NLS-1$
+					.put("total", Integer.valueOf(typeNames.size())) //$NON-NLS-1$
+					.put("results", reported).toString()); //$NON-NLS-1$
 		}
+
 		if (memberName != null) {
+			IType type;
+			try {
+				type = JavaModelSupport.findType(typeName, projects, monitor);
+			} catch (ToolInputException e) {
+				return McpToolResult.error(e.getMessage());
+			}
+			if (type.isBinary() || type.getCompilationUnit() == null) {
+				return McpToolResult.error(
+						"'%s' is a binary type, so there is no source file here to delete.".formatted(typeName)); //$NON-NLS-1$
+			}
 			return deleteMember(type, memberName, dryRun, force, progress);
+		}
+		return McpToolResult.of(
+				deleteOne(typeName, projects, RegistryIndex.build(progress), dryRun, force, progress).toString());
+	}
+
+	/**
+	 * Deletes one type's file, against an index the caller owns.
+	 * <p>
+	 * The index is a parameter rather than built here because it walks every project
+	 * in the workspace, which a batch must pay once rather than per type.
+	 */
+	private JsonObject deleteOne(String typeName, List<IJavaProject> projects, RegistryIndex index, boolean dryRun,
+			boolean force, IProgressMonitor progress) throws McpToolException {
+		IType type;
+		try {
+			type = JavaModelSupport.findType(typeName, projects, progress);
+		} catch (ToolInputException e) {
+			return failed(typeName, e.getMessage());
+		}
+		if (type.isBinary() || type.getCompilationUnit() == null) {
+			return failed(typeName, "It is a binary type, so there is no source file here to delete."); //$NON-NLS-1$
 		}
 		ICompilationUnit unit = type.getCompilationUnit();
 		IResource resource = unit.getResource();
 		if (!(resource instanceof IFile file) || !file.exists()) {
-			return McpToolResult.error("'%s' has no file in this workspace.".formatted(typeName)); //$NON-NLS-1$
+			return failed(typeName, "It has no file in this workspace."); //$NON-NLS-1$
 		}
 
 		JsonObject result = new JsonObject().put("type", type.getFullyQualifiedName()) //$NON-NLS-1$
@@ -121,13 +166,11 @@ public final class DeleteTool implements IMcpTool {
 		if (!alsoDeclared.isEmpty()) {
 			JsonArray others = new JsonArray();
 			alsoDeclared.forEach(others::add);
-			return McpToolResult.of(result.put("deleted", Boolean.FALSE).put("alsoDeclaredInThisFile", others) //$NON-NLS-1$ //$NON-NLS-2$
+			return result.put("deleted", Boolean.FALSE).put("alsoDeclaredInThisFile", others) //$NON-NLS-1$ //$NON-NLS-2$
 					.put("refusedBecause", //$NON-NLS-1$
-							"The file declares other top level types, and deleting it would delete them too. This tool deletes files, not declarations.") //$NON-NLS-1$
-					.toString());
+							"The file declares other top level types, and deleting it would delete them too. This tool deletes files, not declarations."); //$NON-NLS-1$
 		}
 
-		RegistryIndex index = RegistryIndex.build(progress);
 		List<RegistryIndex.Evidence> evidence = index.evidenceFor(type.getFullyQualifiedName());
 		PackageExports.Export export = new PackageExports().of(type.getJavaProject().getProject(),
 				type.getPackageFragment().getElementName());
@@ -174,9 +217,8 @@ public final class DeleteTool implements IMcpTool {
 					"its package is exported as public API, so consumers can exist outside this workspace and no search here can prove otherwise");
 		}
 		if (!blockers.isEmpty() && !force) {
-			return McpToolResult.of(result.put("deleted", Boolean.FALSE) //$NON-NLS-1$
-					.put("refusedBecause", String.join("; ", blockers) + ". Pass force to delete it anyway.") //$NON-NLS-1$ //$NON-NLS-2$
-					.toString());
+			return result.put("deleted", Boolean.FALSE) //$NON-NLS-1$
+					.put("refusedBecause", String.join("; ", blockers) + ". Pass force to delete it anyway."); //$NON-NLS-1$ //$NON-NLS-2$
 		}
 		if (registry.size() > 0) {
 			result.put("danglingAfterDelete", //$NON-NLS-1$
@@ -184,8 +226,8 @@ public final class DeleteTool implements IMcpTool {
 		}
 
 		if (dryRun) {
-			return McpToolResult.of(result.put("deleted", Boolean.FALSE) //$NON-NLS-1$
-					.put("note", "Nothing was changed. Pass dryRun false to delete the file.").toString()); //$NON-NLS-1$ //$NON-NLS-2$
+			return result.put("deleted", Boolean.FALSE) //$NON-NLS-1$
+					.put("note", "Nothing was changed. Pass dryRun false to delete the file."); //$NON-NLS-1$ //$NON-NLS-2$
 		}
 		try {
 			DeleteResourcesDescriptor descriptor = new DeleteResourcesDescriptor();
@@ -193,12 +235,14 @@ public final class DeleteTool implements IMcpTool {
 			RefactoringStatus status = new RefactoringStatus();
 			Refactoring refactoring = descriptor.createRefactoring(status);
 			if (refactoring == null) {
-				return McpToolResult.error("The delete refactoring could not be created: " + status.getMessageMatchingSeverity(RefactoringStatus.ERROR)); //$NON-NLS-1$
+				return result.put("deleted", Boolean.FALSE).put("error", //$NON-NLS-1$ //$NON-NLS-2$
+						"The delete refactoring could not be created: "
+								+ status.getMessageMatchingSeverity(RefactoringStatus.ERROR));
 			}
 			status.merge(refactoring.checkAllConditions(progress));
 			if (status.hasFatalError() || status.hasError()) {
-				return McpToolResult
-						.error("Refused: " + status.getMessageMatchingSeverity(RefactoringStatus.ERROR)); //$NON-NLS-1$
+				return result.put("deleted", Boolean.FALSE).put("refusedBecause", //$NON-NLS-1$ //$NON-NLS-2$
+						status.getMessageMatchingSeverity(RefactoringStatus.ERROR));
 			}
 			Change change = refactoring.createChange(progress);
 			Set<String> files = new LinkedHashSet<>();
@@ -207,11 +251,16 @@ public final class DeleteTool implements IMcpTool {
 			ResourcesPlugin.getWorkspace().run(new PerformChangeOperation(change), progress);
 			JsonArray affected = new JsonArray();
 			files.forEach(affected::add);
-			return McpToolResult.of(result.put("deleted", Boolean.TRUE).put("affectedFiles", affected).toString()); //$NON-NLS-1$ //$NON-NLS-2$
+			return result.put("deleted", Boolean.TRUE).put("affectedFiles", affected); //$NON-NLS-1$ //$NON-NLS-2$
 		} catch (CoreException e) {
 			throw new McpToolException("The delete failed", e); //$NON-NLS-1$
 		}
 	}
+
+	private static JsonObject failed(String typeName, String reason) {
+		return new JsonObject().put("type", typeName).put("deleted", Boolean.FALSE).put("error", reason); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+	}
+
 
 	/**
 	 * Deletes one member, which is where about half the edits of a real sweep are.

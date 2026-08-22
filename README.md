@@ -700,7 +700,8 @@ Use it to turn a simple name into a fully qualified one.
 
 | Argument | Type | Default | Meaning |
 |---|---|---|---|
-| `typeName` | string, required | | Fully qualified name of the type. Without `memberName`, its whole file is deleted. |
+| `typeName` | string | | Fully qualified name of the type. Without `memberName`, its whole file is deleted. |
+| `typeNames` | array of strings | | Delete several types in one call. |
 | `memberName` | string | | A field, method or nested type to delete instead of the file. |
 | `project` | string | every Java project | Project to resolve the name in. |
 | `dryRun` | boolean | `true` | |
@@ -709,6 +710,8 @@ Use it to turn a simple name into a fully qualified one.
 The last step of a dead code sweep, after `eclipse_list_declarations` finds candidates and `eclipse_find_references` confirms them. It reports `references`, `registryEvidence` and `apiTier` on every call, and **refuses unless `force`** when any of the three says the type is still wanted: references remaining make a deletion a compile break rather than a cleanup, a registry position fails at runtime instead of at compile time, and a public API package can have consumers no search here can see.
 
 A file declaring more than one top level type is refused outright when deleting a file.
+
+`typeNames` deletes a batch, building the registry index **once** rather than per type, which matters because that index walks every project in the workspace. Each type is reported separately with its own refusal, so one that cannot be deleted does not stop the others.
 
 **With `memberName` it deletes one member instead**, which is about half the edits of a real sweep: dead constants, private fields, unused methods, nested types. It goes through `IMember.delete`, whose source range includes the javadoc, so the comment goes with the declaration rather than being left behind describing something that no longer exists. An overloaded method name is refused, since the tool cannot tell which one you mean. References in the *same file* count here, unlike a file delete: the file keeps compiling around the hole.
 

@@ -147,6 +147,12 @@ The file is the complete record and its `!ENTRY` / `!SUBENTRY` / `!MESSAGE` / `!
 `org.eclipse.ui.monitoring` uses `IStatus.WARNING`, so `eclipse_get_log_entries` defaults to `severity: all` while `eclipse_get_problems` defaults to `error`.
 The two defaults differ on purpose; do not align them.
 
+**`eclipse_get_problems` never starts a build.**
+It used to, and with auto-build off JDT turned the requested incremental build into a batch compile of every open project: `JavaBuilder.buildAll` and `BatchImageBuilder` in the stack, thirty seconds to read some markers.
+Scoping the build to one project was not the fix; a tool that reads markers should not compile anything.
+It refreshes, waits for a build already running through `waitForBuild`, and leaves starting one to `eclipse_build`.
+`upToDate` is therefore false whenever auto-build is off, and `staleness` says why. Two tests that asserted the old promise were rewritten rather than worked around.
+
 **Everything slow belongs inside the job, the refresh included.**
 The refresh first ran before the job was scheduled, so `wait: false` still blocked for its whole duration and an unscoped refresh of a large workspace blew the 30 second call timeout before the async path was ever reached.
 It also refreshed the workspace root even when one project was named.

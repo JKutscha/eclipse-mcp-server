@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import java.util.Map;
 
 import org.eclipse.jdt.core.IJavaProject;
@@ -54,6 +55,29 @@ class DeleteMemberTest {
 		// describing something that no longer exists
 		assertFalse(source.contains("Nothing uses this"), source);
 		assertTrue(source.contains("used()"), "the rest of the class must survive: " + source);
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void deletesSeveralTypesInOneCall() throws Exception {
+		IJavaProject project = fixture.createJavaProject(PROJECT);
+		TestFixture.addType(project, "example", "One", "package example;\npublic class One { }\n");
+		TestFixture.addType(project, "example", "Two", "package example;\npublic class Two { }\n");
+		TestFixture.addType(project, "example", "Used", "package example;\npublic class Used { }\n");
+		TestFixture.addType(project, "example", "User", "package example;\npublic class User { Used u; }\n");
+		TestFixture.build(project.getProject());
+
+		Map<String, Object> result = TestFixture.callAndParse(TOOL, Map.of("project", PROJECT, "dryRun",
+				Boolean.FALSE, "typeNames", List.of("example.One", "example.Two", "example.Used")));
+
+		List<Map<String, Object>> results = (List<Map<String, Object>>) result.get("results");
+		assertEquals(3, results.size(), "one result per type, got " + results);
+		assertEquals(Boolean.TRUE, results.get(0).get("deleted"), "got " + results.get(0));
+		assertEquals(Boolean.TRUE, results.get(1).get("deleted"), "got " + results.get(1));
+		// the referenced one is refused on its own without stopping the others
+		assertEquals(Boolean.FALSE, results.get(2).get("deleted"), "got " + results.get(2));
+		assertFalse(project.getProject().getFile("src/example/One.java").exists());
+		assertTrue(project.getProject().getFile("src/example/Used.java").exists());
 	}
 
 	@Test

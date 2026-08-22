@@ -41,7 +41,7 @@ public final class GetProblemsTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Returns compilation errors and warnings from the Eclipse workspace, as computed by the incremental builder. Refreshing from disk and building are separate flags, both on by default and both restricted to the project when one is named: a client that has just written a file wants the refresh and not the build, and a client that has just called eclipse_build wants the wait and not the refresh. With auto-build off, 'build' is what costs the time, not 'refresh'. messageFilter narrows to problems whose message contains a substring, which is how to ask for deprecation warnings alone rather than pulling every warning and filtering them yourself."; //$NON-NLS-1$
+		return "Returns compilation errors and warnings from the Eclipse workspace, as computed by the incremental builder. It refreshes from disk by default, scoped to the project when one is named, and WAITS for a build already running, but it NEVER STARTS ONE. Asking for markers used to start an incremental build that JDT turned into a batch compile of every open project, so reading them cost thirty seconds; starting a build is eclipse_build's job. With auto-build off the markers are therefore from the last build and upToDate says so. messageFilter narrows to problems whose message contains a substring, which is how to ask for deprecation warnings alone rather than pulling every warning and filtering them yourself."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -56,8 +56,7 @@ public final class GetProblemsTool implements IMcpTool {
 				    "maxResults": {"type":"integer","default":200,"minimum":1,"maximum":2000},
 				    "marker":     {"type":"string","description":"A marker from eclipse_mark_problems. Reports only the problems that appeared since it, plus the ones that went away, instead of everything."},
 				    "messageFilter": {"type":"string","description":"Only problems whose message contains this text, case insensitive. Use 'deprecated' for deprecation warnings."},
-				    "refresh":    {"type":"boolean","default":true,"description":"Read changes made outside the IDE into the workspace first, restricted to 'project' when one is named. Cheap: seconds for the whole workspace."},
-				    "build":      {"type":"boolean","default":true,"description":"Build and wait before reading the markers, restricted to 'project' when one is named. This is the expensive half with auto-build off; set false for a fast answer that may be stale."}
+				    "refresh":    {"type":"boolean","default":true,"description":"Read changes made outside the IDE into the workspace first, restricted to 'project' when one is named. Cheap: seconds for the whole workspace."}
 				  },
 				  "additionalProperties": false
 				}"""; //$NON-NLS-1$
@@ -75,7 +74,6 @@ public final class GetProblemsTool implements IMcpTool {
 		String pathPrefix = args.getString("pathPrefix"); //$NON-NLS-1$
 		int maxResults = args.getInt("maxResults", DEFAULT_MAX_RESULTS, 1, 2000); //$NON-NLS-1$
 		boolean refresh = args.getBoolean("refresh", true); //$NON-NLS-1$
-		boolean build = args.getBoolean("build", true); //$NON-NLS-1$
 		String messageFilter = args.getString("messageFilter"); //$NON-NLS-1$
 		String problemMarker = args.getString("marker"); //$NON-NLS-1$
 		java.util.Set<String> baseline = null;
@@ -89,21 +87,14 @@ public final class GetProblemsTool implements IMcpTool {
 		}
 
 		boolean upToDate = false;
-		if (refresh || build) {
+		if (refresh) {
 			org.eclipse.core.resources.IProject project = projectName == null ? null
 					: ResourcesPlugin.getWorkspace().getRoot().getProject(projectName);
 			IResource scope = project == null ? ResourcesPlugin.getWorkspace().getRoot() : project;
 			try {
-				if (refresh) {
-					WorkspaceSync.refresh(scope, monitor);
-				}
-				// up to date means the markers reflect the files, which needs both: a
-				// build without a refresh has not seen edits made outside the IDE, and
-				// a refresh without a build has not turned them into markers
-				boolean built = !build || WorkspaceSync.build(project, monitor);
-				upToDate = refresh && build && built;
+				WorkspaceSync.refresh(scope, monitor);
 			} catch (CoreException e) {
-				throw new McpToolException("Could not refresh and build the workspace", e); //$NON-NLS-1$
+				throw new McpToolException("Could not refresh the workspace", e); //$NON-NLS-1$
 			} catch (OperationCanceledException e) {
 				upToDate = false;
 			}
@@ -128,6 +119,13 @@ public final class GetProblemsTool implements IMcpTool {
 				problems.add(problem);
 			}
 		}
+		// waits for a build already running, and never starts one. Asking for markers
+		// used to trigger an incremental build that JDT turned into a batch compile of
+		// every open project, so a read took thirty seconds; starting a build is
+		// eclipse_build's job, where the caller asked for it
+		boolean waited = WorkspaceSync.waitForBuild(monitor);
+		upToDate = refresh && waited && WorkspaceSync.isAutoBuilding();
+
 		JsonArray resolved = new JsonArray();
 		int resolvedTotal = 0;
 		if (baseline != null) {
@@ -162,10 +160,18 @@ public final class GetProblemsTool implements IMcpTool {
 		JsonObject result = new JsonObject().put("total", problems.size()) //$NON-NLS-1$
 				.put("truncated", problems.size() > reported.size()) //$NON-NLS-1$
 				.put("refreshed", Boolean.valueOf(refresh)) //$NON-NLS-1$
-				.put("built", Boolean.valueOf(build)) //$NON-NLS-1$
+				.put("waitedForBuild", Boolean.valueOf(waited)) //$NON-NLS-1$
 				.put("upToDate", upToDate) //$NON-NLS-1$
 				.put("autoBuild", WorkspaceSync.isAutoBuilding()) //$NON-NLS-1$
 				.put("problems", reported); //$NON-NLS-1$
+		if (!WorkspaceSync.isAutoBuilding()) {
+			result.put("staleness", //$NON-NLS-1$
+					"Auto-build is off and this tool never starts a build, so these markers are from the last build and may predate recent edits. Run eclipse_build first when that matters."); //$NON-NLS-1$
+		}
+		if (!WorkspaceSync.isAutoBuilding()) {
+			result.put("staleness", //$NON-NLS-1$
+					"Auto-build is off and this tool never starts a build, so these markers are from the last build and may predate recent edits. Run eclipse_build first when that matters."); //$NON-NLS-1$
+		}
 		if (problemMarker != null) {
 			result.put("marker", problemMarker) //$NON-NLS-1$
 					.put("sinceMarker", Boolean.TRUE) //$NON-NLS-1$

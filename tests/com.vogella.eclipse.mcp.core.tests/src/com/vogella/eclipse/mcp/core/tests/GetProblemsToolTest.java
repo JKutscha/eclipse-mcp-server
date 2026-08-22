@@ -185,9 +185,12 @@ class GetProblemsToolTest {
 		assertEquals(Integer.valueOf(0), stale.get("total"), "The IDE cannot know about the file yet");
 		assertEquals(Boolean.FALSE, stale.get("upToDate"), "An unrefreshed answer must say so");
 
-		Map<String, Object> fresh = TestFixture.callAndParse("eclipse_get_problems", Map.of("project", PROJECT));
+		// the refresh brings the file into the workspace; compiling it is a separate
+		// decision with a separate cost, and this tool no longer makes it
+		TestFixture.callAndParse("eclipse_get_problems", Map.of("project", PROJECT));
+		TestFixture.build(javaProject.getProject());
 
-		assertEquals(Boolean.TRUE, fresh.get("upToDate"));
+		Map<String, Object> fresh = TestFixture.callAndParse("eclipse_get_problems", Map.of("project", PROJECT));
 		List<Map<String, Object>> problems = (List<Map<String, Object>>) fresh.get("problems");
 		assertTrue(problems.stream().anyMatch(problem -> "/%s/src/example/Broken.java".formatted(PROJECT)
 				.equals(problem.get("path"))), "The compile error was not picked up, got " + problems);
@@ -195,7 +198,7 @@ class GetProblemsToolTest {
 
 	@Test
 	@SuppressWarnings("unchecked")
-	void refreshBuildsExplicitlyWhenAutoBuildIsOff() throws Exception {
+	void neverStartsABuildOfItsOwn() throws Exception {
 		IWorkspace workspace = ResourcesPlugin.getWorkspace();
 		IWorkspaceDescription description = workspace.getDescription();
 		boolean autoBuilding = description.isAutoBuilding();
@@ -217,9 +220,21 @@ class GetProblemsToolTest {
 			Map<String, Object> result = TestFixture.callAndParse("eclipse_get_problems", Map.of("project", PROJECT));
 
 			assertEquals(Boolean.FALSE, result.get("autoBuild"), "The fixture turned auto-build off");
+			// this tool never starts a build. Asking for markers used to start an
+			// incremental build that JDT turned into a batch compile of every open
+			// project, so a read cost thirty seconds; the file is simply not compiled
+			// yet and the answer says so rather than paying for it
 			List<Map<String, Object>> problems = (List<Map<String, Object>>) result.get("problems");
-			assertTrue(problems.stream().anyMatch(problem -> "/%s/src/example/AlsoBroken.java".formatted(PROJECT)
-					.equals(problem.get("path"))), "The tool has to build itself when auto-build is off, got " + problems);
+			assertTrue(problems.stream().noneMatch(problem -> "/%s/src/example/AlsoBroken.java".formatted(PROJECT)
+					.equals(problem.get("path"))), "nothing has compiled it, got " + problems);
+			assertEquals(Boolean.FALSE, result.get("upToDate"));
+			assertTrue(String.valueOf(result.get("staleness")).contains("eclipse_build"), "got " + result);
+
+			TestFixture.build(javaProject.getProject());
+			List<Map<String, Object>> afterBuild = (List<Map<String, Object>>) TestFixture
+					.callAndParse("eclipse_get_problems", Map.of("project", PROJECT)).get("problems");
+			assertTrue(afterBuild.stream().anyMatch(problem -> "/%s/src/example/AlsoBroken.java".formatted(PROJECT)
+					.equals(problem.get("path"))), "after an explicit build it is there, got " + afterBuild);
 		} finally {
 			description.setAutoBuilding(autoBuilding);
 			workspace.setDescription(description);
