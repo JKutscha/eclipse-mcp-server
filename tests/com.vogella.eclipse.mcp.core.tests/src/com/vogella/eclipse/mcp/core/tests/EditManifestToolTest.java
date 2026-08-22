@@ -2,6 +2,7 @@ package com.vogella.eclipse.mcp.core.tests;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
@@ -42,8 +43,22 @@ class EditManifestToolTest {
 				List.of(Map.of("package", "example.added"))));
 
 		assertEquals(Boolean.FALSE, result.get("applied"));
-		assertTrue(packages(result).contains("example.added"), "got " + result);
+		// the change, not the whole manifest: the full dump was tens of kilobytes on a
+		// platform bundle to describe one added line
+		assertTrue(added(result, "exportPackage").contains("example.added"), "got " + result);
+		assertNull(result.get("exportPackage"), "the full header is opt-in through includeFullHeaders");
 		assertFalse(manifest(project).contains("example.added"), "a dry run must not write the manifest");
+	}
+
+	@Test
+	void theFullHeadersAreAvailableOnRequest() throws Exception {
+		createPlugin(PROJECT, "Export-Package: example.api\n");
+
+		Map<String, Object> result = TestFixture.callAndParse(TOOL, Map.of("project", PROJECT,
+				"includeFullHeaders", Boolean.TRUE, "addExportPackage", List.of(Map.of("package", "example.added"))));
+
+		assertTrue(packages(result).contains("example.api"), "got " + result);
+		assertTrue(packages(result).contains("example.added"), "got " + result);
 	}
 
 	@Test
@@ -143,6 +158,17 @@ class EditManifestToolTest {
 
 	private static String manifest(IProject project) throws Exception {
 		return TestFixture.read(project.getFile("META-INF/MANIFEST.MF"));
+	}
+
+	@SuppressWarnings("unchecked")
+	private static String added(Map<String, Object> result, String header) {
+		Map<String, Object> changes = (Map<String, Object>) result.get("changes");
+		Map<String, Object> difference = (Map<String, Object>) changes.get(header);
+		StringBuilder all = new StringBuilder();
+		for (Map<String, Object> entry : (List<Map<String, Object>>) difference.get("added")) {
+			all.append(entry.get("package")).append(' ');
+		}
+		return all.toString();
 	}
 
 	@SuppressWarnings("unchecked")

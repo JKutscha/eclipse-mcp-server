@@ -72,6 +72,7 @@ public final class EditManifestTool implements IMcpTool {
 				        "required":["package"],"additionalProperties":false}},
 				    "removeImportPackage": {"type":"array","items":{"type":"string"}},
 				    "dryRun": {"type":"boolean","default":true},
+				    "includeFullHeaders": {"type":"boolean","default":false,"description":"Also return every entry of the resulting headers. Off by default: on a platform bundle that is tens of kilobytes describing one changed line."},
 				    "force":  {"type":"boolean","default":false,"description":"Remove an export or a required bundle that workspace bundles still consume."}
 				  },
 				  "additionalProperties": false
@@ -132,6 +133,15 @@ public final class EditManifestTool implements IMcpTool {
 		if (unsupported != null) {
 			return McpToolResult.error(unsupported);
 		}
+		List<IPackageExportDescription> exportsBefore = List
+				.of(description.getPackageExports() == null ? new IPackageExportDescription[0]
+						: description.getPackageExports());
+		List<IRequiredBundleDescription> requiresBefore = List
+				.of(description.getRequiredBundles() == null ? new IRequiredBundleDescription[0]
+						: description.getRequiredBundles());
+		List<IPackageImportDescription> importsBefore = List
+				.of(description.getPackageImports() == null ? new IPackageImportDescription[0]
+						: description.getPackageImports());
 		List<String> removeExports = strings(arguments, "removeExportPackage"); //$NON-NLS-1$
 		List<String> removeRequires = strings(arguments, "removeRequireBundle"); //$NON-NLS-1$
 		List<String> removeImports = strings(arguments, "removeImportPackage"); //$NON-NLS-1$
@@ -218,12 +228,30 @@ public final class EditManifestTool implements IMcpTool {
 					Boolean.TRUE.equals(entry.get("optional")))); //$NON-NLS-1$
 		}
 
-		result.put("exportPackage", exportsJson(exports)) //$NON-NLS-1$
-				.put("requireBundle", requiresJson(requires)) //$NON-NLS-1$
-				.put("importPackage", importsJson(imports)); //$NON-NLS-1$
+		// the change, not the whole manifest: dumping every header of a platform
+		// bundle was seventy kilobytes of JSON to describe one added line, and it
+		// buried the one entry the caller asked about
+		JsonObject changes = new JsonObject()
+				.put("exportPackage", //$NON-NLS-1$
+						difference(exportsBefore, exports, IPackageExportDescription::getName,
+								EditManifestTool::exportJson))
+				.put("requireBundle", //$NON-NLS-1$
+						difference(requiresBefore, requires, IRequiredBundleDescription::getName,
+								EditManifestTool::requireJson))
+				.put("importPackage", //$NON-NLS-1$
+						difference(importsBefore, imports, IPackageImportDescription::getName,
+								EditManifestTool::importJson));
+		result.put("changes", changes); //$NON-NLS-1$
+		if (ToolArguments.of(arguments).getBoolean("includeFullHeaders", false)) { //$NON-NLS-1$
+			result.put("exportPackage", exportsJson(exports)) //$NON-NLS-1$
+					.put("requireBundle", requiresJson(requires)) //$NON-NLS-1$
+					.put("importPackage", importsJson(imports)); //$NON-NLS-1$
+		}
 		if (dryRun) {
 			return McpToolResult.of(result.put("applied", Boolean.FALSE) //$NON-NLS-1$
-					.put("note", "This is the manifest as it would be. Pass dryRun false to write it.").toString()); //$NON-NLS-1$ //$NON-NLS-2$
+					.put("note", //$NON-NLS-1$
+							"Nothing was written. 'changes' is what would differ; pass includeFullHeaders to see every entry of the resulting headers, and dryRun false to write it.") //$NON-NLS-1$
+					.toString());
 		}
 		description.setPackageExports(exports.toArray(IPackageExportDescription[]::new));
 		description.setRequiredBundles(requires.toArray(IRequiredBundleDescription[]::new));
@@ -336,41 +364,93 @@ public final class EditManifestTool implements IMcpTool {
 		return List.copyOf(consumers);
 	}
 
+	private static JsonObject exportJson(IPackageExportDescription export) {
+		JsonObject entry = new JsonObject().put("package", export.getName()) //$NON-NLS-1$
+				.put("version", export.getVersion() == null ? null : export.getVersion().toString()) //$NON-NLS-1$
+				.put("visibility", export.isApi() ? "public" : "x-internal"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		if (export.getFriends() != null && export.getFriends().length > 0) {
+			entry.put("visibility", "x-friends").put("friends", array(List.of(export.getFriends()))); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		}
+		return entry;
+	}
+
 	private static JsonArray exportsJson(List<IPackageExportDescription> exports) {
 		JsonArray array = new JsonArray();
-		for (IPackageExportDescription export : exports) {
-			JsonObject entry = new JsonObject().put("package", export.getName()) //$NON-NLS-1$
-					.put("version", export.getVersion() == null ? null : export.getVersion().toString()) //$NON-NLS-1$
-					.put("visibility", export.isApi() ? "public" : "x-internal"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-			if (export.getFriends() != null && export.getFriends().length > 0) {
-				entry.put("visibility", "x-friends").put("friends", array(List.of(export.getFriends()))); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-			}
-			array.add(entry);
-		}
+		exports.forEach(export -> array.add(exportJson(export)));
 		return array;
+	}
+
+	private static JsonObject requireJson(IRequiredBundleDescription required) {
+		return new JsonObject().put("bundle", required.getName()) //$NON-NLS-1$
+				.put("versionRange", //$NON-NLS-1$
+						required.getVersionRange() == null ? null : required.getVersionRange().toString())
+				.put("optional", Boolean.valueOf(required.isOptional())) //$NON-NLS-1$
+				.put("reexport", Boolean.valueOf(required.isExported())); //$NON-NLS-1$
 	}
 
 	private static JsonArray requiresJson(List<IRequiredBundleDescription> requires) {
 		JsonArray array = new JsonArray();
-		for (IRequiredBundleDescription required : requires) {
-			array.add(new JsonObject().put("bundle", required.getName()) //$NON-NLS-1$
-					.put("versionRange", required.getVersionRange() == null ? null //$NON-NLS-1$
-							: required.getVersionRange().toString())
-					.put("optional", Boolean.valueOf(required.isOptional())) //$NON-NLS-1$
-					.put("reexport", Boolean.valueOf(required.isExported()))); //$NON-NLS-1$
-		}
+		requires.forEach(required -> array.add(requireJson(required)));
 		return array;
+	}
+
+	private static JsonObject importJson(IPackageImportDescription imported) {
+		return new JsonObject().put("package", imported.getName()) //$NON-NLS-1$
+				.put("versionRange", //$NON-NLS-1$
+						imported.getVersionRange() == null ? null : imported.getVersionRange().toString())
+				.put("optional", Boolean.valueOf(imported.isOptional())); //$NON-NLS-1$
 	}
 
 	private static JsonArray importsJson(List<IPackageImportDescription> imports) {
 		JsonArray array = new JsonArray();
-		for (IPackageImportDescription imported : imports) {
-			array.add(new JsonObject().put("package", imported.getName()) //$NON-NLS-1$
-					.put("versionRange", imported.getVersionRange() == null ? null //$NON-NLS-1$
-							: imported.getVersionRange().toString())
-					.put("optional", Boolean.valueOf(imported.isOptional()))); //$NON-NLS-1$
-		}
+		imports.forEach(imported -> array.add(importJson(imported)));
 		return array;
+	}
+
+	/**
+	 * What differs between two rendered headers, keyed by the entry's name.
+	 * <p>
+	 * An entry present on both sides with different directives counts as changed
+	 * rather than as an addition and a removal, since that is the edit a person
+	 * would recognise.
+	 */
+	private static <T> JsonObject difference(List<T> before, List<T> after,
+			java.util.function.Function<T, String> name, java.util.function.Function<T, JsonObject> render) {
+		Map<String, T> was = new java.util.LinkedHashMap<>();
+		before.forEach(entry -> was.put(name.apply(entry), entry));
+		Map<String, T> is = new java.util.LinkedHashMap<>();
+		after.forEach(entry -> is.put(name.apply(entry), entry));
+		JsonArray added = new JsonArray();
+		JsonArray removed = new JsonArray();
+		JsonArray changed = new JsonArray();
+		for (Map.Entry<String, T> entry : is.entrySet()) {
+			T previous = was.get(entry.getKey());
+			JsonObject now = render.apply(entry.getValue());
+			if (previous == null) {
+				added.add(now);
+			} else {
+				JsonObject then = render.apply(previous);
+				if (!then.toString().equals(now.toString())) {
+					changed.add(new JsonObject().put("from", then).put("to", now)); //$NON-NLS-1$ //$NON-NLS-2$
+				}
+			}
+		}
+		for (Map.Entry<String, T> entry : was.entrySet()) {
+			if (!is.containsKey(entry.getKey())) {
+				removed.add(render.apply(entry.getValue()));
+			}
+		}
+		JsonObject difference = new JsonObject();
+		if (added.size() > 0) {
+			difference.put("added", added); //$NON-NLS-1$
+		}
+		if (removed.size() > 0) {
+			difference.put("removed", removed); //$NON-NLS-1$
+		}
+		if (changed.size() > 0) {
+			difference.put("changed", changed); //$NON-NLS-1$
+		}
+		return difference;
 	}
 
 	private static JsonArray array(List<String> values) {
