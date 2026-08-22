@@ -63,6 +63,10 @@
                none of the JUnit 5 tests -->
           <failIfNoTests>true</failIfNoTests>
           <providerHint>junit5</providerHint>
+          <!-- the test JVM runs a real Equinox, so without a ceiling it takes a
+               quarter of the machine's RAM as its default heap. That is fine on a
+               laptop and not on a build server running several executors -->
+          <argLine>-Xmx1g</argLine>
         </configuration>
       </plugin>
     </plugins>
