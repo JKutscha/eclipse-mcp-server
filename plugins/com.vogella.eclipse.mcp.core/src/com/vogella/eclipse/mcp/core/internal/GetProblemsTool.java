@@ -54,6 +54,7 @@ public final class GetProblemsTool implements IMcpTool {
 				    "project":    {"type":"string","description":"Restrict to this project name."},
 				    "pathPrefix": {"type":"string","description":"Restrict to workspace paths starting with this prefix."},
 				    "maxResults": {"type":"integer","default":200,"minimum":1,"maximum":2000},
+				    "marker":     {"type":"string","description":"A marker from eclipse_mark_problems. Reports only the problems that appeared since it, plus the ones that went away, instead of everything."},
 				    "messageFilter": {"type":"string","description":"Only problems whose message contains this text, case insensitive. Use 'deprecated' for deprecation warnings."},
 				    "refresh":    {"type":"boolean","default":true,"description":"Read changes made outside the IDE into the workspace first, restricted to 'project' when one is named. Cheap: seconds for the whole workspace."},
 				    "build":      {"type":"boolean","default":true,"description":"Build and wait before reading the markers, restricted to 'project' when one is named. This is the expensive half with auto-build off; set false for a fast answer that may be stale."}
@@ -76,6 +77,16 @@ public final class GetProblemsTool implements IMcpTool {
 		boolean refresh = args.getBoolean("refresh", true); //$NON-NLS-1$
 		boolean build = args.getBoolean("build", true); //$NON-NLS-1$
 		String messageFilter = args.getString("messageFilter"); //$NON-NLS-1$
+		String problemMarker = args.getString("marker"); //$NON-NLS-1$
+		java.util.Set<String> baseline = null;
+		if (problemMarker != null) {
+			baseline = ProblemBaselines.of(problemMarker);
+			if (baseline == null) {
+				return McpToolResult.error(
+						"'%s' is not a problem marker this server still holds. Take one with eclipse_mark_problems; only the last few are kept. Known: %s" //$NON-NLS-1$
+								.formatted(problemMarker, ProblemBaselines.ids()));
+			}
+		}
 
 		boolean upToDate = false;
 		if (refresh || build) {
@@ -117,6 +128,18 @@ public final class GetProblemsTool implements IMcpTool {
 				problems.add(problem);
 			}
 		}
+		JsonArray resolved = new JsonArray();
+		if (baseline != null) {
+			java.util.Set<String> now = new java.util.LinkedHashSet<>();
+			problems.forEach(problem -> now.add(key(problem)));
+			for (String gone : baseline) {
+				if (!now.contains(gone)) {
+					resolved.add(gone);
+				}
+			}
+			java.util.Set<String> was = baseline;
+			problems = new ArrayList<>(problems.stream().filter(problem -> !was.contains(key(problem))).toList());
+		}
 		problems.sort(Comparator.comparingInt(Problem::severity).reversed().thenComparing(Problem::path)
 				.thenComparingInt(Problem::line));
 
@@ -136,7 +159,39 @@ public final class GetProblemsTool implements IMcpTool {
 				.put("upToDate", upToDate) //$NON-NLS-1$
 				.put("autoBuild", WorkspaceSync.isAutoBuilding()) //$NON-NLS-1$
 				.put("problems", reported); //$NON-NLS-1$
+		if (problemMarker != null) {
+			result.put("marker", problemMarker) //$NON-NLS-1$
+					.put("sinceMarker", Boolean.TRUE) //$NON-NLS-1$
+					.put("resolvedCount", Integer.valueOf(resolved.size())) //$NON-NLS-1$
+					.put("resolved", resolved) //$NON-NLS-1$
+					.put("note", //$NON-NLS-1$
+							"'problems' are the ones that appeared since the marker and 'resolved' the ones that went away. Everything unchanged is omitted, which is the point."); //$NON-NLS-1$
+		}
 		return McpToolResult.of(result.toString());
+	}
+
+	/** Identity of a problem across two builds: where it is and what it says. */
+	static String key(Problem problem) {
+		return "%s:%d:%d:%s".formatted(problem.path(), Integer.valueOf(problem.line()), //$NON-NLS-1$
+				Integer.valueOf(problem.severity()), problem.message());
+	}
+
+	/** Every problem in the workspace, as keys, for a baseline. */
+	static java.util.Set<String> allProblemKeys() {
+		java.util.Set<String> keys = new java.util.LinkedHashSet<>();
+		try {
+			for (IMarker marker : ResourcesPlugin.getWorkspace().getRoot().findMarkers(IMarker.PROBLEM, true,
+					IResource.DEPTH_INFINITE)) {
+				Problem problem = toProblem(marker, "all", null, null); //$NON-NLS-1$
+				if (problem != null) {
+					keys.add(key(problem));
+				}
+			}
+		} catch (CoreException e) {
+			// an unreadable marker set yields an empty baseline, which reports
+			// everything as new rather than silently reporting nothing
+		}
+		return keys;
 	}
 
 	private static Problem toProblem(IMarker marker, String severity, String projectName, String pathPrefix) {

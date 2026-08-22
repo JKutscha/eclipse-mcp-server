@@ -19,6 +19,7 @@
       <tool class="com.vogella.eclipse.mcp.core.internal.SearchTextTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.LogStateTools$Mark"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.LogStateTools$Clear"/>
+      <tool class="com.vogella.eclipse.mcp.core.internal.MarkProblemsTool"/>
    </extension>
 
 </plugin>

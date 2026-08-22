@@ -181,6 +181,14 @@ That is why it defaults to `true`.
 `upToDate` says whether the refresh and the build actually completed, and `autoBuild` reports whether the workspace builds on its own; when `upToDate` is `false` the problems may be stale.
 Set `refresh` to `false` for a faster answer when nothing has changed on disk.
 
+### `eclipse_mark_problems`
+
+Records the problems the workspace has right now and returns a marker. Changes nothing, no arguments.
+
+Pass it to `eclipse_get_problems` as `marker` and the answer is only what appeared since, plus `resolved`, the ones that went away. Everything unchanged is omitted, which is the point: the alternative is reading every problem before and after and diffing them client-side, which on a large project is a hundred kilobytes a call for an answer that is usually a few lines.
+
+It deliberately does not build or refresh. It records the state as it stands; making that state current is the caller's decision, through `eclipse_get_problems` or `eclipse_build`, which is where the cost belongs. Only the last few markers are kept, and an aged-out one is refused by name rather than silently treated as empty.
+
 ### `eclipse_get_log_entries`
 
 Returns entries from the platform log, the file behind the Error Log view.

@@ -1,6 +1,7 @@
 package com.vogella.eclipse.mcp.core.tests;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
@@ -17,6 +18,8 @@ import org.eclipse.core.resources.IWorkspaceDescription;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.IJavaProject;
+
+import com.vogella.eclipse.mcp.core.McpToolResult;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -29,6 +32,50 @@ class GetProblemsToolTest {
 	@AfterEach
 	void deleteTestProjects() throws Exception {
 		fixture.dispose();
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void aMarkerReportsOnlyWhatChangedSince() throws Exception {
+		IJavaProject project = fixture.createJavaProject("mcp-problem-marker-test");
+		TestFixture.addType(project, "example", "Broken", """
+				package example;
+				public class Broken {
+					Missing first;
+				}
+				""");
+		TestFixture.build(project.getProject());
+
+		Map<String, Object> mark = TestFixture.callAndParse("eclipse_mark_problems", Map.of());
+		String marker = String.valueOf(mark.get("marker"));
+
+		TestFixture.addType(project, "example", "AlsoBroken", """
+				package example;
+				public class AlsoBroken {
+					AlsoMissing second;
+				}
+				""");
+		TestFixture.build(project.getProject());
+
+		Map<String, Object> result = TestFixture.callAndParse("eclipse_get_problems",
+				Map.of("project", "mcp-problem-marker-test", "marker", marker, "maxResults", Integer.valueOf(200)));
+
+		// only the new one: the problem that was already there is what the marker
+		// exists to leave out
+		List<Map<String, Object>> problems = (List<Map<String, Object>>) result.get("problems");
+		// exactly one, rather than a substring check: "AlsoMissing cannot be resolved"
+		// contains "Missing cannot be resolved", so asserting on text passes either way
+		assertEquals(1, problems.size(), "only the new problem should be reported, got " + problems);
+		assertTrue(String.valueOf(problems.get(0).get("message")).startsWith("AlsoMissing"), "got " + problems);
+		assertEquals(Boolean.TRUE, result.get("sinceMarker"));
+	}
+
+	@Test
+	void rejectsAMarkerItNoLongerHolds() throws Exception {
+		McpToolResult result = TestFixture.call("eclipse_get_problems", Map.of("marker", "mcpproblems-999999"));
+
+		assertTrue(result.isError());
+		assertTrue(result.text().contains("mark_problems"), result.text());
 	}
 
 	@Test
