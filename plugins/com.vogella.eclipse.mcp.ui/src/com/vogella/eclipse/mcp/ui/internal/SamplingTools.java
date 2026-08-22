@@ -117,7 +117,8 @@ public final class SamplingTools {
 					    "topMethods":  {"type":"integer","default":15,"minimum":1,"maximum":200},
 					    "minSamples":  {"type":"integer","default":2,"minimum":1,"description":"Prune call tree branches seen fewer times than this."},
 					    "includeRawSamples": {"type":"boolean","default":false,"description":"Also return every sample. Large."},
-					    "includeIdleThreads": {"type":"boolean","default":false,"description":"Count threads parked or waiting. Off by default, because otherwise the pooled threads of an idle IDE dominate the result."},
+					    "frameFilter":        {"type":"string","description":"Aggregate only the stacks containing this text in a frame, e.g. a package prefix or one class. Applied when reading, not when sampling, so one session can be re-read from several angles with keepRunning."},
+					    "includeIdleThreads": {"type":"boolean","default":false,"description":"Count threads parked or waiting. Off by default, because otherwise the pooled threads of an idle IDE dominate the result. Turn it ON to diagnose a FREEZE: a frozen thread is usually parked, and the default drops exactly the samples that explain the stall."},
 					    "keepRunning": {"type":"boolean","default":false,"description":"Report the aggregate so far without stopping."}
 					  },
 					  "additionalProperties": false
@@ -145,7 +146,7 @@ public final class SamplingTools {
 					.aggregate(session, args.getInt("topMethods", 15, 1, 200), //$NON-NLS-1$
 							args.getInt("minSamples", 2, 1, 1000), //$NON-NLS-1$
 							args.getBoolean("includeRawSamples", false), //$NON-NLS-1$
-							args.getBoolean("includeIdleThreads", false)) //$NON-NLS-1$
+							args.getBoolean("includeIdleThreads", false), args.getString("frameFilter")) //$NON-NLS-1$ //$NON-NLS-2$
 					.toString());
 		}
 	}

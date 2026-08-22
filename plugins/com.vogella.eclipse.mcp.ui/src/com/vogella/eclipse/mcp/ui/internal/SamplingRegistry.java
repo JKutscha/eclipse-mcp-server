@@ -182,7 +182,37 @@ public final class SamplingRegistry {
 	 */
 	public static JsonObject aggregate(Session session, int topMethods, int minSamples, boolean includeRaw,
 			boolean includeIdle) {
+		return aggregate(session, topMethods, minSamples, includeRaw, includeIdle, null);
+	}
+
+	/**
+	 * Aggregates the samples rather than returning them, optionally only those whose
+	 * stack contains {@code frameFilter}.
+	 * <p>
+	 * The filter is applied here rather than while sampling, so one session can be
+	 * read from several angles without being taken again. It earns its place because
+	 * the top of an unfiltered IDE profile is Jetty accept loops, the AWT event
+	 * pump and the reference handler, none of which is ever the answer to the
+	 * question a caller is asking.
+	 */
+	public static JsonObject aggregate(Session session, int topMethods, int minSamples, boolean includeRaw,
+			boolean includeIdle, String frameFilter) {
 		List<StackTraceElement[]> all = session.snapshot();
+		int filtered = 0;
+		if (frameFilter != null) {
+			String needle = frameFilter.toLowerCase(java.util.Locale.ROOT);
+			List<StackTraceElement[]> matching = new ArrayList<>();
+			for (StackTraceElement[] sample : all) {
+				for (StackTraceElement element : sample) {
+					if (frame(element).toLowerCase(java.util.Locale.ROOT).contains(needle)) {
+						matching.add(sample);
+						break;
+					}
+				}
+			}
+			filtered = all.size() - matching.size();
+			all = matching;
+		}
 		int idle = 0;
 		List<StackTraceElement[]> samples = new ArrayList<>();
 		for (StackTraceElement[] sample : all) {
@@ -202,6 +232,10 @@ public final class SamplingRegistry {
 				.put("idleSamplesExcluded", includeIdle ? 0 : idle) //$NON-NLS-1$
 				.put("intervalMillis", session.intervalMillis()) //$NON-NLS-1$
 				.put("elapsedMillis", session.elapsedMillis());
+		if (frameFilter != null) {
+			result.put("frameFilter", frameFilter) //$NON-NLS-1$
+					.put("samplesWithoutTheFilteredFrame", Integer.valueOf(filtered)); //$NON-NLS-1$
+		}
 		if (session.stoppedByBudget()) {
 			result.put("note", //$NON-NLS-1$
 					"Sampling stopped on its own after %d ticks because maxSamples was reached, %d ms in. If that is shorter than the operation you meant to profile, raise maxSamples." //$NON-NLS-1$

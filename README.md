@@ -887,7 +887,11 @@ When there is no workbench, no window or no file-backed editor, the answer is `{
 Samples thread stacks at a fixed interval, to profile an operation or diagnose a freeze.
 
 `eclipse_start_sampling` takes `threads` (`ui` or `all`), `threadNames`, `intervalMillis` (100), `maxSamples` (300) and `maxDepth` (80), and returns a `sessionId`.
-`eclipse_stop_sampling` takes that id, plus `topMethods`, `minSamples`, `includeRawSamples` and `keepRunning`.
+`eclipse_stop_sampling` takes that id, plus `topMethods`, `minSamples`, `includeRawSamples`, `keepRunning` and `frameFilter`.
+
+`frameFilter` restricts the aggregate to stacks containing a package prefix or a class, and is applied when reading rather than when sampling, so one session can be read from several angles with `keepRunning`. It earns its place because the top of an unfiltered IDE profile is Jetty accept loops, the AWT event pump and the reference handler, none of which is ever the answer to the question being asked.
+
+**Turn `includeIdleThreads` on to diagnose a freeze.** A frozen thread is usually parked, so the default, which exists to stop the pooled threads of an idle IDE dominating the result, drops exactly the samples that explain a stall. Profiling slow work and profiling a freeze want opposite settings.
 
 Sampling runs on a daemon thread through `ThreadMXBean`, which needs neither the UI thread nor any workspace lock, so it keeps working while the IDE is frozen. That is the requirement, not a detail: a profiler that queues behind the freeze is useless for the case it exists for.
 
