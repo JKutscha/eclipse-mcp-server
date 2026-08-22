@@ -6,12 +6,12 @@ pipeline {
 		timestamps()
 	}
 	agent {
-		label 'ubuntu-latest'
+		label 'built-in'
 	}
 	tools {
-		maven 'apache-maven-latest'
+		maven 'Maven 3.9'
 		// JavaSE-25 is the BREE of every bundle here, so an older JDK does not compile
-		jdk 'temurin-jdk25-latest'
+		jdk 'Java 25 Temurin'
 	}
 	stages {
 		stage('Build and test') {
@@ -20,9 +20,12 @@ pipeline {
 				// all, verified rather than assumed. useUIHarness is false and every
 				// UI tool refuses cleanly without a workbench, so a display would only
 				// hide a tool that had started needing one
+				// the Maven repository is deliberately the shared one rather than
+				// per workspace: a multibranch job gives every branch and every pull
+				// request its own workspace, and each would otherwise download the
+				// whole Eclipse SDK again for the Tycho target platform
 				sh '''
 					mvn clean verify \
-						-Dmaven.repo.local=$WORKSPACE/.m2/repository \
 						--batch-mode --no-transfer-progress --show-version --errors
 				'''
 			}
