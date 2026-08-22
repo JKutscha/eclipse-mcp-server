@@ -60,8 +60,9 @@ public final class FindReferencesTool implements IMcpTool {
 		return """
 				{
 				  "type": "object",
-				  "required": ["typeName"],
+
 				  "properties": {
+				    "queries":    {"type":"array","description":"Ask about many elements in one call, which returns COUNTS ONLY: [{typeName, memberName?, accessKind?}]. A dead code sweep asks 'how many references' about hundreds of candidates, and one call per candidate is mostly round trips. Use the single form when you need the match locations.","items":{"type":"object","properties":{"typeName":{"type":"string"},"memberName":{"type":"string"},"accessKind":{"type":"string","enum":["all","read","write"]}},"required":["typeName"],"additionalProperties":false}},
 				    "typeName":   {"type":"string","description":"Fully qualified type name, e.g. org.eclipse.jface.viewers.TreeViewer"},
 				    "memberName": {"type":"string","description":"Optional method or field name. Omit to find references to the type itself. All overloads of a method name are searched."},
 				    "project":    {"type":"string","description":"Optional project used to resolve the type. It scopes the search to that project AND everything on its build path, which includes other workspace projects and jars, so it narrows less than it looks. Defaults to the whole workspace."},
@@ -75,9 +76,13 @@ public final class FindReferencesTool implements IMcpTool {
 	@Override
 	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) throws McpToolException {
 		ToolArguments args = ToolArguments.of(arguments);
+		List<Map<String, Object>> queries = queries(arguments);
+		if (!queries.isEmpty()) {
+			return countAll(queries, args.getString("project"), monitor); //$NON-NLS-1$
+		}
 		String typeName = args.getString("typeName"); //$NON-NLS-1$
 		if (typeName == null) {
-			return McpToolResult.error("The argument 'typeName' is required."); //$NON-NLS-1$
+			return McpToolResult.error("Give 'typeName', or 'queries' to ask about many elements at once."); //$NON-NLS-1$
 		}
 		String memberName = args.getString("memberName"); //$NON-NLS-1$
 		String projectName = args.getString("project"); //$NON-NLS-1$
@@ -257,6 +262,111 @@ public final class FindReferencesTool implements IMcpTool {
 
 	private static Set<String> locationsOf(List<SearchMatch> matches) {
 		return matches.stream().map(FindReferencesTool::locationOf).collect(Collectors.toSet());
+	}
+
+	/**
+	 * Counts references for many elements in one call.
+	 * <p>
+	 * Counts only, deliberately. A sweep asks "how many references" about hundreds
+	 * of candidates and needs the locations for almost none of them, so returning
+	 * matches would make the answer enormous to save the round trips that were the
+	 * problem. The type resolution and the search index are shared across the batch.
+	 */
+	private McpToolResult countAll(List<Map<String, Object>> queries, String projectName, IProgressMonitor monitor)
+			throws McpToolException {
+		List<IJavaProject> projects;
+		try {
+			projects = JavaModelSupport.javaProjects(projectName);
+		} catch (ToolInputException e) {
+			return McpToolResult.error(e.getMessage());
+		}
+		if (projects.isEmpty()) {
+			return McpToolResult.error("The workspace contains no open Java project."); //$NON-NLS-1$
+		}
+		IJavaSearchScope scope = projectName == null ? SearchEngine.createWorkspaceScope()
+				: SearchEngine.createJavaSearchScope(new IJavaElement[] { projects.get(0) }, true);
+		JsonArray results = new JsonArray();
+		for (Map<String, Object> query : queries) {
+			if (monitor != null && monitor.isCanceled()) {
+				return McpToolResult.error("The request was cancelled."); //$NON-NLS-1$
+			}
+			results.add(count(query, projects, scope, monitor));
+		}
+		return McpToolResult.of(new JsonObject().put("total", Integer.valueOf(results.size())) //$NON-NLS-1$
+				.put("countsOnly", Boolean.TRUE) //$NON-NLS-1$
+				.put("note", //$NON-NLS-1$
+						"Counts only. Ask the single form about anything whose match locations you need.") //$NON-NLS-1$
+				.put("results", results).toString()); //$NON-NLS-1$
+	}
+
+	private JsonObject count(Map<String, Object> query, List<IJavaProject> projects, IJavaSearchScope scope,
+			IProgressMonitor monitor) throws McpToolException {
+		String typeName = String.valueOf(query.get("typeName")); //$NON-NLS-1$
+		Object member = query.get("memberName"); //$NON-NLS-1$
+		String memberName = member == null || String.valueOf(member).isBlank() ? null
+				: String.valueOf(member).trim();
+		Object kind = query.get("accessKind"); //$NON-NLS-1$
+		String accessKind = kind == null ? ALL : String.valueOf(kind);
+		JsonObject entry = new JsonObject().put("typeName", typeName).put("memberName", memberName); //$NON-NLS-1$ //$NON-NLS-2$
+		if (!ACCESS_KINDS.contains(accessKind)) {
+			return entry.put("error", "Unknown accessKind '%s'.".formatted(accessKind)); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		IType type;
+		List<IMember> members;
+		try {
+			type = JavaModelSupport.findType(typeName, projects, monitor);
+			members = memberName == null ? List.of() : JavaModelSupport.findMembers(type, memberName);
+		} catch (ToolInputException e) {
+			return entry.put("error", e.getMessage()); //$NON-NLS-1$
+		}
+		List<IMember> fields = members.stream().filter(IField.class::isInstance).toList();
+		if (!ALL.equals(accessKind) && fields.isEmpty()) {
+			return entry.put("error", "Read and write accesses only exist for fields."); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		SearchPattern pattern;
+		if (memberName == null) {
+			pattern = type.isBinary()
+					? SearchPattern.createPattern(type.getFullyQualifiedName(), IJavaSearchConstants.TYPE,
+							IJavaSearchConstants.REFERENCES,
+							SearchPattern.R_EXACT_MATCH | SearchPattern.R_CASE_SENSITIVE)
+					: SearchPattern.createPattern(type, IJavaSearchConstants.REFERENCES);
+		} else {
+			pattern = pattern(ALL.equals(accessKind) ? members : fields, limitTo(accessKind));
+		}
+		if (pattern == null) {
+			return entry.put("error", "Could not build a search pattern."); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		List<SearchMatch> matches = search(pattern, scope, monitor, typeName);
+		Set<String> declarations = declarationsOf(fields);
+		int binary = 0;
+		int declared = 0;
+		for (SearchMatch match : matches) {
+			if (match.getElement() instanceof IJavaElement element
+					&& element.getAncestor(IJavaElement.CLASS_FILE) != null) {
+				binary++;
+			}
+			if (declarations.contains(locationOf(match))) {
+				declared++;
+			}
+		}
+		return entry.put("accessKind", accessKind) //$NON-NLS-1$
+				.put("total", Integer.valueOf(matches.size())) //$NON-NLS-1$
+				.put("source", Integer.valueOf(matches.size() - binary)) //$NON-NLS-1$
+				.put("binary", Integer.valueOf(binary)) //$NON-NLS-1$
+				.put("declaration", Integer.valueOf(declared)); //$NON-NLS-1$
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> queries(Map<String, Object> arguments) {
+		List<Map<String, Object>> values = new ArrayList<>();
+		if (arguments != null && arguments.get("queries") instanceof List<?> list) { //$NON-NLS-1$
+			for (Object value : list) {
+				if (value instanceof Map<?, ?> map && map.get("typeName") != null) { //$NON-NLS-1$
+					values.add((Map<String, Object>) map);
+				}
+			}
+		}
+		return values;
 	}
 
 	private static String locationOf(SearchMatch match) {

@@ -435,6 +435,9 @@ The last 20 builds are kept; asking for an older id is an error, while asking be
 
 ### `eclipse_find_references`
 
+`queries` asks about many elements in one call and returns **counts only**: `[{typeName, memberName?, accessKind?}]`, and per query `total`, `source`, `binary` and `declaration`. A dead code sweep asks "how many references" about hundreds of candidates and needs the locations for almost none of them, so returning matches would make the answer enormous to save the round trips that were the problem. A name that does not resolve fails that query alone, not the batch. Use the single form when you need the match locations.
+
+
 Finds all references to a Java type, method or field across the workspace with the JDT search engine.
 Far more accurate than a text search, because it resolves overloads and inheritance.
 

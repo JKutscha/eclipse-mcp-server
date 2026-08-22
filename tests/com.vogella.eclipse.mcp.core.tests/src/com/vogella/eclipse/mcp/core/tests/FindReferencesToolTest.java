@@ -24,6 +24,39 @@ class FindReferencesToolTest {
 	}
 
 	@Test
+	@SuppressWarnings("unchecked")
+	void answersManyQueriesInOneCall() throws Exception {
+		IJavaProject project = fixture.createJavaProject("mcp-batch-references-test");
+		TestFixture.addType(project, "example", "Holder", """
+				package example;
+				public class Holder {
+					public static int USED = 1;
+					public static int DEAD = 2;
+				}
+				""");
+		TestFixture.addType(project, "example", "Reader", """
+				package example;
+				public class Reader {
+					int read() { return Holder.USED; }
+				}
+				""");
+		TestFixture.build(project.getProject());
+
+		Map<String, Object> result = TestFixture.callAndParse("eclipse_find_references",
+				Map.of("project", "mcp-batch-references-test", "queries",
+						List.of(Map.of("typeName", "example.Holder", "memberName", "USED"),
+								Map.of("typeName", "example.Holder", "memberName", "DEAD"),
+								Map.of("typeName", "example.Nowhere"))));
+
+		List<Map<String, Object>> results = (List<Map<String, Object>>) result.get("results");
+		assertEquals(3, results.size(), "one result per query, got " + results);
+		assertEquals(Integer.valueOf(1), results.get(0).get("total"), "got " + results.get(0));
+		assertEquals(Integer.valueOf(0), results.get(1).get("total"), "got " + results.get(1));
+		// a name that does not resolve fails that query alone rather than the batch
+		assertTrue(results.get(2).containsKey("error"), "got " + results.get(2));
+	}
+
+	@Test
 	void resolvesASecondaryType() throws Exception {
 		IJavaProject project = fixture.createJavaProject("mcp-secondary-type-test");
 		// a package-private type declared in a file named after a different type.
