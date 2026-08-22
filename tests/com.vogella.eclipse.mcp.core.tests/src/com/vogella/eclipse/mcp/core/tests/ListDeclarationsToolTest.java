@@ -167,6 +167,16 @@ class ListDeclarationsToolTest {
 	}
 
 	@Test
+	void aClassNamedByAnE4ApplicationModelIsLive() throws Exception {
+		fixtureProject();
+		Map<String, Object> entry = declaration("registry.Addon");
+
+		assertEquals("live-via-registry", entry.get("registryStatus"), "got " + entry);
+		assertEquals("e4xmi", firstEvidence(entry).get("kind"));
+		assertTrue(String.valueOf(firstEvidence(entry).get("file")).endsWith(".e4xmi"), "got " + entry);
+	}
+
+	@Test
 	void theApiTierSaysWhatAWorkspaceSearchCanProve() throws Exception {
 		fixtureProject();
 
@@ -259,6 +269,19 @@ class ListDeclarationsToolTest {
 				"package friendly;\npublic class ForFriends {\n}\n");
 		TestFixture.addType(javaProject, "hidden", "NotExported",
 				"package hidden;\n/**\n * @noreference\n */\npublic class NotExported {\n}\n");
+
+		TestFixture.addType(javaProject, "registry", "Addon",
+				"package registry;\npublic class Addon {\n}\n");
+		// an e4 application model: nothing in Java refers to this class, the workbench
+		// instantiates it at every start, and a sweep that cannot see it deletes an
+		// addon the IDE needs and still compiles
+		write(project, "LegacyIDE.e4xmi", """
+				<?xml version="1.0" encoding="ASCII"?>
+				<application:Application xmlns:application="http://www.eclipse.org/ui/2010/UIModel/application">
+				  <addons xmi:id="_1" elementId="registry.addon"
+				     contributionURI="bundleclass://registry.host/registry.Addon"/>
+				</application:Application>
+				""");
 
 		write(project, "notes.txt", "registry.Unused is mentioned in this file, which is not a registry position.");
 

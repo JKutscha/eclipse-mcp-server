@@ -64,6 +64,11 @@ final class RegistryIndex {
 
 	private static final Pattern ANY_REFLECTION = Pattern.compile("(?:Class\\.forName|loadClass)\\s*\\("); //$NON-NLS-1$
 
+	// bundleclass://<bundle>/<fully.qualified.Class>, the fixed grammar an e4
+	// application model uses to name a class it will instantiate
+	private static final Pattern BUNDLECLASS = Pattern
+			.compile("bundleclass://[^/\\s\"']+/([A-Za-z_$][\\w.$]*)"); //$NON-NLS-1$
+
 	private final Map<String, List<Evidence>> byName = new HashMap<>();
 
 	private final Map<String, IFile> schemaFiles = new HashMap<>();
@@ -155,6 +160,7 @@ final class RegistryIndex {
 			index.indexComponents(project);
 			index.indexActivator(project);
 			index.indexServices(project);
+			index.indexApplicationModel(project);
 		}
 		return index;
 	}
@@ -367,6 +373,47 @@ final class RegistryIndex {
 					add(implementation, new Evidence("service loader", path, "provider line", null, service, true)); //$NON-NLS-1$ //$NON-NLS-2$
 				}
 			}
+		}
+	}
+
+	/**
+	 * The classes an e4 application model names.
+	 * <p>
+	 * A .e4xmi is a registry position like any other: the workbench instantiates
+	 * what its contributionURI points at, on every start. Nothing in Java refers to
+	 * those classes, so without this they look dead, and a sweep acting on that
+	 * deletes an addon the IDE needs and still compiles cleanly. That happened.
+	 * <p>
+	 * The files are found by walking the project, because unlike plugin.xml they
+	 * live wherever the bundle put them, and a proxy visit is cheap enough for that.
+	 */
+	private void indexApplicationModel(IProject project) {
+		try {
+			project.accept(proxy -> {
+				if (proxy.getType() == IResource.FILE && proxy.getName().endsWith(".e4xmi")) { //$NON-NLS-1$
+					IResource resource = proxy.requestResource();
+					if (resource instanceof IFile file) {
+						indexApplicationModelFile(file);
+					}
+					return false;
+				}
+				return true;
+			}, IResource.NONE);
+		} catch (CoreException e) {
+			// a project that cannot be walked contributes nothing, which is the same
+			// as one with no application model
+		}
+	}
+
+	private void indexApplicationModelFile(IFile file) {
+		String content = read(file);
+		if (content == null || !content.contains("bundleclass://")) { //$NON-NLS-1$
+			return;
+		}
+		String path = file.getFullPath().toString();
+		Matcher matcher = BUNDLECLASS.matcher(content);
+		while (matcher.find()) {
+			add(matcher.group(1), new Evidence("e4xmi", path, "bundleclass URI", null, null, true)); //$NON-NLS-1$ //$NON-NLS-2$
 		}
 	}
 

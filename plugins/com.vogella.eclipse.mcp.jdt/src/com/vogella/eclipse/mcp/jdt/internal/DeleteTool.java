@@ -47,7 +47,7 @@ public final class DeleteTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Deletes the source file declaring a Java type, as the last step of a dead code sweep. DELETES A FILE FROM THE WORKSPACE, and runs as a dry run unless dryRun is set to false. It refuses, unless force is passed, when anything still references the type, when a registry position names it, or when its package is exported as public API, and it reports all three either way. READ THIS LIMITATION: the deletion goes through LTK as a resource delete, and PDE's manifest participants are enabled on IType rather than on IResource, so plugin.xml class attributes and Export-Package are NOT updated. Whatever registryEvidence the answer reports is what will be left dangling and has to be fixed by hand. Use eclipse_list_declarations to find candidates and eclipse_find_references to confirm them."; //$NON-NLS-1$
+		return "Deletes the source file declaring a Java type, as the last step of a dead code sweep. DELETES A FILE FROM THE WORKSPACE, and runs as a dry run unless dryRun is set to false. It refuses, unless force is passed, when anything still references the type, when a registry position names it, or when its package is exported as public API, and it reports all three either way. It counts an e4 application model as a registry position: a class named by a bundleclass:// URI in a .e4xmi is instantiated by the workbench at every start and referenced from no Java, so it looks dead and is not. READ THIS LIMITATION: the deletion goes through LTK as a resource delete, and PDE's manifest participants are enabled on IType rather than on IResource, so plugin.xml class attributes and Export-Package are NOT updated. Whatever registryEvidence the answer reports is what will be left dangling and has to be fixed by hand. Use eclipse_list_declarations to find candidates and eclipse_find_references to confirm them."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -131,9 +131,26 @@ public final class DeleteTool implements IMcpTool {
 			registry.add(new JsonObject().put("kind", one.kind()).put("file", one.file()) //$NON-NLS-1$ //$NON-NLS-2$
 					.put("xpathOrHeader", one.position())); //$NON-NLS-1$
 		}
+		// deleting the last type of a package leaves an Export-Package naming a
+		// package that no longer exists, which the next build reports against
+		// MANIFEST.MF. Saying so lets the caller follow up with eclipse_edit_manifest
+		boolean lastInPackage = false;
+		try {
+			lastInPackage = unit.getParent() instanceof org.eclipse.jdt.core.IPackageFragment fragment
+					&& fragment.getCompilationUnits().length <= 1;
+		} catch (CoreException e) {
+			// a package that cannot be read is simply not reported as emptied
+		}
 		result.put("references", Integer.valueOf(references)) //$NON-NLS-1$
 				.put("registryEvidence", registry) //$NON-NLS-1$
-				.put("apiTier", export.tier()); //$NON-NLS-1$
+				.put("apiTier", export.tier()) //$NON-NLS-1$
+				.put("lastTypeInPackage", Boolean.valueOf(lastInPackage)); //$NON-NLS-1$
+		if (lastInPackage && !PackageExports.NOT_EXPORTED.equals(export.tier())
+				&& !PackageExports.NOT_A_BUNDLE.equals(export.tier())) {
+			result.put("packageBecomesEmpty", //$NON-NLS-1$
+					"This is the last type in '%s', which the manifest still exports as %s. After deleting it, remove the export with eclipse_edit_manifest removeExportPackage or the next build reports 'Package does not exist in this plug-in'." //$NON-NLS-1$
+							.formatted(type.getPackageFragment().getElementName(), export.tier()));
+		}
 
 		List<String> blockers = new ArrayList<>();
 		if (references > 0) {

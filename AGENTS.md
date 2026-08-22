@@ -308,6 +308,12 @@ Do not remove the scoped attempt; it is still the cheap path when the unit has n
 `FindReferencesTool.declarationsOf` built `path + "@" + offset` while `locationOf` built `path + ':' + offset`, so the declaration flag was computed, reported and never once true.
 The build was green and the field simply never appeared. Both now go through one `locationOf(IResource, int)`, and `marksTheDeclarationAmongWriteAccesses` covers it.
 
+**An e4 application model is a registry position, and leaving it out deleted live code.**
+A class named by a `bundleclass://<bundle>/<fqn>` URI in a `.e4xmi` is instantiated by the workbench at every start and referenced from no Java at all.
+`eclipse_list_declarations` reported three such addons as dead with zero references and no evidence, and `eclipse_delete` removed them, after which everything still compiled.
+`indexApplicationModel` walks the project for `.e4xmi` files, because unlike `plugin.xml` they live wherever the bundle put them, and records a `bundleclass` URI as evidence of kind `e4xmi`.
+"Documented as not covered" was not good enough for a tool that deletes: a gap in a report is a caveat, the same gap in a delete is data loss.
+
 **Require-Bundle dependents are not consumers of a package.**
 The first version of the export-removal guard counted every bundle that requires the exporter, which on a platform bundle is dozens and refused almost every removal.
 `importedBy` is exact and blocks; `mightAlsoUseIt` lists the Require-Bundle dependents, says they may or may not use the package, and does not block.
