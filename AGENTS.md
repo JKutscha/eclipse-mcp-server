@@ -292,6 +292,11 @@ So the tool uses LTK's `DeleteResourcesDescriptor`, which passes `IResource`, wh
 `plugin.xml` and `Export-Package` are therefore not updated, the description says so, and the answer reports the evidence that will dangle.
 Do not "fix" this by driving the internal processor without deciding to own that dependency.
 
+**JDT's clean-up machinery is not reachable, and the way round it is better anyway.**
+`CleanUpConstants` with `REMOVE_UNUSED_CODE_IMPORTS` is in `org.eclipse.jdt.internal.corext.fix`, x-friends to `org.eclipse.jdt.ui`, and the clean-up implementations are in `org.eclipse.jdt.internal.ui.fix`; the one exported package, `org.eclipse.jdt.ui.cleanup`, is the SPI for contributing a clean-up rather than for running a built-in one.
+`RemoveUnusedImportsTool` reads the compiler's own `IProblem.UnusedImport` markers and deletes each `IImportDeclaration`, which is public API, leaves the import order alone, and lets the project's javadoc settings decide what counts.
+Check the export before designing around an internal entry point; this is the third time the answer has been x-friends to jdt.ui or pde.ui.
+
 **PDE's project model cannot round-trip a real manifest, so `eclipse_edit_manifest` refuses what it cannot rewrite.**
 `IPackageExportDescription` carries a name, a version, `friends` and an api flag, and nothing else; `apply()` rewrites the WHOLE header from the model.
 Shipped without a guard it dropped every `ui.workbench=split;mandatory:="ui.workbench"` attribute from `org.eclipse.ui.workbench`, which is what makes that bundle resolve at all, and re-sorted the `x-friends` lists because `friends()` is a `SortedSet`.

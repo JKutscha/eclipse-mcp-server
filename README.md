@@ -726,6 +726,18 @@ Preconditions are checked before anything is written. A rename that would collid
 
 An overloaded method is refused rather than guessed at, because a rename has to name exactly one member.
 
+### `eclipse_remove_unused_imports`
+
+**Modifies source files.** Runs as a dry run unless `dryRun` is `false`. Takes `path` for one file or `project` for every file in one, plus `build` (`true`) and `maxResults`.
+
+Removes the imports the compiler reports as unused, and nothing else. `eclipse_organize_imports` also sorts and regroups, so on a file where one import is dead it rewrites the whole block and the change hides among lines nobody meant to touch.
+
+**The compiler decides what is unused**, which is what makes this safe: the project's settings govern, including whether a reference from javadoc keeps an import alive. A remover that reasons about code alone deletes those and leaves `Javadoc: X cannot be resolved` behind, which is exactly what happened to a client that wrote its own.
+
+Markers are only as current as the last build, so it builds first unless told not to. Deleting an import flagged before your last edit would remove one that is now in use.
+
+It exists because JDT's own clean-up machinery is not reachable: `CleanUpConstants`, which holds `REMOVE_UNUSED_CODE_IMPORTS`, is in `org.eclipse.jdt.internal.corext.fix`, x-friends to `org.eclipse.jdt.ui`. Problem markers plus `IImportDeclaration.delete` are public API and give a smaller diff than the clean-up would.
+
 ### `eclipse_organize_imports`
 
 **Modifies the file.**
