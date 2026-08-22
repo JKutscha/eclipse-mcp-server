@@ -289,6 +289,24 @@ The asymmetry is deliberate. Preferences span the whole `org.eclipse.*` key spac
 
 Auto-build is special cased. Setting `org.eclipse.core.resources` / `description.autobuilding` goes through `IWorkspaceDescription.setAutoBuilding` rather than writing the raw key, which is the usual way to get this subtly wrong, and the answer says so in `appliedThrough`.
 
+### `eclipse_analyze_dependencies`
+
+Compares what a plug-in declares in `Require-Bundle` and `Import-Package` with the bundles its source actually resolves against. Read-only. Takes `project` or `projects` and `maxResults`.
+
+| Field | Meaning |
+|---|---|
+| `declaredRequireBundle` | as written, with `reexported`, `optional`, `resolved` |
+| `actuallyUsed` | bundles supplying at least one type the source resolves against, with a count and a sample |
+| `unused` | declared, and nothing in the source resolves to them |
+| `viaReexport` | used, but only reachable because a declared bundle reexports them, with the chain |
+| `undeclared` | used and reachable neither directly nor through a reexport |
+
+`viaReexport` is the edit list a reexport cleanup needs: those entries have to be declared here before the reexport that supplies them can be dropped.
+
+Usage is computed from **resolved bindings, not import statements**: a fully qualified use has no import, and an import can outlive the last use of it.
+
+**`unused` is not a deletion instruction**, for the same reason `dead` is not in `eclipse_list_declarations`. A bundle can be needed for a class named in `plugin.xml`, an OSGi service, or a `Class.forName` that leaves no type reference. An optional or platform-filtered requirement that does not resolve on this machine is reported with `resolved: false` rather than judged.
+
 ### `eclipse_get_bundle_info`
 
 Reports OSGi bundles as PDE resolved them against the active target platform.
