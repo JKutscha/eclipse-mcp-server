@@ -177,6 +177,26 @@ class ListDeclarationsToolTest {
 	}
 
 	@Test
+	@SuppressWarnings("unchecked")
+	void ignoresARegistrationInsideBuildOutput() throws Exception {
+		fixtureProject();
+		IProject project = org.eclipse.core.resources.ResourcesPlugin.getWorkspace().getRoot().getProject(PROJECT);
+		project.getFolder("target").create(false, true, new NullProgressMonitor());
+		// a Tycho product build copies the whole application model into its output,
+		// and none of it is marked derived
+		write(project, "target/LegacyIDE.e4xmi", """
+				<application:Application xmlns:application="http://www.eclipse.org/ui/2010/UIModel/application">
+				  <addons contributionURI="bundleclass://registry.host/registry.Addon"/>
+				</application:Application>
+				""");
+		project.refreshLocal(IProject.DEPTH_INFINITE, new NullProgressMonitor());
+
+		List<Object> evidence = (List<Object>) declaration("registry.Addon").get("registryEvidence");
+
+		assertEquals(1, evidence.size(), "the copy under target must not count as a second position, got " + evidence);
+	}
+
+	@Test
 	void theApiTierSaysWhatAWorkspaceSearchCanProve() throws Exception {
 		fixtureProject();
 

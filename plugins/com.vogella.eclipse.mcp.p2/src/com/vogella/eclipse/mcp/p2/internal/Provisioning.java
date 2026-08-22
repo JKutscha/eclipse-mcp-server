@@ -315,6 +315,11 @@ final class Provisioning {
 	 */
 	static boolean widenToAllRepositories(IProvisioningAgent agent,
 			org.eclipse.equinox.p2.operations.ProfileChangeOperation operation, IProgressMonitor monitor) {
+		// the metadata was refreshed for the scoped repositories only, so the enabled
+		// ones, the composite among them, are still whatever p2 had cached. Widening
+		// the scope without widening the refresh reads the same stale answer from a
+		// bigger set: the composite's child list is exactly what has changed
+		describeRepositories(agent, true, null, monitor);
 		operation.setProvisioningContext(new ProvisioningContext(agent));
 		operation.resolveModal(monitor);
 		return true;

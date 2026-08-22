@@ -71,6 +71,9 @@ final class RegistryIndex {
 
 	private final Map<String, List<Evidence>> byName = new HashMap<>();
 
+	/** Physical location plus position per name, so nested projects count once. */
+	private final Map<String, java.util.Set<String>> seen = new HashMap<>();
+
 	private final Map<String, IFile> schemaFiles = new HashMap<>();
 
 	/** Point id to element name to attribute name to basedOn. Absent means unread. */
@@ -166,9 +169,44 @@ final class RegistryIndex {
 	}
 
 	private void add(String name, Evidence evidence) {
-		if (name != null && !name.isBlank() && name.indexOf('.') > 0) {
-			byName.computeIfAbsent(name.trim(), key -> new ArrayList<>()).add(evidence);
+		if (name == null || name.isBlank() || name.indexOf('.') <= 0) {
+			return;
 		}
+		IResource resource = ResourcesPlugin.getWorkspace().getRoot().findMember(evidence.file());
+		if (resource instanceof IFile file && isBuildOutput(file)) {
+			// a Tycho product build copies every plugin.xml and .e4xmi of the platform
+			// into its output, and none of it is marked derived
+			return;
+		}
+		// one file on disk is one position however many nested projects contain it.
+		// In a platform workspace the aggregator, the repository, a bundles project
+		// and the bundle itself all hold the same fragment.e4xmi, and reporting "68
+		// registry positions" for four real ones makes a refusal read as certainty
+		String key = (resource == null || resource.getLocation() == null ? evidence.file()
+				: resource.getLocation().toString()) + "|" + evidence.position(); //$NON-NLS-1$
+		if (!seen.computeIfAbsent(name.trim(), key0 -> new java.util.LinkedHashSet<>()).add(key)) {
+			return;
+		}
+		byName.computeIfAbsent(name.trim(), key0 -> new ArrayList<>()).add(evidence);
+	}
+
+	/**
+	 * Whether a file is build output rather than something a person wrote.
+	 * <p>
+	 * Maven and Tycho output is not marked derived, and a product build copies every
+	 * plugin.xml and .e4xmi of the platform into it, so an unfiltered index counts
+	 * fifty copies of one registration.
+	 */
+	private static boolean isBuildOutput(IFile file) {
+		if (file.isDerived(IResource.CHECK_ANCESTORS)) {
+			return true;
+		}
+		for (String segment : file.getFullPath().segments()) {
+			if ("target".equals(segment) || "bin".equals(segment)) { //$NON-NLS-1$ //$NON-NLS-2$
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// --- plugin.xml -------------------------------------------------------
