@@ -66,6 +66,40 @@ class FieldAccessSplitTest {
 	}
 
 	@Test
+	@SuppressWarnings("unchecked")
+	void marksTheDeclarationAmongWriteAccesses() throws Exception {
+		IJavaProject project = fixture.createJavaProject("mcp-declaration-mark-test");
+		TestFixture.addType(project, "example", "Holder", """
+				package example;
+				public class Holder {
+					public static long VALUE = 0;
+				}
+				""");
+		TestFixture.addType(project, "example", "Writer", """
+				package example;
+				public class Writer {
+					void assign() { Holder.VALUE = 1; }
+				}
+				""");
+		TestFixture.build(project.getProject());
+
+		Map<String, Object> result = TestFixture.callAndParse("eclipse_find_references",
+				Map.of("typeName", "example.Holder", "memberName", "VALUE", "accessKind", "write",
+						"project", "mcp-declaration-mark-test"));
+
+		// a WRITE_ACCESSES search reports the field's own initializer, which is a
+		// declaration and not an assignment. Separating them is what decides whether
+		// the field could be final
+		Map<String, Object> byKind = (Map<String, Object>) result.get("byKind");
+		assertEquals(Integer.valueOf(1), byKind.get("declaration"), "got " + result);
+		assertEquals(Integer.valueOf(1), byKind.get("write"), "got " + result);
+
+		long marked = ((List<Map<String, Object>>) result.get("matches")).stream()
+				.filter(match -> Boolean.TRUE.equals(match.get("declaration"))).count();
+		assertEquals(1L, marked, "exactly the declaration should carry the flag, got " + result);
+	}
+
+	@Test
 	void reportsAFieldThatIsOnlyEverWritten() throws Exception {
 		Map<String, Object> result = find("writtenNeverRead", null);
 

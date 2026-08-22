@@ -68,9 +68,17 @@ public final class UpdateTool implements IMcpTool {
 		operation.setProvisioningContext(Provisioning.scope(agent, locations));
 		IStatus resolution = operation.resolveModal(monitor);
 		Update[] possible = operation.getPossibleUpdates();
+		boolean widened = false;
+		if (locations != null && (possible == null || possible.length == 0)) {
+			// the scope was the repositories holding the installed version, and an
+			// update lives somewhere else by definition
+			widened = Provisioning.widenToAllRepositories(agent, operation, monitor);
+			possible = operation.getPossibleUpdates();
+		}
 		if (possible == null || possible.length == 0) {
 			return McpToolResult.of(Provisioning
-					.record("update", "done", "Nothing to update; everything installed is already current.", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+					.record("update", "done", //$NON-NLS-1$ //$NON-NLS-2$
+							"Nothing to update; everything installed is already current. Every enabled repository was searched, not only the one the installed version came from.", //$NON-NLS-1$
 							new JsonArray())
 					.toJson().toString());
 		}

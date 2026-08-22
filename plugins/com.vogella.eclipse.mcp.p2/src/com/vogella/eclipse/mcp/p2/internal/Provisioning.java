@@ -302,6 +302,24 @@ final class Provisioning {
 	 * IDE with a dozen of them pays a network round trip for each, and a targeted
 	 * check only ever needed one.
 	 */
+	/**
+	 * Retries an operation against every enabled repository.
+	 * <p>
+	 * Scoping to the repositories that can supply a unit finds where the INSTALLED
+	 * version lives, and an update is by definition somewhere else: with a composite
+	 * whose child location changes per release, the child the current version came
+	 * from is exactly the one that will never hold a newer one. So a scoped
+	 * resolution finding nothing is not an answer, it is a reason to look properly.
+	 *
+	 * @return whether the retry was needed
+	 */
+	static boolean widenToAllRepositories(IProvisioningAgent agent,
+			org.eclipse.equinox.p2.operations.ProfileChangeOperation operation, IProgressMonitor monitor) {
+		operation.setProvisioningContext(new ProvisioningContext(agent));
+		operation.resolveModal(monitor);
+		return true;
+	}
+
 	static URI[] sourcesFor(IProvisioningAgent agent,
 			java.util.Collection<org.eclipse.equinox.p2.metadata.IInstallableUnit> units, IProgressMonitor monitor) {
 		if (units.isEmpty()) {

@@ -298,6 +298,16 @@ Shipped without a guard it dropped every `ui.workbench=split;mandatory:="ui.work
 `unsupported` parses the existing headers with `ManifestElement.parseHeader` and refuses when any attribute or directive outside `version`, `x-internal`, `x-friends`, `bundle-version`, `visibility` and `resolution` is present.
 That includes `uses:`, so most platform bundles are refused. Refusing is correct: this tool cannot safely edit a manifest it cannot faithfully rewrite, and the failure is silent corruption rather than an error.
 
+**Scoping an update to "where this unit came from" cannot find an update.**
+`getInstallableUnitSources` answers where the INSTALLED version lives, and a new version is published somewhere else by definition.
+With a composite whose child location changes per release, the child the current version came from is exactly the one that will never hold a newer one, so a scoped check reported "no updates" while the composite had one.
+`widenToAllRepositories` retries against every enabled repository when the scoped resolution finds nothing, and the answer says it did.
+Do not remove the scoped attempt; it is still the cheap path when the unit has not moved. Do not trust it alone either.
+
+**Two spellings of one key is how a lookup silently matches nothing.**
+`FindReferencesTool.declarationsOf` built `path + "@" + offset` while `locationOf` built `path + ':' + offset`, so the declaration flag was computed, reported and never once true.
+The build was green and the field simply never appeared. Both now go through one `locationOf(IResource, int)`, and `marksTheDeclarationAmongWriteAccesses` covers it.
+
 **Require-Bundle dependents are not consumers of a package.**
 The first version of the export-removal guard counted every bundle that requires the exporter, which on a platform bundle is dozens and refused almost every removal.
 `importedBy` is exact and blocks; `mightAlsoUseIt` lists the Require-Bundle dependents, says they may or may not use the package, and does not block.

@@ -64,6 +64,13 @@ public final class CheckForUpdatesTool implements IMcpTool {
 		JsonObject result = new JsonObject().put("resolution", status.isOK() ? "ok" : status.getMessage()); //$NON-NLS-1$ //$NON-NLS-2$
 		JsonArray updates = new JsonArray();
 		Update[] possible = operation.getPossibleUpdates();
+		boolean widened = false;
+		if (locations != null && (possible == null || possible.length == 0)) {
+			// the scope was the repositories holding the installed version, and an
+			// update lives somewhere else by definition
+			widened = Provisioning.widenToAllRepositories(agent, operation, monitor);
+			possible = operation.getPossibleUpdates();
+		}
 		if (possible != null) {
 			for (Update update : possible) {
 				updates.add(new JsonObject().put("unit", update.toUpdate.getId()) //$NON-NLS-1$
@@ -73,7 +80,12 @@ public final class CheckForUpdatesTool implements IMcpTool {
 			}
 		}
 		result.put("metadataRefreshed", refresh) //$NON-NLS-1$
-				.put("scopedToUnits", unitIds.isEmpty() ? null : String.join(", ", unitIds)); //$NON-NLS-1$ //$NON-NLS-2$
+				.put("scopedToUnits", unitIds.isEmpty() ? null : String.join(", ", unitIds)) //$NON-NLS-1$
+				.put("widenedToAllRepositories", Boolean.valueOf(widened)); //$NON-NLS-1$
+		if (widened) {
+			result.put("scopeNote", //$NON-NLS-1$
+					"Scoping to the repositories that can supply the named units found nothing, so every enabled repository was searched instead. That scope is where the INSTALLED version lives, and an update is published somewhere else: with a composite whose child location changes per release, the child the current version came from is the one that will never hold a newer one."); //$NON-NLS-1$
+		}
 		if (updates.size() == 0 && !refresh) {
 			result.put("caveat", //$NON-NLS-1$
 					"Nothing was found, but the repository metadata was read from p2's cache rather than from the network, so a newly published build would not be visible. Run again with refresh true before concluding that this IDE is current."); //$NON-NLS-1$

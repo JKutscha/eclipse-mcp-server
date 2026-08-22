@@ -243,7 +243,9 @@ public final class FindReferencesTool implements IMcpTool {
 				org.eclipse.jdt.core.ISourceRange range = field.getNameRange();
 				IResource resource = field.getResource();
 				if (range != null && resource != null) {
-					locations.add(resource.getFullPath() + "@" + range.getOffset()); //$NON-NLS-1$
+					// the same format locationOf produces, because two spellings of one
+					// key is how this silently never matched anything
+					locations.add(locationOf(resource, range.getOffset()));
 				}
 			} catch (org.eclipse.jdt.core.JavaModelException e) {
 				// a field whose range cannot be read simply is not recognised as a
@@ -258,8 +260,11 @@ public final class FindReferencesTool implements IMcpTool {
 	}
 
 	private static String locationOf(SearchMatch match) {
-		IResource resource = match.getResource();
-		return (resource == null ? "?" : resource.getFullPath().toString()) + ':' + match.getOffset(); //$NON-NLS-1$
+		return locationOf(match.getResource(), match.getOffset());
+	}
+
+	private static String locationOf(IResource resource, int offset) {
+		return (resource == null ? "?" : resource.getFullPath().toString()) + ':' + offset; //$NON-NLS-1$
 	}
 
 	private List<SearchMatch> search(SearchPattern pattern, IJavaSearchScope scope, IProgressMonitor monitor,
