@@ -14,6 +14,8 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaProject;
+import org.eclipse.jdt.core.IMember;
+import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.IJavaSearchScope;
@@ -47,7 +49,7 @@ public final class DeleteTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Deletes the source file declaring a Java type, as the last step of a dead code sweep. DELETES A FILE FROM THE WORKSPACE, and runs as a dry run unless dryRun is set to false. It refuses, unless force is passed, when anything still references the type, when a registry position names it, or when its package is exported as public API, and it reports all three either way. It counts an e4 application model as a registry position: a class named by a bundleclass:// URI in a .e4xmi is instantiated by the workbench at every start and referenced from no Java, so it looks dead and is not. READ THIS LIMITATION: the deletion goes through LTK as a resource delete, and PDE's manifest participants are enabled on IType rather than on IResource, so plugin.xml class attributes and Export-Package are NOT updated. Whatever registryEvidence the answer reports is what will be left dangling and has to be fixed by hand. Use eclipse_list_declarations to find candidates and eclipse_find_references to confirm them."; //$NON-NLS-1$
+		return "Deletes a Java type's source file, or with memberName a single field, method or nested type, as the last step of a dead code sweep. A member is removed through the Java model, so its javadoc goes with it rather than being left behind describing something that no longer exists. DELETES A FILE FROM THE WORKSPACE, and runs as a dry run unless dryRun is set to false. It refuses, unless force is passed, when anything still references the type, when a registry position names it, or when its package is exported as public API, and it reports all three either way. It counts an e4 application model as a registry position: a class named by a bundleclass:// URI in a .e4xmi is instantiated by the workbench at every start and referenced from no Java, so it looks dead and is not. READ THIS LIMITATION: the deletion goes through LTK as a resource delete, and PDE's manifest participants are enabled on IType rather than on IResource, so plugin.xml class attributes and Export-Package are NOT updated. Whatever registryEvidence the answer reports is what will be left dangling and has to be fixed by hand. Use eclipse_list_declarations to find candidates and eclipse_find_references to confirm them."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -57,7 +59,8 @@ public final class DeleteTool implements IMcpTool {
 				  "type": "object",
 				  "required": ["typeName"],
 				  "properties": {
-				    "typeName": {"type":"string","description":"Fully qualified name of the type whose file to delete."},
+				    "typeName": {"type":"string","description":"Fully qualified name of the type. Without memberName its whole source file is deleted."},
+				    "memberName": {"type":"string","description":"A field, method or nested type to delete instead of the file. Its javadoc goes with it. An overloaded method name is refused, since this tool cannot tell which one you mean."},
 				    "project":  {"type":"string","description":"Project to resolve the name in. Omit to search every Java project."},
 				    "dryRun":   {"type":"boolean","default":true,"description":"Report what would happen and change nothing."},
 				    "force":    {"type":"boolean","default":false,"description":"Delete despite references, a registry position, or a public API package."}
@@ -73,6 +76,7 @@ public final class DeleteTool implements IMcpTool {
 		if (typeName == null) {
 			return McpToolResult.error("The argument 'typeName' is required."); //$NON-NLS-1$
 		}
+		String memberName = args.getString("memberName"); //$NON-NLS-1$
 		boolean dryRun = args.getBoolean("dryRun", true); //$NON-NLS-1$
 		boolean force = args.getBoolean("force", false); //$NON-NLS-1$
 		IProgressMonitor progress = monitor == null ? new NullProgressMonitor() : monitor;
@@ -88,6 +92,9 @@ public final class DeleteTool implements IMcpTool {
 		if (type.isBinary() || type.getCompilationUnit() == null) {
 			return McpToolResult.error(
 					"'%s' is a binary type, so there is no source file here to delete.".formatted(typeName)); //$NON-NLS-1$
+		}
+		if (memberName != null) {
+			return deleteMember(type, memberName, dryRun, force, progress);
 		}
 		ICompilationUnit unit = type.getCompilationUnit();
 		IResource resource = unit.getResource();
@@ -124,7 +131,7 @@ public final class DeleteTool implements IMcpTool {
 		List<RegistryIndex.Evidence> evidence = index.evidenceFor(type.getFullyQualifiedName());
 		PackageExports.Export export = new PackageExports().of(type.getJavaProject().getProject(),
 				type.getPackageFragment().getElementName());
-		int references = countReferences(type, progress);
+		int references = countReferences(type, true, progress);
 
 		JsonArray registry = new JsonArray();
 		for (RegistryIndex.Evidence one : evidence) {
@@ -206,8 +213,110 @@ public final class DeleteTool implements IMcpTool {
 		}
 	}
 
-	/** References to the type anywhere in the workspace, excluding its own file. */
-	private static int countReferences(IType type, IProgressMonitor monitor) throws McpToolException {
+	/**
+	 * Deletes one member, which is where about half the edits of a real sweep are.
+	 * <p>
+	 * Through the Java model rather than by editing text: {@code IMember.delete}
+	 * works on the element's source range, which includes its javadoc, so the
+	 * comment goes with the declaration instead of being left behind referring to
+	 * something that no longer exists.
+	 */
+	private McpToolResult deleteMember(IType type, String memberName, boolean dryRun, boolean force,
+			IProgressMonitor progress) throws McpToolException {
+		List<IMember> members;
+		try {
+			members = new ArrayList<>(JavaModelSupport.findMembers(type, memberName));
+			for (IType nested : type.getTypes()) {
+				if (nested.getElementName().equals(memberName)) {
+					members.add(nested);
+				}
+			}
+		} catch (ToolInputException e) {
+			return McpToolResult.error(e.getMessage());
+		} catch (CoreException e) {
+			throw new McpToolException("Could not read the members of " + type.getFullyQualifiedName(), e); //$NON-NLS-1$
+		}
+		if (members.isEmpty()) {
+			return McpToolResult.error("'%s' has no member named '%s'." //$NON-NLS-1$
+					.formatted(type.getFullyQualifiedName(), memberName));
+		}
+		if (members.size() > 1) {
+			return McpToolResult.error(
+					"'%s#%s' resolves to %d members, so this tool cannot tell which to delete. Overloaded methods have to be removed by hand." //$NON-NLS-1$
+							.formatted(type.getFullyQualifiedName(), memberName, Integer.valueOf(members.size())));
+		}
+		IMember member = members.get(0);
+		String name = type.getFullyQualifiedName() + "#" + memberName; //$NON-NLS-1$
+
+		RegistryIndex index = RegistryIndex.build(progress);
+		List<RegistryIndex.Evidence> evidence = index.evidenceFor(name);
+		PackageExports.Export export = new PackageExports().of(type.getJavaProject().getProject(),
+				type.getPackageFragment().getElementName());
+		// every reference counts here, including those in this same file: deleting a
+		// member leaves the file behind, so a use two lines below the declaration is a
+		// compile break exactly like one in another bundle
+		int references = countReferences(member, false, progress);
+		JsonArray registry = new JsonArray();
+		for (RegistryIndex.Evidence one : evidence) {
+			registry.add(new JsonObject().put("kind", one.kind()).put("file", one.file()) //$NON-NLS-1$ //$NON-NLS-2$
+					.put("xpathOrHeader", one.position())); //$NON-NLS-1$
+		}
+		int flags;
+		try {
+			flags = member.getFlags();
+		} catch (JavaModelException e) {
+			throw new McpToolException("Could not read the modifiers of " + name, e); //$NON-NLS-1$
+		}
+		JsonObject result = new JsonObject().put("type", type.getFullyQualifiedName()) //$NON-NLS-1$
+				.put("member", memberName) //$NON-NLS-1$
+				.put("kind", member instanceof IType ? "nested type" //$NON-NLS-1$ //$NON-NLS-2$
+						: member.getElementType() == org.eclipse.jdt.core.IJavaElement.FIELD ? "field" : "method") //$NON-NLS-1$ //$NON-NLS-2$
+				.put("file", type.getResource() == null ? null : type.getResource().getFullPath().toString()) //$NON-NLS-1$
+				.put("dryRun", Boolean.valueOf(dryRun)) //$NON-NLS-1$
+				.put("references", Integer.valueOf(references)) //$NON-NLS-1$
+				.put("registryEvidence", registry) //$NON-NLS-1$
+				.put("apiTier", export.tier()); //$NON-NLS-1$
+
+		List<String> blockers = new ArrayList<>();
+		if (references > 0) {
+			blockers.add("%d reference(s) to it remain".formatted(Integer.valueOf(references)));
+		}
+		if (registry.size() > 0) {
+			blockers.add("%d registry position(s) name it, and those fail at runtime rather than at compile time"
+					.formatted(Integer.valueOf(registry.size())));
+		}
+		if (PackageExports.PUBLIC.equals(export.tier()) && !org.eclipse.jdt.core.Flags.isPrivate(flags)) {
+			// a private member of a public type is nobody else's business; anything
+			// visible in a plainly exported package can have consumers no search here
+			// can see
+			blockers.add("it is visible outside its own class in a package exported as public API");
+		}
+		if (!blockers.isEmpty() && !force) {
+			return McpToolResult.of(result.put("deleted", Boolean.FALSE) //$NON-NLS-1$
+					.put("refusedBecause", String.join("; ", blockers) + ". Pass force to delete it anyway.") //$NON-NLS-1$ //$NON-NLS-2$
+					.toString());
+		}
+		if (dryRun) {
+			return McpToolResult.of(result.put("deleted", Boolean.FALSE) //$NON-NLS-1$
+					.put("note", "Nothing was changed. Pass dryRun false to delete it.").toString()); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		try {
+			member.delete(force, progress);
+		} catch (JavaModelException e) {
+			throw new McpToolException("Could not delete " + name, e); //$NON-NLS-1$
+		}
+		return McpToolResult.of(result.put("deleted", Boolean.TRUE).toString()); //$NON-NLS-1$
+	}
+
+	/**
+	 * References anywhere in the workspace.
+	 *
+	 * @param wholeFileGoesAway excludes the declaring file, which is right when the
+	 *                          file is what is being deleted and wrong for a member,
+	 *                          whose own file keeps compiling around it
+	 */
+	private static int countReferences(IMember type, boolean wholeFileGoesAway, IProgressMonitor monitor)
+			throws McpToolException {
 		SearchPattern pattern = SearchPattern.createPattern(type, IJavaSearchConstants.REFERENCES);
 		if (pattern == null) {
 			return 0;
@@ -220,13 +329,13 @@ public final class DeleteTool implements IMcpTool {
 					scope, new SearchRequestor() {
 						@Override
 						public void acceptSearchMatch(SearchMatch match) {
-							if (own == null || !own.equals(match.getResource())) {
+							if (!wholeFileGoesAway || own == null || !own.equals(match.getResource())) {
 								count[0]++;
 							}
 						}
 					}, monitor);
 		} catch (CoreException e) {
-			throw new McpToolException("Could not search for references to " + type.getFullyQualifiedName(), e); //$NON-NLS-1$
+			throw new McpToolException("Could not search for references to " + type.getElementName(), e); //$NON-NLS-1$
 		}
 		return count[0];
 	}

@@ -669,14 +669,17 @@ Use it to turn a simple name into a fully qualified one.
 
 | Argument | Type | Default | Meaning |
 |---|---|---|---|
-| `typeName` | string, required | | Fully qualified name of the type whose file to delete. |
+| `typeName` | string, required | | Fully qualified name of the type. Without `memberName`, its whole file is deleted. |
+| `memberName` | string | | A field, method or nested type to delete instead of the file. |
 | `project` | string | every Java project | Project to resolve the name in. |
 | `dryRun` | boolean | `true` | |
 | `force` | boolean | `false` | Delete despite references, a registry position, or a public API package. |
 
 The last step of a dead code sweep, after `eclipse_list_declarations` finds candidates and `eclipse_find_references` confirms them. It reports `references`, `registryEvidence` and `apiTier` on every call, and **refuses unless `force`** when any of the three says the type is still wanted: references remaining make a deletion a compile break rather than a cleanup, a registry position fails at runtime instead of at compile time, and a public API package can have consumers no search here can see.
 
-A file declaring more than one top level type is refused outright. This tool deletes files, not declarations.
+A file declaring more than one top level type is refused outright when deleting a file.
+
+**With `memberName` it deletes one member instead**, which is about half the edits of a real sweep: dead constants, private fields, unused methods, nested types. It goes through `IMember.delete`, whose source range includes the javadoc, so the comment goes with the declaration rather than being left behind describing something that no longer exists. An overloaded method name is refused, since the tool cannot tell which one you mean. References in the *same file* count here, unlike a file delete: the file keeps compiling around the hole.
 
 **Read this limitation.** The deletion goes through LTK as a *resource* delete, and PDE's manifest participants are enabled on `IType` and `IPackageFragment` rather than on `IResource`, so **`plugin.xml` class attributes and `Export-Package` are not updated.** Whatever `registryEvidence` the answer reports is what will be left naming a class that no longer exists, and `danglingAfterDelete` says so on any call that would go through. The reason it works this way is that JDT's own delete refactoring, the one PDE's participants are written for, has no usable public API: `DeleteDescriptor` carries no setters and its processor is internal to `org.eclipse.jdt.ui`.
 
