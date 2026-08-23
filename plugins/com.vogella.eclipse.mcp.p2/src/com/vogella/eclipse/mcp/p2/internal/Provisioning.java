@@ -232,8 +232,6 @@ final class Provisioning {
 	 */
 	private static JsonArray describe(IProvisioningAgent agent, boolean refresh, List<URI> locations,
 			IProgressMonitor monitor) {
-		// the metadata manager only. An update check never reads artifact metadata, and
-		// refreshing both is what makes a check cost twice what it needs to
 		IMetadataRepositoryManager manager = agent.getService(IMetadataRepositoryManager.class);
 		JsonArray reported = new JsonArray();
 		if (manager == null) {
@@ -244,6 +242,7 @@ final class Provisioning {
 			if (refresh) {
 				try {
 					manager.refreshRepository(uri, monitor);
+					refreshArtifacts(agent, uri, monitor);
 					entry.put("refreshed", Boolean.TRUE); //$NON-NLS-1$
 				} catch (org.eclipse.equinox.p2.core.ProvisionException | OperationCanceledException e) {
 					entry.put("refreshed", Boolean.FALSE).put("error", e.getMessage()); //$NON-NLS-1$ //$NON-NLS-2$
@@ -346,6 +345,29 @@ final class Provisioning {
 			context.setMetadataRepositories(locations);
 		}
 		return context;
+	}
+
+	/**
+	 * Refreshes the artifact side of a repository as well as its metadata.
+	 * <p>
+	 * Skipping this looks like a saving, and it is not. A composite site whose
+	 * release replaces the child rather than adding one leaves the cached artifact
+	 * composite pointing at a directory that no longer exists, while the metadata
+	 * refresh happily reports the new version. The update then resolves and fails in
+	 * the download phase with "No repository found containing", which names neither
+	 * the cache nor the site.
+	 */
+	private static void refreshArtifacts(IProvisioningAgent agent, URI uri, IProgressMonitor monitor) {
+		var artifacts = agent.getService(org.eclipse.equinox.p2.repository.artifact.IArtifactRepositoryManager.class);
+		if (artifacts == null || !artifacts.contains(uri)) {
+			return;
+		}
+		try {
+			artifacts.refreshRepository(uri, monitor);
+		} catch (org.eclipse.equinox.p2.core.ProvisionException | OperationCanceledException e) {
+			// a site with no artifact repository of its own is normal, and the
+			// metadata refresh above is what the caller asked about
+		}
 	}
 
 	/** Refreshes just {@code locations}, or every configured repository when null. */
