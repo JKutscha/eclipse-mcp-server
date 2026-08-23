@@ -28,6 +28,15 @@ public final class McpPreferences {
 	 */
 	public static final String KEY_REPOSITORY_ROOTS = "repositoryRoots"; //$NON-NLS-1$
 
+	/**
+	 * Directories a client may run commands in, one per line.
+	 * <p>
+	 * Empty by default, which switches the command tools off. Running a command is
+	 * the one thing this server does that is not the IDE acting on itself, and it
+	 * can do anything the user can.
+	 */
+	public static final String KEY_COMMAND_ROOTS = "commandRoots"; //$NON-NLS-1$
+
 	/** A process that listens on a socket and answers questions about the user's code must be opt-in. */
 	public static final boolean DEFAULT_ENABLED = false;
 

@@ -8,8 +8,8 @@ An agent with a shell already has files, grep and git.
 What it does not have is the resolved Java model, the incremental builder's problem markers and the user's current editor context.
 Those are the capabilities exposed here.
 
-Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration within an allowlist, `eclipse_set_project_state` opens and closes projects, `eclipse_set_bree` rewrites plug-in manifests, and `eclipse_add_repository` and `eclipse_remove_repository` change the configured update sites within an allowlist that is empty by default.
-There is no general file writing, no refactoring, no terminal and no debugger control.
+Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration within an allowlist, `eclipse_set_project_state` opens and closes projects, `eclipse_set_bree` rewrites plug-in manifests, `eclipse_add_repository` and `eclipse_remove_repository` change the configured update sites within an allowlist that is empty by default, and `eclipse_run_command` runs arbitrary commands in directories that same preference page has to name first.
+There is no general file writing, no refactoring and no debugger control, and commands run only in directories the user has named.
 The server is **disabled by default**, listens on the loopback interface only, and rejects every request that does not carry a bearer token.
 
 ## Building
@@ -58,6 +58,7 @@ Pushing a `v<version>` tag runs the same workflow and additionally creates the G
 * **Port**, `8642` by default
 * **Tool call timeout**, `30` seconds by default, between 5 and 3600
 * **Allowed p2 repository roots**, empty by default, one URL prefix per line. Only under one of these may a client add an update site with `eclipse_add_repository`.
+* **Directories commands may run in**, empty by default, one path per line. Empty switches `eclipse_run_command` off entirely.
 
 The setting takes effect immediately, and the server also starts on the next IDE startup while it stays enabled.
 
@@ -584,6 +585,34 @@ This is the one thing a text search cannot approximate: a field written in four 
 Two details that matter if you act on the numbers.
 A field initializer is a write access but a declaration rather than a reference, so it is counted in `byKind` while being absent from `total` and from `matches`; the counts need not sum.
 And `read` or `write` on a type or a method is an error rather than an empty answer, because only fields are read and written.
+
+### `eclipse_run_command` and `eclipse_get_command_output`
+
+**Runs arbitrary code**, with the rights of the user running the IDE.
+This is the one tool here that is not the IDE acting on itself, and it exists because a build that produces a p2 repository, a Maven or Tycho run, is otherwise out of reach: with it the chain becomes build, `eclipse_add_repository`, `eclipse_install`, `eclipse_restart`.
+
+**It is off** until the person at the IDE lists the directories commands may run in, under *Preferences > General > MCP Server*. That field is empty by default, and a working directory outside it is refused.
+Paths are compared after resolving symbolic links, so neither `../` nor a link pointing out of an allowed tree gets past it.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `directory` | string, required | | Absolute working directory, under an allowed root. |
+| `command` | string | | Command line, run through the shell. |
+| `args` | array of string | | Command and arguments one by one, no shell. Wins over `command`. |
+| `environment` | object | | Extra variables, merged over the IDE's own. |
+| `wait` | boolean | `false` | Wait instead of returning a handle. |
+
+A build takes minutes and the call timeout is 30 seconds, so this runs as a job and hands back a `commandId` to poll, the same shape as `eclipse_build` and `eclipse_install`.
+
+```json
+{"commandId":"command-1","command":["/bin/sh","-c","mvn clean verify"],
+ "directory":"/home/me/git/themes","state":"failed","exitCode":1,
+ "elapsedMillis":184213,"droppedLines":0,"output":"[ERROR] ..."}
+```
+
+stdout and stderr are merged, because whoever reads a build log wants the failure in the same stream as the step that led to it.
+The last 2000 lines are kept and `droppedLines` says how many fell out, since a Tycho log is long and the useful part is at the end.
+`eclipse_get_command_output` takes `tailLines` to see further back, `wait` to block, and `cancel` to stop a run, which ends the process and everything it started.
 
 ### `eclipse_add_repository` and `eclipse_remove_repository`
 

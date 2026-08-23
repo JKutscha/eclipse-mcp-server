@@ -73,6 +73,10 @@ class McpServerServiceTest {
 	@BeforeAll
 	static void startServer() throws Exception {
 		InstanceScope.INSTANCE.getNode(McpPreferences.QUALIFIER).putInt(McpPreferences.KEY_PORT, TEST_PORT);
+		// the command tools are off until a directory is allowed, so the smoke test
+		// allows a temporary one rather than asserting that every tool refuses
+		InstanceScope.INSTANCE.getNode(McpPreferences.QUALIFIER).put(McpPreferences.KEY_COMMAND_ROOTS,
+				System.getProperty("java.io.tmpdir"));
 		McpServerService.getInstance().start();
 		assertNotNull(endpoint(), "The server did not report an endpoint");
 		createSampleProject();
@@ -130,6 +134,7 @@ class McpServerServiceTest {
 		}
 		McpServerService.getInstance().stop();
 		InstanceScope.INSTANCE.getNode(McpPreferences.QUALIFIER).remove(McpPreferences.KEY_PORT);
+		InstanceScope.INSTANCE.getNode(McpPreferences.QUALIFIER).remove(McpPreferences.KEY_COMMAND_ROOTS);
 		InstanceScope.INSTANCE.getNode(McpPreferences.QUALIFIER).flush();
 	}
 
@@ -282,6 +287,9 @@ class McpServerServiceTest {
 		case "eclipse_set_project_state" -> Map.of("state", "open", "namePattern", "no-such-project-*");
 		case "eclipse_organize_imports", "eclipse_format" -> Map.of("path", SAMPLE);
 		case "eclipse_read_file" -> Map.of("path", SAMPLE);
+		// a command that does nothing, in the temporary directory the setup allows
+		case "eclipse_run_command" -> Map.of("args", List.of("true"), "directory",
+				System.getProperty("java.io.tmpdir"), "wait", Boolean.TRUE);
 		// a dry run, so the smoke test writes nothing
 		case "eclipse_write_file" -> Map.of("path", "/%s/written.txt".formatted(PROJECT), "content", "smoke\n",
 				"dryRun", Boolean.TRUE);

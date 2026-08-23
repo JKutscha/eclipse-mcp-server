@@ -76,6 +76,8 @@ public class McpPreferencePage extends FieldEditorPreferencePage implements IWor
 		addField(timeout);
 		addField(new MultiLineStringFieldEditor(McpPreferences.KEY_REPOSITORY_ROOTS,
 				"Allowed p2 &repository roots (one URL prefix per line):", getFieldEditorParent()));
+		addField(new MultiLineStringFieldEditor(McpPreferences.KEY_COMMAND_ROOTS,
+				"Directories &commands may run in (one path per line, empty disables):", getFieldEditorParent()));
 	}
 
 	@Override
