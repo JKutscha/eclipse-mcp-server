@@ -288,6 +288,12 @@ final class JavaModelSupport {
 		};
 	}
 
+	/** The member's own signature, e.g. {@code loadBySize(String, int, int)}. */
+	static String signatureOf(IMember member) {
+		return member instanceof IMethod method ? method.getElementName() + parameters(method)
+				: member.getElementName();
+	}
+
 	private static String qualify(IMember member) {
 		IType declaringType = member.getDeclaringType();
 		if (declaringType == null) {

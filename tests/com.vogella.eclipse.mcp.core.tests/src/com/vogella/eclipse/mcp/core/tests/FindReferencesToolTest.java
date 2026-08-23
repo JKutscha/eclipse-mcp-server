@@ -57,6 +57,77 @@ class FindReferencesToolTest {
 	}
 
 	@Test
+	@SuppressWarnings("unchecked")
+	void separatesTheOverloadsOfAMethod() throws Exception {
+		IJavaProject project = fixture.createJavaProject(PROJECT);
+		TestFixture.addType(project, "example", "Loader", """
+				package example;
+				public class Loader {
+					public static boolean load(String name) { return true; }
+					public static boolean load(int size) { return false; }
+				}
+				""");
+		TestFixture.addType(project, "example", "Caller", """
+				package example;
+				public class Caller {
+					boolean a() { return Loader.load("x"); }
+					boolean b() { return Loader.load("y"); }
+					boolean c() { return Loader.load(3); }
+				}
+				""");
+		TestFixture.build(project.getProject());
+
+		Map<String, Object> merged = TestFixture.callAndParse("eclipse_find_references",
+				Map.of("project", PROJECT, "typeName", "example.Loader", "memberName", "load"));
+		assertEquals(Integer.valueOf(3), merged.get("total"), "got " + merged);
+		List<Map<String, Object>> byMember = (List<Map<String, Object>>) merged.get("byMember");
+		assertEquals(2, byMember.size(), "one entry per overload, got " + byMember);
+		Map<Object, Object> counts = byMember.stream()
+				.collect(java.util.stream.Collectors.toMap(entry -> entry.get("signature"), entry -> entry.get("total")));
+		assertEquals(Integer.valueOf(2), counts.get("load(String)"), "got " + counts);
+		assertEquals(Integer.valueOf(1), counts.get("load(int)"), "got " + counts);
+		List<Map<String, Object>> matches = (List<Map<String, Object>>) merged.get("matches");
+		assertTrue(matches.stream().allMatch(match -> match.get("signature") != null), "got " + matches);
+
+		// paramTypes narrows to the one overload, which is what a dead code sweep needs
+		Map<String, Object> narrowed = TestFixture.callAndParse("eclipse_find_references", Map.of("project", PROJECT,
+				"typeName", "example.Loader", "memberName", "load", "paramTypes", List.of("int")));
+		assertEquals(Integer.valueOf(1), narrowed.get("total"), "got " + narrowed);
+		assertEquals("example.Loader#load(int)", narrowed.get("resolved"), "got " + narrowed);
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void countsOneOverloadPerQuery() throws Exception {
+		IJavaProject project = fixture.createJavaProject("mcp-overload-batch-test");
+		TestFixture.addType(project, "example", "Loader", """
+				package example;
+				public class Loader {
+					public static boolean load(String name) { return true; }
+					public static boolean load(int size) { return false; }
+				}
+				""");
+		TestFixture.addType(project, "example", "Caller", """
+				package example;
+				public class Caller {
+					boolean a() { return Loader.load("x"); }
+				}
+				""");
+		TestFixture.build(project.getProject());
+
+		Map<String, Object> result = TestFixture.callAndParse("eclipse_find_references",
+				Map.of("project", "mcp-overload-batch-test", "queries",
+						List.of(Map.of("typeName", "example.Loader", "memberName", "load", "paramTypes",
+								List.of("java.lang.String")),
+								Map.of("typeName", "example.Loader", "memberName", "load", "paramTypes",
+										List.of("int")))));
+
+		List<Map<String, Object>> results = (List<Map<String, Object>>) result.get("results");
+		assertEquals(Integer.valueOf(1), results.get(0).get("total"), "got " + results.get(0));
+		assertEquals(Integer.valueOf(0), results.get(1).get("total"), "the int overload is dead, got " + results.get(1));
+	}
+
+	@Test
 	void resolvesASecondaryType() throws Exception {
 		IJavaProject project = fixture.createJavaProject("mcp-secondary-type-test");
 		// a package-private type declared in a file named after a different type.
