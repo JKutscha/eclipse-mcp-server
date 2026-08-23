@@ -59,7 +59,8 @@ class McpServerServiceTest {
 
 	private static final String SAMPLE = "/%s/src/example/Sample.java".formatted(PROJECT);
 
-	private static final Set<String> WRITES_FILES = Set.of("eclipse_organize_imports", "eclipse_format");
+	private static final Set<String> WRITES_FILES = Set.of("eclipse_organize_imports", "eclipse_format",
+			"eclipse_write_file");
 
 	/** A target whose only location is an empty directory, so resolving it needs no network. */
 	private static final String TARGET = "/%s/smoke.target".formatted(PROJECT);
@@ -221,8 +222,12 @@ class McpServerServiceTest {
 		try (McpSyncClient client = connect()) {
 			client.initialize();
 			for (String name : WRITES_FILES) {
-				CallToolResult result = client
-						.callTool(new CallToolRequest(name, Map.of("path", "/no-such-project/src/Nothing.java")));
+				// content only where the schema has it: an unknown argument would be
+				// refused by the validator, and the refusal under test is the tool's
+				Map<String, Object> arguments = "eclipse_write_file".equals(name)
+						? Map.of("path", "/no-such-project/src/Nothing.java", "content", "nothing")
+						: Map.of("path", "/no-such-project/src/Nothing.java");
+				CallToolResult result = client.callTool(new CallToolRequest(name, arguments));
 				assertEquals(Boolean.TRUE, result.isError(), name + " should report a missing file as an error");
 				assertTrue(result.content().get(0) instanceof TextContent, name + " should explain itself in text");
 			}
@@ -277,6 +282,9 @@ class McpServerServiceTest {
 		case "eclipse_set_project_state" -> Map.of("state", "open", "namePattern", "no-such-project-*");
 		case "eclipse_organize_imports", "eclipse_format" -> Map.of("path", SAMPLE);
 		case "eclipse_read_file" -> Map.of("path", SAMPLE);
+		// a dry run, so the smoke test writes nothing
+		case "eclipse_write_file" -> Map.of("path", "/%s/written.txt".formatted(PROJECT), "content", "smoke\n",
+				"dryRun", Boolean.TRUE);
 		// resolveOnly against an empty directory: nothing is downloaded, and the
 		// target platform of the test IDE stays what it was
 		case "eclipse_set_target_platform" -> Map.of("file", TARGET, "resolveOnly", Boolean.TRUE, "timeoutSeconds", 60);

@@ -138,7 +138,7 @@ Sessions are carried in the `mcp-session-id` header, a `GET` opens the server-to
 
 Every tool returns a single text block containing pretty-printed JSON.
 Every list-returning tool honours `maxResults` and reports `total` and `truncated`, so the model can tell when it is seeing a partial answer.
-Read-only except the tools marked as changing something: `eclipse_organize_imports` and `eclipse_format` rewrite a file, `eclipse_build` runs builders, `eclipse_set_preference` writes configuration, `eclipse_set_project_state` opens and closes projects, and `eclipse_set_target_platform` replaces what every plug-in project compiles against.
+Read-only except the tools marked as changing something: `eclipse_organize_imports` and `eclipse_format` rewrite a file, `eclipse_build` runs builders, `eclipse_set_preference` writes configuration, `eclipse_set_project_state` opens and closes projects, `eclipse_write_file` creates and replaces files, and `eclipse_set_target_platform` replaces what every plug-in project compiles against.
 
 ### `eclipse_list_projects`
 
@@ -371,7 +371,7 @@ Starting a second load cancels the first, the way PDE itself does.
 The status is reported with its children rather than as a sentence, because a target that does not resolve fails in one location, and which repository was unreachable or which unit is missing is only in there.
 `resolveOnly` answers that question without touching the workspace, which is the difference between checking a `.target` file and committing to it.
 
-Note that the server has no tool that writes arbitrary files, so a client that wants to activate a target definition of its own has to write the `.target` file through its own file access, then call `eclipse_refresh` before naming it here.
+A client that wants to activate a target definition of its own can write the `.target` file with `eclipse_write_file` and name it here straight away, without a refresh in between.
 
 ### `eclipse_set_bree`
 
@@ -876,6 +876,35 @@ The file is read through the workspace, so it uses the encoding Eclipse has for 
 
 Binary files are reported as `binary` rather than returned as a mangled string.
 
+### `eclipse_write_file`
+
+**Writes a text file at a workspace path.**
+The counterpart of `eclipse_read_file`, and there for the same reason: a client is not always on the same machine as the IDE, so writing through its own shell is not always possible.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `path` | string, required | | Workspace path of the file. The first segment is a project that has to exist. |
+| `content` | string, required | | The complete text, or the text to add when `append` is true. |
+| `overwrite` | boolean | `false` | Replace the content of a file that already exists. |
+| `append` | boolean | `false` | Add to the end instead of replacing. Creates the file when it does not exist. |
+| `createParents` | boolean | `true` | Create the folders leading to the file. The project itself is never created. |
+| `charset` | string | the file's | Encoding to write with. On a new file an explicit charset is recorded on the resource. |
+| `dryRun` | boolean | `false` | Report what would be written without writing it. |
+
+```json
+{"path":"/app/src/com/example/Main.java","created":true,"appended":false,
+ "charset":"UTF-8","bytes":214,"createdFolders":["/app/src/com","/app/src/com/example"],"written":true}
+```
+
+Writing through the workspace rather than onto the disk is the point: the file gets the charset Eclipse has for it, the resource tree sees the change at once instead of at the next refresh, and the previous content goes into the local history, where *Compare With > Local History* recovers it.
+
+An existing file is refused unless `overwrite` is true, so a path that was meant to be new does not quietly replace something.
+An explicit `charset` is also written to the resource, because a file encoded as anything but its container's default decodes wrongly the next time something reads it.
+
+A file open in a dirty editor is written underneath that editor. Eclipse notices and marks the editor as out of date rather than losing anything, but the unsaved buffer still wins if the user then saves.
+
+For Java, follow the write with `eclipse_format`, so the result matches the project's conventions rather than the model's.
+
 ### `eclipse_search_text`
 
 Searches the text of workspace files, including the ones the Java model cannot see: `plugin.xml`, `.exsd`, `.project`, manifests, properties. Read-only.
@@ -1149,4 +1178,4 @@ The contract for an implementation:
 
 ## Not in this iteration
 
-General file writing, refactorings such as rename; debugger inspection; MCP resources and prompts; a stdio transport.
+Debugger inspection; MCP resources and prompts; a stdio transport.
