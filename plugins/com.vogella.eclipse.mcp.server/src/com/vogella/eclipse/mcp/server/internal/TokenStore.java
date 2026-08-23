@@ -58,10 +58,13 @@ public final class TokenStore {
 			return token;
 		}
 		// an IDE that already had a workspace token keeps it, so that a client
-		// registered before this moved to the user area is not silently orphaned
-		String inherited = read(workspaceLocation());
+		// registered before this moved to user scope is not silently orphaned
+		Path workspaceToken = workspaceLocation();
+		String inherited = read(workspaceToken);
 		if (inherited != null) {
-			return store(inherited, path);
+			String adopted = store(inherited, path);
+			retire(workspaceToken);
+			return adopted;
 		}
 		return regenerate();
 	}
@@ -69,6 +72,23 @@ public final class TokenStore {
 	/** Replaces the stored token and returns the new one. */
 	public static synchronized String regenerate() {
 		return store(UUID.randomUUID().toString(), location());
+	}
+
+	/**
+	 * Renames the adopted workspace token out of the way.
+	 * <p>
+	 * A file still called {@code token}, owner-only, sitting beside the live
+	 * endpoint.json and holding a value the server no longer uses is a trap for
+	 * whoever reads it while diagnosing: it looks exactly like current state. It is
+	 * renamed rather than deleted so the previous value can still be recovered.
+	 */
+	private static void retire(Path path) {
+		try {
+			Files.move(path, path.resolveSibling(FILE_NAME + ".migrated"), //$NON-NLS-1$
+					java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+		} catch (IOException e) {
+			ILog.get().warn("Could not rename the migrated workspace token %s".formatted(path), e); //$NON-NLS-1$
+		}
 	}
 
 	private static String read(Path path) {
