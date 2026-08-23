@@ -8,7 +8,7 @@ An agent with a shell already has files, grep and git.
 What it does not have is the resolved Java model, the incremental builder's problem markers and the user's current editor context.
 Those are the capabilities exposed here.
 
-Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration within an allowlist, `eclipse_set_project_state` opens and closes projects, and `eclipse_set_bree` rewrites plug-in manifests.
+Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration within an allowlist, `eclipse_set_project_state` opens and closes projects, `eclipse_set_bree` rewrites plug-in manifests, and `eclipse_add_repository` and `eclipse_remove_repository` change the configured update sites within an allowlist that is empty by default.
 There is no general file writing, no refactoring, no terminal and no debugger control.
 The server is **disabled by default**, listens on the loopback interface only, and rejects every request that does not carry a bearer token.
 
@@ -57,6 +57,7 @@ Pushing a `v<version>` tag runs the same workflow and additionally creates the G
 * **Enable MCP server**, off by default
 * **Port**, `8642` by default
 * **Tool call timeout**, `30` seconds by default, between 5 and 3600
+* **Allowed p2 repository roots**, empty by default, one URL prefix per line. Only under one of these may a client add an update site with `eclipse_add_repository`.
 
 The setting takes effect immediately, and the server also starts on the next IDE startup while it stays enabled.
 
@@ -583,6 +584,39 @@ This is the one thing a text search cannot approximate: a field written in four 
 Two details that matter if you act on the numbers.
 A field initializer is a write access but a declaration rather than a reference, so it is counted in `byKind` while being absent from `total` and from `matches`; the counts need not sum.
 And `read` or `write` on a type or a method is an error rather than an empty answer, because only fields are read and written.
+
+### `eclipse_add_repository` and `eclipse_remove_repository`
+
+**Changes IDE configuration.**
+Adds a p2 repository so that `eclipse_install` can install from it, and removes one again.
+Both are dry runs unless `dryRun` is set to `false`.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `url` | string, required | | Repository URL. Must be under an allowed root. |
+| `dryRun` | boolean | `true` | Read and report without changing anything. |
+| `refresh` | boolean | `true` | Add only. Re-read the metadata of a URL that is already configured. |
+| `maxUnits` | integer, 1 to 200 | 10 | Add only. How many unit ids to list; `groupCount` is always complete. |
+
+```json
+{"url":"file:/home/me/git/themes/update-site/repo/target/repository","name":"Themes",
+ "dryRun":true,"added":false,"alreadyConfigured":false,"refreshed":false,
+ "groupCount":2,"truncated":false,
+ "groups":[{"id":"com.vogella.eclipse.themes.feature.group","version":"1.0.0.202608231900"}]}
+```
+
+**The allowlist is the point.**
+`eclipse_install` refuses a URL the IDE is not already configured with, because fetching and running code from a new source is a decision for the person at the IDE.
+That guard made a whole workflow impossible: build a p2 repository with Tycho, then be unable to install it without a human walking through *Available Software Sites*.
+So the decision moves rather than disappearing. Under *Preferences > General > MCP Server*, **Allowed p2 repository roots** takes one URL prefix per line, and it is **empty by default**, which allows nothing.
+A configured prefix is the person at the IDE saying "sources under here are acceptable" once, for a class of URLs, instead of once per install.
+
+URLs are compared normalised, so `file:/home/me/git/../../etc` does not reach out of an allowed root, and a trailing slash does not decide the answer.
+The primary case is a `file:` URL under the user's own git directory, which is a materially weaker risk than an arbitrary `https` site.
+
+Removal is bounded by the same allowlist. A URL this server could never have added is one the person at the IDE configured by hand, and removing that is their decision. Nothing installed from the repository is uninstalled.
+
+`refresh` exists because p2 caches metadata per URL. Rebuilding into the same `target/repository` leaves the path unchanged, so without a refresh the new build looks identical to the old one, which is the same invisible-stale-cache trap `eclipse_check_for_updates` guards against.
 
 ### `eclipse_run_tests` and `eclipse_get_test_results`
 

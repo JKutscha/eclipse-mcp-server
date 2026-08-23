@@ -31,7 +31,10 @@ public final class SetPreferenceTool implements IMcpTool {
 	static final Set<String> ALLOWED_QUALIFIERS = Set.of("org.eclipse.core.resources", //$NON-NLS-1$
 			"org.eclipse.jdt.core", //$NON-NLS-1$
 			"org.eclipse.jdt.ui", //$NON-NLS-1$
-			"org.eclipse.core.runtime"); //$NON-NLS-1$
+			"org.eclipse.core.runtime", //$NON-NLS-1$
+			// the theme id, so that installing a theme feature and activating it is
+			// one workflow rather than an install that a human has to finish by hand
+			"org.eclipse.e4.ui.css.swt.theme"); //$NON-NLS-1$
 
 	private static final String AUTOBUILD_QUALIFIER = "org.eclipse.core.resources"; //$NON-NLS-1$
 

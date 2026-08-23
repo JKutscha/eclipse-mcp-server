@@ -74,6 +74,8 @@ public class McpPreferencePage extends FieldEditorPreferencePage implements IWor
 				"&Tool call timeout (seconds):", getFieldEditorParent());
 		timeout.setValidRange(McpPreferences.MIN_CALL_TIMEOUT_SECONDS, McpPreferences.MAX_CALL_TIMEOUT_SECONDS);
 		addField(timeout);
+		addField(new MultiLineStringFieldEditor(McpPreferences.KEY_REPOSITORY_ROOTS,
+				"Allowed p2 &repository roots (one URL prefix per line):", getFieldEditorParent()));
 	}
 
 	@Override
