@@ -124,6 +124,38 @@ final class JavaModelSupport {
 								: "any Java project in the workspace")); //$NON-NLS-1$
 	}
 
+	/**
+	 * Every source copy of a fully qualified name across the given projects, or the
+	 * single type {@link #findType} resolves when there is no source copy.
+	 * <p>
+	 * One name can be declared more than once. SWT declares
+	 * {@code org.eclipse.swt.graphics.Image} once per window system, and each
+	 * fragment puts its own copy on the build path. A JDT search built from an
+	 * element carries that element as its focus, which narrows the index to the
+	 * projects that can see it, so a search bound to the gtk copy silently answers
+	 * nothing about the win32 and cocoa call sites. A workspace wide question has
+	 * to search every copy.
+	 */
+	static List<IType> findTypes(String typeName, List<IJavaProject> projects, IProgressMonitor monitor)
+			throws ToolInputException, McpToolException {
+		List<IType> types = new ArrayList<>();
+		for (IJavaProject project : projects) {
+			try {
+				IType type = project.findType(typeName);
+				if (type != null && type.exists() && !type.isBinary()) {
+					types.add(type);
+				}
+			} catch (JavaModelException e) {
+				throw new McpToolException("Could not resolve type %s in project %s".formatted(typeName, //$NON-NLS-1$
+						project.getElementName()), e);
+			}
+		}
+		if (types.isEmpty()) {
+			types.add(findType(typeName, projects, monitor));
+		}
+		return types;
+	}
+
 	/** Whether the type lives in build output rather than in a dependency. */
 	static boolean isBuildOutput(IType type) {
 		IJavaElement root = type.getAncestor(IJavaElement.PACKAGE_FRAGMENT_ROOT);

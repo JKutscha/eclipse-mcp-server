@@ -100,7 +100,8 @@ The file is created with owner-only permissions and deleted when the server stop
 The token is generated on first use and kept in user scope, `~/.eclipse/com.vogella.eclipse.mcp.server/token`, with owner-only permissions.
 User scope rather than the workspace is deliberate: the port is one preference with the same default everywhere, so a workspace scoped token would give every workspace its own secret behind one address, and a client registered against one workspace would be rejected by the next.
 It survives IDE restarts, p2 updates and switching workspaces, so a client has to be configured only once.
-A workspace that already carried a token from an earlier version keeps it, so upgrading does not orphan a client that is already registered.
+A workspace that already carried a token from an earlier version keeps it, so upgrading does not orphan a client that is already registered; the old file is renamed to `token.migrated`, because one still called `token` beside the live `endpoint.json` is a trap for whoever reads it while diagnosing.
+It is written through a temporary file and an atomic move: truncating in place leaves a window in which there is no token, and a second IDE starting inside that window mints a new one and invalidates every client of the first.
 It is written as a plain file rather than as a preference because a preference file is world readable and this is a secret.
 *Regenerate token* on the preference page replaces it and restarts the server, which rejects every client still using the old one.
 
@@ -551,8 +552,14 @@ Every match carries the `signature` of the overload it belongs to, and `byMember
 
 Without that split a count of 16 cannot tell "this overload is dead and its sibling has sixteen callers" from "both are live", which is the whole question a dead code sweep asks. `paramTypes` searches one overload alone, and `resolved` then names it in full.
 
+**A name declared more than once.**
+SWT declares `org.eclipse.swt.graphics.Image` once per window system, and each fragment puts its own copy on the build path.
+A JDT search built from an element carries that element as its focus, which narrows the index to the projects that can see it, so a search bound to the gtk copy answers nothing at all about the win32 and cocoa call sites, silently and with `truncated` false.
+Every copy is therefore resolved and searched, and `declaredIn` lists the source folders they came from whenever there is more than one.
+This is the case where an under-count is dangerous: live code looks dead, in exactly the cross-platform situation nobody can check by eye.
+
 **Linked files.**
-One physical file reached through several projects that link it counts once. The SWT fragments share a single copy of each source file across seven projects, so an undeduplicated `total` overstates a call site sevenfold. `linkedDuplicates` says how many matches were folded away and `alsoIn` on the surviving match names the other projects. Because the workspace `path` of a linked file does not exist under its project on disk, `location` gives the resolved filesystem path, which is the one to read.
+One physical file reached through several projects that link it counts once. The SWT fragments share a single copy of each source file across seven projects, so an undeduplicated `total` overstates a call site sevenfold. `linkedDuplicates` says how many matches were folded away, always, so that nothing folded cannot be confused with the field being absent, and `alsoIn` on the surviving match names the other projects. Because the workspace `path` of a linked file does not exist under its project on disk, `location` gives the resolved filesystem path, which is the one to read.
 
 That distinction is not cosmetic. `SearchMatch.getResource()` returns the *project that owns the classpath entry* for a match inside a jar, so the raw path is a bare project name with no file. Reported as-is, a hit inside `org.eclipse.jdt.ui.jar` looks like a source reference in whichever project happens to depend on that jar, and nothing marks it as second hand. Judge "how many consumers does this API have" from the `source` count in `byOrigin`.
 

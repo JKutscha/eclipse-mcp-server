@@ -102,8 +102,9 @@ public final class FindReferencesTool implements IMcpTool {
 		}
 
 		List<IJavaProject> projects;
+		List<IType> types;
 		IType type;
-		List<IMember> members;
+		List<Overload> overloads;
 		List<IMember> fields;
 		String resolved;
 		try {
@@ -111,21 +112,14 @@ public final class FindReferencesTool implements IMcpTool {
 			if (projects.isEmpty()) {
 				return McpToolResult.error("The workspace contains no open Java project."); //$NON-NLS-1$
 			}
-			type = JavaModelSupport.findType(typeName, projects, monitor);
-			members = memberName == null ? List.of() : JavaModelSupport.findMembers(type, memberName);
-			if (paramTypes != null) {
-				List<IMember> selected = select(members, paramTypes);
-				if (selected.isEmpty()) {
-					return McpToolResult.error("No overload of '%s#%s' takes (%s). Overloads: %s".formatted( //$NON-NLS-1$
-							type.getFullyQualifiedName(), memberName, String.join(", ", paramTypes), //$NON-NLS-1$
-							members.stream().map(JavaModelSupport::signatureOf).collect(Collectors.joining(", ")))); //$NON-NLS-1$
-				}
-				members = selected;
-			}
-			fields = members.stream().filter(IField.class::isInstance).toList();
+			types = JavaModelSupport.findTypes(typeName, projects, monitor);
+			type = types.get(0);
+			overloads = memberName == null ? List.of() : overloadsOf(types, memberName, paramTypes);
+			fields = overloads.stream().flatMap(overload -> overload.members().stream())
+					.filter(IField.class::isInstance).toList();
 			resolved = memberName == null ? type.getFullyQualifiedName()
 					: type.getFullyQualifiedName() + '#'
-							+ (paramTypes == null ? memberName : JavaModelSupport.signatureOf(members.get(0)));
+							+ (paramTypes == null ? memberName : overloads.get(0).signature());
 		} catch (ToolInputException e) {
 			return McpToolResult.error(e.getMessage());
 		}
@@ -134,6 +128,9 @@ public final class FindReferencesTool implements IMcpTool {
 					"Read and write accesses only exist for fields, and '%s' does not resolve to one. Use accessKind 'all'." //$NON-NLS-1$
 							.formatted(resolved));
 		}
+		List<Overload> searched = ALL.equals(accessKind) ? overloads
+				: overloads.stream().filter(overload -> overload.members().stream().anyMatch(IField.class::isInstance))
+						.toList();
 
 		IJavaSearchScope scope = projectName == null ? SearchEngine.createWorkspaceScope()
 				: SearchEngine.createJavaSearchScope(new IJavaElement[] { projects.get(0) }, true);
@@ -143,14 +140,13 @@ public final class FindReferencesTool implements IMcpTool {
 		// qualified name is supplied by several jars, which is the norm for a library
 		// like JUnit, that silently answers zero. Search the name instead and say so.
 		boolean byName = type.isBinary() && memberName == null;
-		List<IMember> searched = memberName == null ? List.of() : ALL.equals(accessKind) ? members : fields;
 		List<Hit> hits = new ArrayList<>();
 		if (memberName == null) {
 			SearchPattern pattern = byName
 					? SearchPattern.createPattern(type.getFullyQualifiedName(), IJavaSearchConstants.TYPE,
 							IJavaSearchConstants.REFERENCES,
 							SearchPattern.R_EXACT_MATCH | SearchPattern.R_CASE_SENSITIVE)
-					: SearchPattern.createPattern(type, IJavaSearchConstants.REFERENCES);
+					: pattern(List.copyOf(types), IJavaSearchConstants.REFERENCES);
 			if (pattern == null) {
 				return McpToolResult.error("Could not build a search pattern for '%s'.".formatted(resolved)); //$NON-NLS-1$
 			}
@@ -158,18 +154,19 @@ public final class FindReferencesTool implements IMcpTool {
 				hits.add(new Hit(match, null));
 			}
 		} else {
-			// one search per overload rather than a single OR pattern, so that every
-			// match knows which overload it belongs to. A merged count cannot tell
-			// "this overload is dead and that one has sixteen callers" from "both live"
+			// one search per overload rather than a single pattern over all of them,
+			// so that every match knows which overload it belongs to. A merged count
+			// cannot tell "this one is dead and that one has sixteen callers" from
+			// "both are live"
 			boolean any = false;
-			for (IMember member : searched) {
-				SearchPattern pattern = SearchPattern.createPattern(member, limitTo(accessKind));
+			for (Overload overload : searched) {
+				SearchPattern pattern = pattern(overload.members(), limitTo(accessKind));
 				if (pattern == null) {
 					continue;
 				}
 				any = true;
 				for (SearchMatch match : search(pattern, scope, monitor, resolved)) {
-					hits.add(new Hit(match, member));
+					hits.add(new Hit(match, overload.signature()));
 				}
 			}
 			if (!any) {
@@ -204,7 +201,7 @@ public final class FindReferencesTool implements IMcpTool {
 			entry.put("line", line < 0 ? null : Integer.valueOf(line)); //$NON-NLS-1$
 			entry.put("offset", match.getOffset()); //$NON-NLS-1$
 			entry.put("length", match.getLength()); //$NON-NLS-1$
-			entry.put("signature", hit.member() == null ? null : JavaModelSupport.signatureOf(hit.member())); //$NON-NLS-1$
+			entry.put("signature", hit.signature()); //$NON-NLS-1$
 			// the workspace path of a linked file does not exist under the project on
 			// disk, so a caller that wants to read it needs the resolved one
 			entry.put("location", isBinary(match) || resource == null || resource.getLocation() == null ? null //$NON-NLS-1$
@@ -235,23 +232,28 @@ public final class FindReferencesTool implements IMcpTool {
 				.put("accessKind", accessKind) //$NON-NLS-1$
 				.put("total", hits.size()) //$NON-NLS-1$
 				.put("byOrigin", new JsonObject().put("source", hits.size() - binary).put("binary", binary)) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+				// always present, so that "nothing was folded" cannot be read as "the
+				// field is missing from this code path"
+				.put("linkedDuplicates", Integer.valueOf(rawTotal - hits.size())) //$NON-NLS-1$
 				.put("truncated", hits.size() > reported.size()); //$NON-NLS-1$
-		if (rawTotal != hits.size()) {
-			result.put("linkedDuplicates", Integer.valueOf(rawTotal - hits.size())) //$NON-NLS-1$
-					.put("duplicateNote", //$NON-NLS-1$
-							"total counts each physical file once. %d further match(es) were the same file seen through another project that links it; the projects are listed in alsoIn." //$NON-NLS-1$
-									.formatted(rawTotal - hits.size()));
+		if (types.size() > 1) {
+			JsonArray declaredIn = new JsonArray();
+			types.forEach(copy -> declaredIn.add(JavaModelSupport.originOf(copy)));
+			result.put("declaredIn", declaredIn) //$NON-NLS-1$
+					.put("declaredInNote", //$NON-NLS-1$
+							"'%s' is declared %d times in this workspace, once per platform fragment in a repository like SWT. All of them were searched, because a search bound to one copy answers nothing about references that resolve to another." //$NON-NLS-1$
+									.formatted(type.getFullyQualifiedName(), Integer.valueOf(types.size())));
 		}
 		if (!searched.isEmpty()) {
 			JsonArray byMember = new JsonArray();
-			for (IMember member : searched) {
+			for (Overload overload : searched) {
 				int count = 0;
 				for (Hit hit : hits) {
-					if (member.equals(hit.member())) {
+					if (overload.signature().equals(hit.signature())) {
 						count++;
 					}
 				}
-				byMember.add(new JsonObject().put("signature", JavaModelSupport.signatureOf(member)) //$NON-NLS-1$
+				byMember.add(new JsonObject().put("signature", overload.signature()) //$NON-NLS-1$
 						.put("total", Integer.valueOf(count))); //$NON-NLS-1$
 			}
 			result.put("byMember", byMember); //$NON-NLS-1$
@@ -284,12 +286,56 @@ public final class FindReferencesTool implements IMcpTool {
 		return McpToolResult.of(result.toString());
 	}
 
-	/** A match together with the overload it was found for. */
-	private record Hit(SearchMatch match, IMember member, Set<String> alsoIn) {
+	/** One overload, and the copy of it declared by each project that declares the type. */
+	private record Overload(String signature, List<IMember> members) {
+	}
 
-		Hit(SearchMatch match, IMember member) {
-			this(match, member, new LinkedHashSet<>());
+	/** A match together with the overload it was found for. */
+	private record Hit(SearchMatch match, String signature, Set<String> alsoIn) {
+
+		Hit(SearchMatch match, String signature) {
+			this(match, signature, new LinkedHashSet<>());
 		}
+	}
+
+	/**
+	 * Groups the members named {@code memberName} by signature, across every copy of
+	 * the declaring type.
+	 * <p>
+	 * The copies of one overload are searched together as a single OR pattern, which
+	 * is also what removes the focus a single element pattern carries, so the search
+	 * covers the whole workspace rather than the projects that see one copy.
+	 */
+	private static List<Overload> overloadsOf(List<IType> types, String memberName, List<String> paramTypes)
+			throws ToolInputException, McpToolException {
+		Map<String, List<IMember>> bySignature = new LinkedHashMap<>();
+		Set<String> available = new LinkedHashSet<>();
+		ToolInputException missing = null;
+		for (IType type : types) {
+			List<IMember> members;
+			try {
+				members = JavaModelSupport.findMembers(type, memberName);
+			} catch (ToolInputException e) {
+				missing = e;
+				continue;
+			}
+			members.forEach(member -> available.add(JavaModelSupport.signatureOf(member)));
+			for (IMember member : paramTypes == null ? members : select(members, paramTypes)) {
+				bySignature.computeIfAbsent(JavaModelSupport.signatureOf(member), key -> new ArrayList<>()).add(member);
+			}
+		}
+		if (bySignature.isEmpty()) {
+			if (available.isEmpty()) {
+				throw missing == null
+						? new ToolInputException("No type declaring '%s' has a member named '%s'.".formatted( //$NON-NLS-1$
+								types.get(0).getFullyQualifiedName(), memberName))
+						: missing;
+			}
+			throw new ToolInputException("No overload of '%s#%s' takes (%s). Overloads: %s".formatted( //$NON-NLS-1$
+					types.get(0).getFullyQualifiedName(), memberName, String.join(", ", paramTypes), //$NON-NLS-1$
+					String.join(", ", available))); //$NON-NLS-1$
+		}
+		return bySignature.entrySet().stream().map(entry -> new Overload(entry.getKey(), entry.getValue())).toList();
 	}
 
 	private static boolean isBinary(SearchMatch match) {
@@ -309,7 +355,7 @@ public final class FindReferencesTool implements IMcpTool {
 		Map<String, Hit> unique = new LinkedHashMap<>();
 		for (Hit hit : hits) {
 			String key = locationOf(hit.match()) + ':' + hit.match().getLength() + ':'
-					+ (hit.member() == null ? "" : hit.member().getHandleIdentifier()); //$NON-NLS-1$
+					+ (hit.signature() == null ? "" : hit.signature()); //$NON-NLS-1$
 			Hit kept = unique.putIfAbsent(key, hit);
 			if (kept != null && hit.match().getResource() != null
 					&& hit.match().getResource().getProject() != null) {
@@ -454,33 +500,31 @@ public final class FindReferencesTool implements IMcpTool {
 		if (paramTypes != null && memberName == null) {
 			return entry.put("error", "'paramTypes' picks one overload of 'memberName', so give a memberName too."); //$NON-NLS-1$ //$NON-NLS-2$
 		}
+		List<IType> types;
 		IType type;
-		List<IMember> members;
+		List<Overload> overloads;
 		try {
-			type = JavaModelSupport.findType(typeName, projects, monitor);
-			members = memberName == null ? List.of() : JavaModelSupport.findMembers(type, memberName);
-			if (paramTypes != null) {
-				members = select(members, paramTypes);
-				if (members.isEmpty()) {
-					return entry.put("error", "No overload of '%s' takes (%s).".formatted(memberName, //$NON-NLS-1$ //$NON-NLS-2$
-							String.join(", ", paramTypes))); //$NON-NLS-1$
-				}
-			}
+			types = JavaModelSupport.findTypes(typeName, projects, monitor);
+			type = types.get(0);
+			overloads = memberName == null ? List.of() : overloadsOf(types, memberName, paramTypes);
 		} catch (ToolInputException e) {
 			return entry.put("error", e.getMessage()); //$NON-NLS-1$
 		}
-		List<IMember> fields = members.stream().filter(IField.class::isInstance).toList();
+		List<IMember> fields = overloads.stream().flatMap(overload -> overload.members().stream())
+				.filter(IField.class::isInstance).toList();
 		if (!ALL.equals(accessKind) && fields.isEmpty()) {
 			return entry.put("error", "Read and write accesses only exist for fields."); //$NON-NLS-1$ //$NON-NLS-2$
 		}
-		List<IMember> searched = memberName == null ? List.of() : ALL.equals(accessKind) ? members : fields;
+		List<Overload> searched = ALL.equals(accessKind) ? overloads
+				: overloads.stream().filter(overload -> overload.members().stream().anyMatch(IField.class::isInstance))
+						.toList();
 		List<Hit> hits = new ArrayList<>();
 		if (memberName == null) {
 			SearchPattern pattern = type.isBinary()
 					? SearchPattern.createPattern(type.getFullyQualifiedName(), IJavaSearchConstants.TYPE,
 							IJavaSearchConstants.REFERENCES,
 							SearchPattern.R_EXACT_MATCH | SearchPattern.R_CASE_SENSITIVE)
-					: SearchPattern.createPattern(type, IJavaSearchConstants.REFERENCES);
+					: pattern(List.copyOf(types), IJavaSearchConstants.REFERENCES);
 			if (pattern == null) {
 				return entry.put("error", "Could not build a search pattern."); //$NON-NLS-1$ //$NON-NLS-2$
 			}
@@ -489,14 +533,14 @@ public final class FindReferencesTool implements IMcpTool {
 			}
 		} else {
 			boolean any = false;
-			for (IMember searchedMember : searched) {
-				SearchPattern pattern = SearchPattern.createPattern(searchedMember, limitTo(accessKind));
+			for (Overload overload : searched) {
+				SearchPattern pattern = pattern(overload.members(), limitTo(accessKind));
 				if (pattern == null) {
 					continue;
 				}
 				any = true;
 				for (SearchMatch match : search(pattern, scope, monitor, typeName)) {
-					hits.add(new Hit(match, searchedMember));
+					hits.add(new Hit(match, overload.signature()));
 				}
 			}
 			if (!any) {
@@ -520,22 +564,23 @@ public final class FindReferencesTool implements IMcpTool {
 				.put("total", Integer.valueOf(hits.size())) //$NON-NLS-1$
 				.put("source", Integer.valueOf(hits.size() - binary)) //$NON-NLS-1$
 				.put("binary", Integer.valueOf(binary)) //$NON-NLS-1$
-				.put("declaration", Integer.valueOf(declared)); //$NON-NLS-1$
-		if (rawTotal != hits.size()) {
-			entry.put("linkedDuplicates", Integer.valueOf(rawTotal - hits.size())); //$NON-NLS-1$
+				.put("declaration", Integer.valueOf(declared)) //$NON-NLS-1$
+				.put("linkedDuplicates", Integer.valueOf(rawTotal - hits.size())); //$NON-NLS-1$
+		if (types.size() > 1) {
+			entry.put("declaredIn", Integer.valueOf(types.size())); //$NON-NLS-1$
 		}
 		// a merged count over overloads cannot answer the question the sweep asks, so
 		// the split comes back even in the counts only form
 		if (searched.size() > 1) {
 			JsonArray byMember = new JsonArray();
-			for (IMember searchedMember : searched) {
+			for (Overload overload : searched) {
 				int count = 0;
 				for (Hit hit : hits) {
-					if (searchedMember.equals(hit.member())) {
+					if (overload.signature().equals(hit.signature())) {
 						count++;
 					}
 				}
-				byMember.add(new JsonObject().put("signature", JavaModelSupport.signatureOf(searchedMember)) //$NON-NLS-1$
+				byMember.add(new JsonObject().put("signature", overload.signature()) //$NON-NLS-1$
 						.put("total", Integer.valueOf(count))); //$NON-NLS-1$
 			}
 			entry.put("byMember", byMember); //$NON-NLS-1$
@@ -593,7 +638,7 @@ public final class FindReferencesTool implements IMcpTool {
 		return matches;
 	}
 
-	private static SearchPattern pattern(List<IMember> members, int limitTo) {
+	private static SearchPattern pattern(List<? extends IMember> members, int limitTo) {
 		SearchPattern combined = null;
 		for (IMember member : members) {
 			SearchPattern pattern = SearchPattern.createPattern(member, limitTo);

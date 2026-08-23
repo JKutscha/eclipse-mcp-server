@@ -128,6 +128,50 @@ class FindReferencesToolTest {
 	}
 
 	@Test
+	@SuppressWarnings("unchecked")
+	void searchesEveryCopyOfADuplicatedType() throws Exception {
+		// SWT declares one qualified name once per window system, and a search bound
+		// to one copy silently answers nothing about references resolving to another
+		IJavaProject gtk = fixture.createJavaProject("mcp-copy-gtk-test");
+		TestFixture.addType(gtk, "example", "Loader", """
+				package example;
+				public class Loader {
+					public static boolean load(String name) { return true; }
+				}
+				""");
+		TestFixture.addType(gtk, "example", "Widget", """
+				package example;
+				public class Widget {
+					boolean a() { return Loader.load("gtk"); }
+				}
+				""");
+		IJavaProject win32 = fixture.createJavaProject("mcp-copy-win32-test");
+		TestFixture.addType(win32, "example", "Loader", """
+				package example;
+				public class Loader {
+					public static boolean load(String name) { return true; }
+				}
+				""");
+		TestFixture.addType(win32, "example", "Widget", """
+				package example;
+				public class Widget {
+					boolean a() { return Loader.load("win32"); }
+					boolean b() { return Loader.load("win32again"); }
+				}
+				""");
+		TestFixture.build(gtk.getProject());
+		TestFixture.build(win32.getProject());
+
+		Map<String, Object> result = TestFixture.callAndParse("eclipse_find_references",
+				Map.of("typeName", "example.Loader", "memberName", "load"));
+
+		assertEquals(Integer.valueOf(3), result.get("total"),
+				"both copies of the type have to be searched, got " + result);
+		List<String> declaredIn = (List<String>) result.get("declaredIn");
+		assertEquals(2, declaredIn.size(), "got " + declaredIn);
+	}
+
+	@Test
 	void resolvesASecondaryType() throws Exception {
 		IJavaProject project = fixture.createJavaProject("mcp-secondary-type-test");
 		// a package-private type declared in a file named after a different type.
