@@ -36,6 +36,7 @@ public final class EndpointFile {
 		// value across a reconnect is the cheap way to know the new one is up.
 		String json = new JsonObject().put("state", "listening") //$NON-NLS-1$ //$NON-NLS-2$
 				.put("url", endpoint.url()).put("token", endpoint.token()) //$NON-NLS-1$ //$NON-NLS-2$
+				.put("workspace", workspace()) //$NON-NLS-1$
 				.put("startedAt", System.currentTimeMillis()).toString(); //$NON-NLS-1$
 		try {
 			PrivateFiles.write(path, json);
@@ -65,6 +66,27 @@ public final class EndpointFile {
 			PrivateFiles.write(path, json);
 		} catch (IOException e) {
 			ILog.get().warn("Could not write the MCP endpoint file " + path, e); //$NON-NLS-1$
+		}
+	}
+
+	/**
+	 * The workspace this server belongs to.
+	 * <p>
+	 * The token lives in the bundle state location, so it is a property of the
+	 * workspace rather than of the installation, while the port is the same for
+	 * every workspace. A client configured against one workspace therefore fails
+	 * against another with nothing in the answer saying which one it reached.
+	 */
+	static String workspace() {
+		var location = Platform.getInstanceLocation();
+		java.net.URL url = location == null ? null : location.getURL();
+		if (url == null) {
+			return null;
+		}
+		try {
+			return new java.io.File(url.toURI()).getAbsolutePath();
+		} catch (java.net.URISyntaxException | IllegalArgumentException e) {
+			return url.getPath();
 		}
 	}
 

@@ -77,8 +77,10 @@ On startup the server writes a discovery file so that no value has to be copied 
 
 ```json
 {
+  "state": "listening",
   "url": "http://127.0.0.1:8642/mcp",
   "token": "0f0f2a2e-1f9c-4c4a-9a0e-6d0f8f0f1e2b",
+  "workspace": "/home/me/workspace/swt",
   "startedAt": 1787300000000
 }
 ```
@@ -95,7 +97,11 @@ A client is counted from the session id on its requests and drops out when it en
 
 The file is created with owner-only permissions and deleted when the server stops.
 
-The token is generated on first use and kept in `token` next to the discovery file, also with owner-only permissions, so it survives IDE restarts and a client has to be configured only once.
+The token is generated on first use and kept in user scope, `~/.eclipse/com.vogella.eclipse.mcp.server/token`, with owner-only permissions.
+User scope rather than the workspace is deliberate: the port is one preference with the same default everywhere, so a workspace scoped token would give every workspace its own secret behind one address, and a client registered against one workspace would be rejected by the next.
+It survives IDE restarts, p2 updates and switching workspaces, so a client has to be configured only once.
+A workspace that already carried a token from an earlier version keeps it, so upgrading does not orphan a client that is already registered.
+It is written as a plain file rather than as a preference because a preference file is world readable and this is a secret.
 *Regenerate token* on the preference page replaces it and restarts the server, which rejects every client still using the old one.
 
 The transport is Streamable HTTP.
@@ -105,7 +111,12 @@ Every request has to carry the token:
 Authorization: Bearer <token>
 ```
 
-Requests without it are answered with `401`.
+Requests without it are answered with `401`, whose message names the workspace this server belongs to and the file its token lives in.
+
+**Which workspace answered.**
+The port is the same everywhere, so with two IDEs open the one that started first owns it and the second stays down.
+`workspace` in the discovery file, and in the `401` message, names the workspace a server is serving, which is the only way to tell which IDE a client actually reached.
+An MCP client usually turns a rejected token into an empty tool list rather than an error, so a misconfigured client looks like an absent server; the `401` message is written to be readable when it does surface.
 This is a plain bearer token, not the MCP authorization specification, so there is no OAuth flow and nothing to discover: a client that can send a static header is enough.
 
 The socket is bound to `127.0.0.1`, so it is not reachable from another machine.
@@ -503,7 +514,7 @@ The last 20 builds are kept; asking for an older id is an error, while asking be
 
 ### `eclipse_find_references`
 
-`queries` asks about many elements in one call and returns **counts only**: `[{typeName, memberName?, accessKind?}]`, and per query `total`, `source`, `binary` and `declaration`. A dead code sweep asks "how many references" about hundreds of candidates and needs the locations for almost none of them, so returning matches would make the answer enormous to save the round trips that were the problem. A name that does not resolve fails that query alone, not the batch. Use the single form when you need the match locations.
+`queries` asks about many elements in one call and returns **counts only**: `[{typeName, memberName?, paramTypes?, accessKind?}]`, and per query `total`, `source`, `binary` and `declaration`, plus `byMember` when the name has more than one overload. A dead code sweep asks "how many references" about hundreds of candidates and needs the locations for almost none of them, so returning matches would make the answer enormous to save the round trips that were the problem. A name that does not resolve fails that query alone, not the batch. Use the single form when you need the match locations.
 
 
 Finds all references to a Java type, method or field across the workspace with the JDT search engine.
@@ -512,7 +523,8 @@ Far more accurate than a text search, because it resolves overloads and inherita
 | Argument | Type | Default | Meaning |
 |---|---|---|---|
 | `typeName` | string, required | | Fully qualified type name. |
-| `memberName` | string | the type itself | Method or field name. All overloads of a method name are searched. |
+| `memberName` | string | the type itself | Method or field name. Every overload is searched unless `paramTypes` narrows it. |
+| `paramTypes` | array of string | all overloads | Selects one overload by its parameter types, simple or qualified: `["String","int","int"]`. An empty array is the no-argument overload. |
 | `project` | string | whole workspace | Project used to resolve the type and to scope the search. |
 | `maxResults` | integer, 1 to 2000 | 200 | |
 | `accessKind` | `all` \| `read` \| `write` | `all` | Restrict to read or write accesses. Fields only. |
@@ -521,11 +533,26 @@ Far more accurate than a text search, because it resolves overloads and inherita
 {"resolved":"org.eclipse.jface.viewers.TreeViewer#setInput","accessKind":"all",
  "total":17,"byOrigin":{"source":15,"binary":2},"truncated":false,
  "matches":[{"path":"/app/src/com/example/View.java","project":"app","line":88,
-             "offset":2451,"length":8,"kind":null,
+             "offset":2451,"length":8,"kind":null,"signature":"setInput(Object)",
+             "location":"/home/me/ws/app/src/com/example/View.java",
              "enclosingElement":"com.example.View.createPartControl(Composite)"}]}
 ```
 
-Every match carries an `origin`. A `source` match has a workspace `path` and a `project`. A `binary` match is inside a compiled jar on some project's build path, and reports the jar as `library` with `path` and `project` both null.
+Every match carries an `origin`. A `source` match has a workspace `path` and a `project`, plus the `location` of the file on disk. A `binary` match is inside a compiled jar on some project's build path, and reports the jar as `library` with `path`, `project` and `location` all null.
+
+**Overloads.**
+Every match carries the `signature` of the overload it belongs to, and `byMember` gives one count per overload:
+
+```json
+{"resolved":"org.eclipse.swt.graphics.ImageDataLoader#loadBySize","total":16,
+ "byMember":[{"signature":"loadBySize(InputStream, int, int)","total":16},
+             {"signature":"loadBySize(String, int, int)","total":0}]}
+```
+
+Without that split a count of 16 cannot tell "this overload is dead and its sibling has sixteen callers" from "both are live", which is the whole question a dead code sweep asks. `paramTypes` searches one overload alone, and `resolved` then names it in full.
+
+**Linked files.**
+One physical file reached through several projects that link it counts once. The SWT fragments share a single copy of each source file across seven projects, so an undeduplicated `total` overstates a call site sevenfold. `linkedDuplicates` says how many matches were folded away and `alsoIn` on the surviving match names the other projects. Because the workspace `path` of a linked file does not exist under its project on disk, `location` gives the resolved filesystem path, which is the one to read.
 
 That distinction is not cosmetic. `SearchMatch.getResource()` returns the *project that owns the classpath entry* for a match inside a jar, so the raw path is a bare project name with no file. Reported as-is, a hit inside `org.eclipse.jdt.ui.jar` looks like a source reference in whichever project happens to depend on that jar, and nothing marks it as second hand. Judge "how many consumers does this API have" from the `source` count in `byOrigin`.
 
@@ -1136,7 +1163,7 @@ This is self-updating machinery, and the descriptions say so: if a bad build lan
 ### `eclipse_restart`
 
 **Restarts the IDE. The connection will drop by design.**
-The tool answers first and restarts two seconds later, so a dropped connection immediately after a successful result is the expected outcome rather than a failure. Reconnect with the same bearer token: it lives in the bundle state location, which is keyed by symbolic name and survives both restarts and p2 updates.
+The tool answers first and restarts two seconds later, so a dropped connection immediately after a successful result is the expected outcome rather than a failure. Reconnect with the same bearer token: it lives in user scope and survives both restarts and p2 updates.
 
 | Argument | Type | Default | Meaning |
 |---|---|---|---|

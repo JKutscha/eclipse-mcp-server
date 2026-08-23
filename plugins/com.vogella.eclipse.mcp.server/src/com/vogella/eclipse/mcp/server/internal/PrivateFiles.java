@@ -18,6 +18,10 @@ final class PrivateFiles {
 	}
 
 	static void write(Path path, String content) throws IOException {
+		Path parent = path.getParent();
+		if (parent != null) {
+			Files.createDirectories(parent);
+		}
 		Files.deleteIfExists(path);
 		try {
 			Files.createFile(path, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString(OWNER_ONLY)));

@@ -37,7 +37,12 @@ public final class BearerTokenFilter implements Filter {
 		if (authorization == null
 				|| !MessageDigest.isEqual(authorization.getBytes(StandardCharsets.UTF_8), expected)) {
 			httpResponse.setHeader("WWW-Authenticate", "Bearer"); //$NON-NLS-1$ //$NON-NLS-2$
-			httpResponse.sendError(HttpServletResponse.SC_UNAUTHORIZED, "A valid bearer token is required."); //$NON-NLS-1$
+			// naming the token file and the workspace turns "the tool list is empty"
+			// into a readable failure, which is the whole difference between a
+			// misconfigured client and a server that looks absent
+			httpResponse.sendError(HttpServletResponse.SC_UNAUTHORIZED,
+					"A valid bearer token is required. The current one is in %s, and this server is serving the workspace %s." //$NON-NLS-1$
+							.formatted(TokenStore.location(), EndpointFile.workspace()));
 			return;
 		}
 		// counted here because the SDK's transport does not expose its sessions, and

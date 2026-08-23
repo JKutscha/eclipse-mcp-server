@@ -92,9 +92,10 @@ public final class McpServerService {
 	/**
 	 * The persisted bearer token, or {@code null} when none has been generated yet.
 	 * <p>
-	 * Available whether or not the server is running: the token is kept across
-	 * restarts, so it is a property of this workspace rather than of the process,
-	 * and a client can be configured with it before the server is ever started.
+	 * Available whether or not the server is running: the token lives in the user
+	 * area, so it is a property of this user rather than of the process or of the
+	 * workspace, and a client can be configured with it before the server is ever
+	 * started.
 	 */
 	public static String getToken() {
 		return TokenStore.get();
