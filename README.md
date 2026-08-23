@@ -138,7 +138,7 @@ Sessions are carried in the `mcp-session-id` header, a `GET` opens the server-to
 
 Every tool returns a single text block containing pretty-printed JSON.
 Every list-returning tool honours `maxResults` and reports `total` and `truncated`, so the model can tell when it is seeing a partial answer.
-Read-only except the four marked tools: `eclipse_organize_imports` and `eclipse_format` rewrite a file, `eclipse_build` runs builders, `eclipse_set_preference` writes configuration, and `eclipse_set_project_state` opens and closes projects.
+Read-only except the tools marked as changing something: `eclipse_organize_imports` and `eclipse_format` rewrite a file, `eclipse_build` runs builders, `eclipse_set_preference` writes configuration, `eclipse_set_project_state` opens and closes projects, and `eclipse_set_target_platform` replaces what every plug-in project compiles against.
 
 ### `eclipse_list_projects`
 
@@ -324,6 +324,54 @@ Every `Require-Bundle` and `Import-Package` entry carries `resolved` and, when i
 That is the difference between this and reading `MANIFEST.MF`: the manifest shows what was asked for and never what was found, so *Cannot resolve plug-in: org.eclipse.opengl* stays a guess until something tells you nothing supplies it.
 
 `platformFilter` and `fragmentHost` come from the resolver rather than from a regex over the manifest, which is also what `eclipse_set_project_state` uses for `platformMismatch`.
+
+### `eclipse_get_target_platform` and `eclipse_set_target_platform`
+
+Reads the active target platform, and sets a target definition as the active one, which is what the *Set as Active Target Platform* link of the target editor does.
+
+`eclipse_get_target_platform` is read-only.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `includeLocations` | boolean | `true` | Report each location with its own resolution status. |
+| `includeKnown` | boolean | `false` | List the definitions the IDE knows, workspace `.target` files included, with the memento of each. |
+| `maxProblems` | integer, 1 to 1000 | 50 | Cap on the reported bundles that failed to resolve. |
+
+`targetSet` is the difference between a definition being active and PDE falling back to the IDE's own installation: PDE answers with a default definition either way, and only the handle behind it says whether anything was set.
+
+**`eclipse_set_target_platform` changes the IDE.**
+It replaces the bundles every plug-in project compiles against, PDE recomputes the plug-in classpaths, and problem markers across the workspace change with it.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `file` | string | | The `.target` file, as a workspace path such as `/target-platform/example.target` or an absolute file system path. |
+| `memento` | string | | A target handle memento instead of a file, as reported by `includeKnown`. |
+| `resolveOnly` | boolean | `false` | Resolve and report, without activating. |
+| `wait` | boolean | `true` | |
+| `timeoutSeconds` | integer, 1 to 3600 | 25 | Below the tool call timeout, so a slow resolve returns `running` rather than being killed. |
+| `includeLocations` | boolean | `true` | |
+| `maxProblems` | integer, 1 to 1000 | 50 | |
+
+```json
+{"target":"/target-platform/example.target","state":"done","resolveOnly":false,
+ "elapsedMillis":48213,"resolveMillis":47019,
+ "resolveStatus":{"severity":"OK","message":"OK"},
+ "loadStatus":{"severity":"OK","message":"OK"},
+ "previous":{"name":"Old target","memento":"..."},
+ "definition":{"name":"Example","resolved":true,"bundleCount":1782,"featureCount":41,
+   "bundleProblems":[],"bundleProblemCount":0,
+   "locations":[{"type":"InstallableUnit","location":"https://download.eclipse.org/releases/2026-06",
+     "resolved":true,"bundleCount":1782,"status":{"severity":"OK","message":"OK"}}]}}
+```
+
+Resolving a target that is not cached downloads from its p2 repositories and takes minutes, which is longer than a tool call may last, so the work runs as a job.
+A call that runs out of `timeoutSeconds` returns `state: "running"` and the job carries on; `eclipse_get_target_platform` then reports it as `lastLoad` until it ends.
+Starting a second load cancels the first, the way PDE itself does.
+
+The status is reported with its children rather than as a sentence, because a target that does not resolve fails in one location, and which repository was unreachable or which unit is missing is only in there.
+`resolveOnly` answers that question without touching the workspace, which is the difference between checking a `.target` file and committing to it.
+
+Note that the server has no tool that writes arbitrary files, so a client that wants to activate a target definition of its own has to write the `.target` file through its own file access, then call `eclipse_refresh` before naming it here.
 
 ### `eclipse_set_bree`
 

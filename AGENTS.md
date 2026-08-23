@@ -47,7 +47,7 @@ The bundle is meant to stay a candidate for contribution to the Eclipse Platform
 It also has no JSON library, which is why it carries the small writer in `com.vogella.eclipse.mcp.core.json`.
 
 **Most tools are read-only, and the exceptions are deliberate.**
-`eclipse_organize_imports` and `eclipse_format` modify the file they are given, `eclipse_build` runs builders, and `eclipse_get_problems` triggers a build when auto-build is off.
+`eclipse_organize_imports` and `eclipse_format` modify the file they are given, `eclipse_set_target_platform` replaces what the workspace compiles against, `eclipse_build` runs builders, and `eclipse_get_problems` triggers a build when auto-build is off.
 Everything else must not write, and no tool may open a dialog or perform a refactoring.
 A new tool that writes has to say so in its own description, because that is the only place the model sees it.
 

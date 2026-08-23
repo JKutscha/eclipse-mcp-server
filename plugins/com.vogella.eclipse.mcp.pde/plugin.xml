@@ -7,6 +7,8 @@
       <tool class="com.vogella.eclipse.mcp.pde.internal.GetBundleInfoTool"/>
       <tool class="com.vogella.eclipse.mcp.pde.internal.EditManifestTool"/>
       <tool class="com.vogella.eclipse.mcp.pde.internal.AnalyzeDependenciesTool"/>
+      <tool class="com.vogella.eclipse.mcp.pde.internal.GetTargetPlatformTool"/>
+      <tool class="com.vogella.eclipse.mcp.pde.internal.SetTargetPlatformTool"/>
    </extension>
 
 </plugin>

@@ -61,6 +61,9 @@ class McpServerServiceTest {
 
 	private static final Set<String> WRITES_FILES = Set.of("eclipse_organize_imports", "eclipse_format");
 
+	/** A target whose only location is an empty directory, so resolving it needs no network. */
+	private static final String TARGET = "/%s/smoke.target".formatted(PROJECT);
+
 	/** An initialize request answers 200 without a session, which makes it a usable probe. */
 	private static final String INITIALIZE = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":"
 			+ "{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},"
@@ -98,6 +101,18 @@ class McpServerServiceTest {
 							}
 						}
 						""", false, new NullProgressMonitor());
+		java.nio.file.Path empty = Files.createTempDirectory("mcp-endpoint-test");
+		empty.toFile().deleteOnExit();
+		project.getFile("smoke.target").create("""
+				<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+				<?pde version="3.8"?>
+				<target name="MCP smoke target" sequenceNumber="1">
+				<locations>
+				<location path="%s" type="Directory"/>
+				</locations>
+				</target>
+				""".formatted(empty.toAbsolutePath()).getBytes(java.nio.charset.StandardCharsets.UTF_8),
+				org.eclipse.core.resources.IResource.NONE, new NullProgressMonitor());
 		project.build(IncrementalProjectBuilder.FULL_BUILD, new NullProgressMonitor());
 	}
 
@@ -262,6 +277,9 @@ class McpServerServiceTest {
 		case "eclipse_set_project_state" -> Map.of("state", "open", "namePattern", "no-such-project-*");
 		case "eclipse_organize_imports", "eclipse_format" -> Map.of("path", SAMPLE);
 		case "eclipse_read_file" -> Map.of("path", SAMPLE);
+		// resolveOnly against an empty directory: nothing is downloaded, and the
+		// target platform of the test IDE stays what it was
+		case "eclipse_set_target_platform" -> Map.of("file", TARGET, "resolveOnly", Boolean.TRUE, "timeoutSeconds", 60);
 		// dryRun defaults true, so the smoke test rewrites nothing
 		case "eclipse_remove_unused_imports" -> Map.of("path", SAMPLE);
 		// dryRun defaults true, so the smoke test transforms nothing
