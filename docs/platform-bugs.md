@@ -9,6 +9,23 @@ rather than because we are.
 
 ## Open
 
+### SWT: `Control.print` does not paint a `CTabFolder`'s `topRight` control
+
+A print of a `CTabFolder` omits its `topRight` children, which in the workbench
+are the view toolbar, the view menu and the minimise and maximise buttons.
+Rooting the print at the folder, at its parent and at the window's content
+composite all miss them, so no ancestor supplies them.
+
+The tab row is also laid out as though the control were absent: for a stack
+whose model reports `ToolbarComposite` at x=369, the printed tab label runs to
+about x=460, which cannot happen on screen. So the folder paints itself without
+its `topRight` rather than merely skipping a child.
+
+Observed on GTK at zoom 200 through `eclipse_screenshot` with `includeToolbar`.
+Nothing filed yet. The consequence for this project is that `includeToolbar`
+cannot show a view toolbar; capture the shell and crop to bounds from
+`eclipse_get_widget_tree` instead.
+
 ### PDE: `NullPointerException` in `DependencyManager.findRequirementsClosure`
 
 `ui/org.eclipse.pde.core/.../DependencyManager.java:266`

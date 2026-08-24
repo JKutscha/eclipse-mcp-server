@@ -107,10 +107,27 @@ The target platform already contains `junit-jupiter-api` 6.1.0 through the SDK f
 Adding a Maven location for JUnit is redundant, and the resulting 5.x bundles lose to the SDK's 6.x ones anyway.
 Note the bundle symbolic names are `junit-jupiter-api` and so on, not the `org.junit.jupiter.api` that older Orbit builds used.
 
-**The bearer token is persisted, the port is not negotiated.**
-`TokenStore` keeps the token in `<state>/token` with owner-only permissions so that client configurations survive restarts.
+**The bearer token is persisted in user scope, the port is not negotiated.**
+`TokenStore` keeps the token in `UserScope`, `~/.eclipse/com.vogella.eclipse.mcp.server/token`, with owner-only permissions, so one token serves every workspace this user opens.
+Workspace scope was wrong: the port is one preference with the same default everywhere, so per-workspace tokens are several secrets behind one address and a client registered against one workspace is rejected by the next, which looks exactly like the token rotating.
+It is a plain file rather than a preference because a `.prefs` file is world readable.
+Written through a temporary file and an atomic move: truncating in place leaves a window with no token, and a second IDE starting inside it mints a new one and invalidates every client of the first.
+A workspace token from an older build is adopted once and renamed to `token.migrated`, because a file still called `token` beside the live `endpoint.json` is what a human reads while diagnosing.
 The server never falls back to a different port when the configured one is taken; it stays down and records the reason in `McpServerService.getLastError()`, which the preference page shows.
 Silently moving to another port would break every configured client, which is worse than not starting.
+
+**The tests must never write the real token, and the build is what stops them.**
+User scope is shared with the developer's own running IDE, and the server test bundle regenerates the token, so every `mvn verify` replaced the token that IDE was serving and orphaned its clients.
+`TokenStore.location()` honours `-Dcom.vogella.eclipse.mcp.tokenDirectory`, the surefire `argLine` in the root pom points the tests at `target/`, and a test fails if that redirect is ever lost.
+
+**A JDT search built from an element carries that element as its focus.**
+`IndexSelector` then narrows the search to the projects that can see it, so a workspace wide question bound to one copy of a type silently answers nothing about the others, with `truncated` false.
+SWT declares `org.eclipse.swt.graphics.Image` once per window system, so `eclipse_find_references` resolves every copy through `JavaModelSupport.findTypes` and ORs the members of one overload across them.
+An `OrPattern` carries no focus, which is why the old merged-overload search happened to cover everything; splitting it per overload for `byMember` is what exposed this.
+
+**A wait that outlives the call timeout loses the handle it could have returned.**
+`eclipse_build` advertised a 3600 second maximum under a 30 second call timeout, so a real build came back as "did not finish within 30 seconds" and the `buildId` went with the error.
+Any tool that blocks bounds its wait through `CallBudget` and answers with the handle plus a `waitNote`.
 
 **Field reads and writes are counted from separate searches, and the counts do not sum to `total`.**
 `eclipse_find_references` runs `READ_ACCESSES` and `WRITE_ACCESSES` in addition to `REFERENCES` when the target is a field, and matches them up by path and offset.
@@ -402,6 +419,20 @@ No `about.mappings`, because its `{0}` build id token is substituted by PDE buil
 **Versions in `META-INF/MANIFEST.MF` and the Jetty imports are pinned to `[12.1.12,13)`.**
 `jetty-ee11-servlet` requires the Jetty core packages at that exact floor, and the IDE ships an older 12.1.x that would not satisfy it.
 
+**Capturing on a HiDPI monitor: `print` paints at the device scale.**
+Drawing into an image sized in points wrote a 2x picture into a 1x canvas and kept the top left quarter, silently.
+`ScreenshotTools` prints through an `ImageGcDrawer` and reads `getImageData(zoom)`.
+Correcting with a GC transform instead was tried and shipped and is wrong: it shrinks the paint into a quarter of a canvas that is still device sized.
+`capturedArea` is the pixels, `areaInPoints` the widget, `zoom` the ratio, and `scaleMismatch` fires when the three disagree, which is the check that would have caught the transform.
+Unpainted canvas is magenta, never white, because white is what the unstyled widgets of a broken dark theme look like.
+
+## Verifying UI work
+
+A UI change is not verified by reading the JSON.
+Capture the image and look at it, and crop to bounds from `eclipse_get_widget_tree` rather than by eye.
+Three release cycles went into a fix whose premise was a crop of the wrong widgets: buttons that looked like one stack's toolbar belonged to another.
+The cross-check that settles which widget you are looking at is cheap and belongs before the first attempt, not after the second.
+
 ## Releasing
 
 Run `gh workflow run release.yml`.
@@ -426,6 +457,12 @@ Deleting a release directory does not shrink the branch: `gh-pages` keeps every 
 Only a force-pushed orphan commit would reclaim that, and it would throw away the history of the site.
 
 Pushing anything under `.github/workflows/` needs a token with the `workflow` scope, or an SSH remote.
+
+The release replaces the composite child rather than adding one, so a client that already knows the site has a cached artifact repository pointing at a directory that is now gone.
+Refreshing metadata alone then resolves the new version and fails in the download phase with "No repository found containing", naming neither the cache nor the site.
+`Provisioning.refreshArtifacts` refreshes both sides for this reason; it cost two failed self updates to find.
+
+`eclipse_restart` refuses while a modal dialog is open in the IDE, and self updating through the running server means a human has to be reachable to close one.
 
 When verifying a freshly published release against the live site, remember that Tycho caches remote p2 repositories for 60 minutes under `~/.m2/repository/.cache/tycho`.
 A resolve that returns the previous version right after a release is almost always that cache, not a broken publish.
