@@ -66,7 +66,10 @@
           <!-- the test JVM runs a real Equinox, so without a ceiling it takes a
                quarter of the machine's RAM as its default heap. That is fine on a
                laptop and not on a build server running several executors -->
-          <argLine>-Xmx1g</argLine>
+          <!-- the token lives in user scope, shared by every Eclipse this user runs, so
+               without this the tests replace the token of the developer's own IDE and
+               orphan its clients -->
+          <argLine>-Xmx1g -Dcom.vogella.eclipse.mcp.tokenDirectory=${project.build.directory}/mcp-token</argLine>
         </configuration>
       </plugin>
     </plugins>

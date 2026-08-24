@@ -104,6 +104,7 @@ It survives IDE restarts, p2 updates and switching workspaces, so a client has t
 A workspace that already carried a token from an earlier version keeps it, so upgrading does not orphan a client that is already registered; the old file is renamed to `token.migrated`, because one still called `token` beside the live `endpoint.json` is a trap for whoever reads it while diagnosing.
 It is written through a temporary file and an atomic move: truncating in place leaves a window in which there is no token, and a second IDE starting inside that window mints a new one and invalidates every client of the first.
 It is written as a plain file rather than as a preference because a preference file is world readable and this is a secret.
+Because user scope is shared by every Eclipse this user starts, a second instance regenerating the token replaces the one the first is serving; the build sets `-Dcom.vogella.eclipse.mcp.tokenDirectory` so that running the tests cannot do that to a real IDE.
 *Regenerate token* on the preference page replaces it and restarts the server, which rejects every client still using the old one.
 
 The transport is Streamable HTTP.

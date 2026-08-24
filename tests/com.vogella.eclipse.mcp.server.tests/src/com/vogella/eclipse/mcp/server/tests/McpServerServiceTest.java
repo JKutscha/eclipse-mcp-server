@@ -248,6 +248,15 @@ class McpServerServiceTest {
 	}
 
 	@Test
+	void keepsTheTokenOutOfTheRealUserScopeLocation() {
+		// this test class regenerates the token, and user scope is shared by every
+		// Eclipse this user runs, so without the redirect it would replace the token
+		// the developer's own IDE is serving
+		assertNotNull(System.getProperty("com.vogella.eclipse.mcp.tokenDirectory"),
+				"The tests have to redirect the token away from ~/.eclipse; see the surefire argLine");
+	}
+
+	@Test
 	void regeneratingTheTokenReplacesItAndKeepsTheServerRunning() throws Exception {
 		String before = endpoint().token();
 		McpServerService.getInstance().regenerateToken();

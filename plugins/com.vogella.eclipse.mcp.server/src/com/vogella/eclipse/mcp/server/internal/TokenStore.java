@@ -22,6 +22,9 @@ public final class TokenStore {
 
 	private static final String BUNDLE_NAME = "com.vogella.eclipse.mcp.server"; //$NON-NLS-1$
 
+	/** Puts the token somewhere else, which is how a test instance stays out of the real one. */
+	private static final String DIRECTORY_PROPERTY = "com.vogella.eclipse.mcp.tokenDirectory"; //$NON-NLS-1$
+
 	private TokenStore() {
 	}
 
@@ -39,6 +42,13 @@ public final class TokenStore {
 	 * preference file is world readable and this is a secret.
 	 */
 	static Path location() {
+		// user scope is shared by every Eclipse this user starts, the test instance
+		// included, so a test that regenerates the token would otherwise replace the
+		// one the developer's own IDE is serving and orphan its clients
+		String override = System.getProperty(DIRECTORY_PROPERTY);
+		if (override != null && !override.isBlank()) {
+			return Path.of(override.strip()).resolve(FILE_NAME);
+		}
 		IPath area = UserScope.INSTANCE.getLocation();
 		Path root = area == null ? Path.of(System.getProperty("user.home"), ".eclipse") //$NON-NLS-1$ //$NON-NLS-2$
 				: Path.of(area.toOSString());
