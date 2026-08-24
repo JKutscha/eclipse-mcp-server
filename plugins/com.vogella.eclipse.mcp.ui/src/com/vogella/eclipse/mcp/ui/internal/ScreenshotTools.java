@@ -199,7 +199,7 @@ public final class ScreenshotTools {
 
 		@Override
 		public String getDescription() {
-			return "Captures the IDE as a PNG and writes it to a file, returning the path. Targets are a workbench part by id, a shell by title, or the whole display; passing part or shellTitle selects the target on its own. The answer reports which method worked: rootCapture reads the real screen pixels, widgetPrint paints the widget hierarchy instead, which is the fallback on a compositing window manager where reading the X11 root yields nothing. Use it for UI work such as layout, theming and dialog rendering; for anything textual the other tools answer better and shorter. The display target captures whatever else is on the screen, so it is not the default. A part that is not visible is refused rather than captured blank, unless activate is set."; //$NON-NLS-1$
+			return "Captures the IDE as a PNG and writes it to a file, returning the path. Targets are a workbench part by id, a shell by title, or the whole display; passing part or shellTitle selects the target on its own. The answer reports which method worked: rootCapture reads the real screen pixels, widgetPrint paints the widget hierarchy instead, which is the fallback on a compositing window manager where reading the X11 root yields nothing. Use it for UI work such as layout, theming and dialog rendering; for anything textual the other tools answer better and shorter. The display target captures whatever else is on the screen, so it is not the default. A part that is not visible is refused rather than captured blank, unless activate is set. On a HiDPI monitor widgetPrint captures at the monitor's zoom, so the image is larger than the widget's size in points: capturedArea is the pixels returned, areaInPoints is the widget, and zoom is the percentage between them. Set includeToolbar to capture a view together with its toolbar, which lives in the surrounding part stack and is in no plain part capture."; //$NON-NLS-1$
 		}
 
 		@Override
@@ -214,7 +214,8 @@ public final class ScreenshotTools {
 					    "activate":   {"type":"boolean","default":false,"description":"Bring the part to the front first. This visibly rearranges the user's IDE, so it is off by default."},
 					    "maxWidth":   {"type":"integer","default":1200,"minimum":100,"maximum":4000,"description":"Downscale to this width. A full HD PNG is over a megabyte once base64 encoded."},
 					    "outputPath": {"type":"string","description":"Absolute file to write. Defaults to a temporary file."},
-					    "includeBase64": {"type":"boolean","default":false,"description":"Also return the image inline. Large; prefer reading the file."}
+					    "includeBase64": {"type":"boolean","default":false,"description":"Also return the image inline. Large; prefer reading the file."},
+				    "includeToolbar": {"type":"boolean","default":false,"description":"For a part, capture the whole part stack instead. A view's toolbar is rendered by the surrounding CTabFolder rather than by the part, so it appears in no plain part capture; this is how to see one. The image then also contains the tabs and any sibling view sharing the stack."}
 					  },
 					  "additionalProperties": false
 					}"""; //$NON-NLS-1$
@@ -242,12 +243,12 @@ public final class ScreenshotTools {
 			String outputPath = args.getString("outputPath"); //$NON-NLS-1$
 			boolean includeBase64 = args.getBoolean("includeBase64", false); //$NON-NLS-1$
 
-			return onUi(() -> capture(target, part, shellTitle, activate, maxWidth, outputPath, includeBase64),
-					JsonObject::toString);
+			return onUi(() -> capture(target, part, shellTitle, activate, maxWidth, outputPath, includeBase64,
+					args.getBoolean("includeToolbar", false)), JsonObject::toString); //$NON-NLS-1$
 		}
 
 		private static JsonObject capture(String target, String partId, String shellTitle, boolean activate,
-				int maxWidth, String outputPath, boolean includeBase64) {
+				int maxWidth, String outputPath, boolean includeBase64, boolean includeToolbar) {
 			Display display = PlatformUI.getWorkbench().getDisplay();
 			Rectangle area;
 			// the control to paint if reading the root drawable comes back empty
@@ -268,6 +269,9 @@ public final class ScreenshotTools {
 							"No part '%s', or it is not visible. A part behind another tab is not rendered at all; pass activate to bring it forward." //$NON-NLS-1$
 									.formatted(partId));
 				}
+				if (includeToolbar) {
+					control = stackOf(control);
+				}
 				// map to display coordinates and capture the real pixels, rather than
 				// Control.print(), which has GTK gaps the widget on screen does not
 				area = display.map(control.getParent(), null, control.getBounds());
@@ -279,6 +283,9 @@ public final class ScreenshotTools {
 
 			Image image = new Image(display, area.width, area.height);
 			String method = "rootCapture"; //$NON-NLS-1$
+			// 100 until the widget print path learns better: the root capture reads
+			// real pixels and needs no scaling
+			int zoom = 100;
 			try {
 				GC gc = new GC(display);
 				try {
@@ -299,6 +306,7 @@ public final class ScreenshotTools {
 					}
 				}
 				if (isBlank(image.getImageData()) && printable != null) {
+					Control painted = printable;
 					// A compositing window manager redirects window contents into an
 					// offscreen pixmap, so reading the X11 root drawable yields nothing.
 					// Painting the widget hierarchy ourselves does work there. It has
@@ -306,13 +314,33 @@ public final class ScreenshotTools {
 					// primary path, but a slightly wrong image beats no image at all.
 					image.dispose();
 					Rectangle own = printable.getBounds();
-					image = new Image(display, Math.max(1, own.width), Math.max(1, own.height));
+					int width = Math.max(1, own.width);
+					int height = Math.max(1, own.height);
+					// Control.print paints at the monitor's device scale whatever the
+					// image is sized in, so on a HiDPI display it wrote a 2x picture
+					// into a 1x canvas and the top left quarter was all that fitted,
+					// silently. Scaling the GC by the inverse cancels that, which is
+					// the one correction that works wherever print gets its scale from:
+					// an ImageGcDrawer does not, because SWT pre-scales its GC and print
+					// then scales again on top.
+					zoom = zoomOf(painted);
+					image = new Image(display, width, height);
 					GC printer = new GC(image);
+					org.eclipse.swt.graphics.Transform transform = null;
 					try {
-						printable.print(printer);
+						if (zoom != 100) {
+							transform = new org.eclipse.swt.graphics.Transform(display);
+							transform.scale(100f / zoom, 100f / zoom);
+							printer.setTransform(transform);
+						}
+						painted.print(printer);
 					} finally {
 						printer.dispose();
+						if (transform != null) {
+							transform.dispose();
+						}
 					}
+					area = new Rectangle(area.x, area.y, width, height);
 					method = "widgetPrint"; //$NON-NLS-1$
 				}
 				ImageData data = image.getImageData();
@@ -321,7 +349,8 @@ public final class ScreenshotTools {
 							? "The capture came back uniform, so this display cannot be captured through the X11 root drawable. A compositing window manager redirects window contents into an offscreen pixmap, so reading the root yields nothing. There is no fallback for the whole display; capture a part or a shell instead, which can be painted directly." //$NON-NLS-1$
 							: "The capture came back uniform through both the X11 root drawable and by painting the widget, so this display cannot be captured at all. Nothing was written; do not trust screenshots here."); //$NON-NLS-1$
 				}
-				return write(display, image, data, area, maxWidth, outputPath, includeBase64).put("method", method); //$NON-NLS-1$
+				return write(display, image, data, area, maxWidth, outputPath, includeBase64).put("method", method) //$NON-NLS-1$
+						.put("zoom", Integer.valueOf(zoom)); //$NON-NLS-1$
 			} finally {
 				image.dispose();
 			}
@@ -346,7 +375,11 @@ public final class ScreenshotTools {
 						.put("path", file.toAbsolutePath().toString()) //$NON-NLS-1$
 						.put("width", scaled.width) //$NON-NLS-1$
 						.put("height", scaled.height) //$NON-NLS-1$
-						.put("capturedArea", area.width + "x" + area.height) //$NON-NLS-1$ //$NON-NLS-2$
+						// the pixels that were actually captured, not the widget's size in
+						// points. Reporting the two as if they were the same is what let a
+						// capture that kept a quarter of the window look complete
+						.put("capturedArea", data.width + "x" + data.height) //$NON-NLS-1$ //$NON-NLS-2$
+						.put("areaInPoints", area.width + "x" + area.height) //$NON-NLS-1$ //$NON-NLS-2$
 						.put("bytes", bytes.size()); //$NON-NLS-1$
 				if (includeBase64) {
 					result.put("base64", Base64.getEncoder().encodeToString(bytes.toByteArray())); //$NON-NLS-1$
@@ -387,6 +420,33 @@ public final class ScreenshotTools {
 				}
 			}
 			return null;
+		}
+
+		/** The monitor's zoom in percent, which is the resolution a widget paints at. */
+		private static int zoomOf(Control control) {
+			try {
+				org.eclipse.swt.widgets.Monitor monitor = control.getMonitor();
+				int zoom = monitor == null ? 100 : monitor.getZoom();
+				return zoom <= 0 ? 100 : zoom;
+			} catch (RuntimeException e) {
+				return 100;
+			}
+		}
+
+		/**
+		 * The part stack a control sits in, or the control itself when it is not in one.
+		 * <p>
+		 * A view's toolbar is rendered by the surrounding {@code CTabFolder} rather than
+		 * by the part, so it appears in no part capture at all. Walking up to the folder
+		 * is the only way to ask for a view together with its toolbar.
+		 */
+		private static Control stackOf(Control control) {
+			for (Control candidate = control; candidate != null; candidate = candidate.getParent()) {
+				if (candidate instanceof org.eclipse.swt.custom.CTabFolder) {
+					return candidate;
+				}
+			}
+			return control;
 		}
 
 		private static Control findPart(String partId, boolean activate) {
