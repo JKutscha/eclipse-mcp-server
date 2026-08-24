@@ -51,6 +51,27 @@ protects our call only.
 `DynamicPluginProjectReferences` is registered unconditionally in `plugin.xml`,
 so there is no preference to disable it.
 
+### SWT: `Control.print` paints at the monitor's device scale
+
+On a 200% monitor, `print` draws the widget at device resolution whatever the
+target image is sized in, so drawing into an image created from the widget's
+size in points writes a 2x picture into a 1x canvas and keeps the top left
+quarter. Nothing reports it: the image is exactly the size a correct capture
+would be.
+
+Correcting it with a `GC` transform of `1/zoom` does not work either. It scales
+the paint down into a canvas that is still device sized, so three quarters of
+the image is then empty rather than three quarters of the widget missing. Both
+states were shipped from here before the right one was found.
+
+What works is `new Image(Device, ImageGcDrawer, int, int)` and reading the
+result with `getImageData(zoom)`: the drawer receives a `GC` SWT has already set
+up for the target zoom. Used in `ScreenshotTools`.
+
+Not filed. Arguably intended behaviour of a low level API, but the combination
+of "no way to ask what scale it will paint at" and "silent clipping" is what
+makes it a trap.
+
 ### SWT: window capture silently returns a blank image
 
 `bundles/org.eclipse.swt/Eclipse SWT/gtk/.../GC.java`, around line 489
@@ -85,20 +106,42 @@ monitors at different DPI. Not reproducible on Linux; relevant when
 
 `ColocatedRepositoryTracker.java:96-97` refreshes both the metadata and the
 artifact repository manager. An update check never reads artifact metadata, so
-every check through that path costs twice what it needs to.
+a check through that path costs twice what it needs to.
 
-Not filed. Avoided here by calling `IMetadataRepositoryManager.refreshRepository`
-directly and never using `RepositoryTracker`.
+Not filed. **This entry led this project astray and the conclusion below has
+been corrected.** Refreshing metadata alone was adopted here on the strength of
+it, and that is wrong for a composite whose release replaces the child rather
+than adding one: see the next entry. The waste is real for a plain update check
+and the saving is not worth having for an install.
+
+### p2: a composite artifact repository is not refreshed with its metadata
+
+**Observed, twice, self updating this server against its own update site.**
+`eclipse_check_for_updates` refreshed only `IMetadataRepositoryManager`, saw the
+newly published version and resolved against it. The install then failed in the
+download phase:
+
+```
+No repository found containing: osgi.bundle,com.vogella.eclipse.mcp.core,0.2.0.202608231851
+```
+
+The cached composite ARTIFACT repository still pointed at `releases/<previous>/`,
+which the publish had deleted, so no repository could supply the bundles. The
+message names neither the cache nor the site, and the resolution succeeding
+first makes it read as a broken publish.
+
+Fixed here in `Provisioning.refreshArtifacts` by refreshing both managers. This
+is the concrete case behind the entry above: skipping the artifact side is only
+a saving for a check that never installs.
 
 ### p2: suspected stale child metadata after a composite refresh
 
-Reported by the p2 session, **unverified**: a parent composite keeps stale child
-instances loaded during its own construction, so a refreshed composite may serve
+Reported by the p2 session, **still unverified**, and distinct from the entry
+above, which was the artifact side rather than the metadata side: a parent
+composite may keep child instances loaded during its own construction and serve
 the previous generation of child metadata.
 
-Directly relevant here, because the update site is a composite whose single child
-location changes on every release. The natural test is to check twice after a
-publish and see whether the new unit appears only on the second refresh.
+Not seen here once both managers are refreshed.
 
 ## API gaps rather than defects
 
