@@ -114,7 +114,7 @@ Every request has to carry the token:
 Authorization: Bearer <token>
 ```
 
-Requests without it are answered with `401`, whose message names the workspace this server belongs to and the file its token lives in.
+Requests without it are answered with `401`. The message says the token is stale rather than that something needs re-authorizing, and names both files it can be re-read from, because a client turns a `401` into "requires re-authorization" and disconnects, which reads as an auth problem with no way forward rather than a configured value that has gone out of date.
 
 **Which workspace answered.**
 The port is the same everywhere, so with two IDEs open the one that started first owns it and the second stays down.
@@ -613,6 +613,27 @@ A build takes minutes and the call timeout is 30 seconds, so this runs as a job 
 stdout and stderr are merged, because whoever reads a build log wants the failure in the same stream as the step that led to it.
 The last 2000 lines are kept and `droppedLines` says how many fell out, since a Tycho log is long and the useful part is at the end.
 `eclipse_get_command_output` takes `tailLines` to see further back, `wait` to block, and `cancel` to stop a run, which ends the process and everything it started.
+
+### `eclipse_get_installation`
+
+Reports the product, the installed feature groups with their versions, and the configuration timestamps this installation can be reverted to. Changes nothing.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `filter` | string | everything | Only groups whose id or name contains this text, case insensitive. |
+| `maxResults` | integer, 1 to 2000 | 100 | |
+| `timestamps` | boolean | `false` | Also list the revert points, newest first. |
+
+```json
+{"product":{"id":"org.eclipse.sdk.ide","version":"4.41.0.v20260821"},
+ "profile":"SDKProfile","currentTimestamp":1787542100000,
+ "total":37,"matched":1,"truncated":false,
+ "features":[{"id":"com.vogella.eclipse.mcp.feature.feature.group","version":"0.2.0.202608240330","name":"Eclipse MCP Server"}]}
+```
+
+This is the tool that confirms an install or an update actually landed, and it is the only one that answers "which version is this IDE running".
+The neighbouring tools look like they should and do not: `eclipse_check_for_updates` only reports units that *have* an update, so it says nothing at all when everything is current, and `eclipse_get_bundle_info` describes the active **target platform** rather than the running installation.
+`currentTimestamp` is what `eclipse_update` reports as `previousConfiguration`, so a caller can name what a revert would go back to.
 
 ### `eclipse_add_repository` and `eclipse_remove_repository`
 
