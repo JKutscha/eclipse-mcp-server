@@ -27,7 +27,7 @@ public final class RemoveRepositoryTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Removes a p2 repository from this IDE, so that a scratch site added for one install does not linger. CHANGES IDE CONFIGURATION, and runs as a dry run unless dryRun is set to false. Restricted to the same allowlist as eclipse_add_repository: a URL this server could never have added is one the person at the IDE configured by hand, and removing that is their decision. Nothing that was installed from the repository is uninstalled."; //$NON-NLS-1$
+		return "Removes a p2 repository from this IDE, so that a scratch site added for one install does not linger. CHANGES IDE CONFIGURATION, and runs as a dry run unless dryRun is set to false. It will just as happily remove a site the person at the IDE configured by hand, so read the dry run before committing to it. Nothing that was installed from the repository is uninstalled."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -36,7 +36,7 @@ public final class RemoveRepositoryTool implements IMcpTool {
 				{
 				  "type": "object",
 				  "properties": {
-				    "url":    {"type":"string","description":"Repository URL to remove. Must be under an allowed root."},
+				    "url":    {"type":"string","description":"Repository URL to remove, exactly as it is configured."},
 				    "dryRun": {"type":"boolean","default":true,"description":"Report what would be removed without changing anything. On by default."}
 				  },
 				  "required": ["url"],
@@ -57,9 +57,6 @@ public final class RemoveRepositoryTool implements IMcpTool {
 			uri = new URI(url.strip());
 		} catch (URISyntaxException e) {
 			return McpToolResult.error("'%s' is not a valid URL: %s".formatted(url, e.getMessage())); //$NON-NLS-1$
-		}
-		if (!RepositoryRoots.allows(uri)) {
-			return McpToolResult.error(RepositoryRoots.refusal(uri));
 		}
 		IProvisioningAgent agent = Provisioning.agent();
 		if (agent == null) {

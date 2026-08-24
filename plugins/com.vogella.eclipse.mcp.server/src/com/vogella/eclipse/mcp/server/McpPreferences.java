@@ -19,16 +19,6 @@ public final class McpPreferences {
 	public static final String KEY_CALL_TIMEOUT_SECONDS = "callTimeoutSeconds"; //$NON-NLS-1$
 
 	/**
-	 * URL prefixes a client may add as a p2 repository, one per line.
-	 * <p>
-	 * Empty by default, which means none: adding a repository fetches and runs code
-	 * from a new source, and which sources are acceptable is a decision for the
-	 * person at the IDE. Configuring a prefix here makes that decision once, for a
-	 * class of URLs, instead of once per install.
-	 */
-	public static final String KEY_REPOSITORY_ROOTS = "repositoryRoots"; //$NON-NLS-1$
-
-	/**
 	 * Directories a client may run commands in, one per line.
 	 * <p>
 	 * Empty by default, which switches the command tools off. Running a command is
@@ -54,12 +44,6 @@ public final class McpPreferences {
 
 	public static boolean isEnabled() {
 		return Platform.getPreferencesService().getBoolean(QUALIFIER, KEY_ENABLED, DEFAULT_ENABLED, null);
-	}
-
-	/** The configured repository URL prefixes, empty when none is allowed. */
-	public static java.util.List<String> getRepositoryRoots() {
-		String value = Platform.getPreferencesService().getString(QUALIFIER, KEY_REPOSITORY_ROOTS, "", null); //$NON-NLS-1$
-		return value.lines().map(String::strip).filter(line -> !line.isEmpty()).toList();
 	}
 
 	public static int getPort() {

@@ -17,8 +17,8 @@ import org.eclipse.equinox.p2.core.UIServices;
  * <p>
  * Unsigned content is accepted by default on this path, because an install the
  * server performs is unattended by definition and there is nobody to click the
- * dialog. What limits the exposure is the repository allowlist: only sites the
- * IDE is already configured with can be installed from. Whatever was accepted
+ * dialog. This is not bounded by which sites are configured, because a client can
+ * configure a new one through eclipse_add_repository. Whatever was accepted
  * is reported, so a trusted install is auditable rather than silent.
  */
 final class HeadlessTrust extends UIServices {

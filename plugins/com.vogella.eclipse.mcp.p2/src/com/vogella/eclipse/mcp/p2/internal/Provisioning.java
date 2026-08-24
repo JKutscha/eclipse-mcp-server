@@ -86,7 +86,7 @@ final class Provisioning {
 					.put(trustedUnsigned ? "trustedContent" : "refusedTrust", trustPrompts); //$NON-NLS-1$ //$NON-NLS-2$
 			if (trustPrompts.size() > 0 && trustedUnsigned) {
 				json.put("trustNote", //$NON-NLS-1$
-						"p2 asked whether to trust content that is unsigned or signed by a certificate this IDE does not trust, and this server accepted it, because an install it performs is unattended and there is nobody to answer a dialog. Only repositories this IDE is already configured with can be installed from, which is what bounds this. Nothing was added to the IDE's permanent trust store. Pass trustUnsigned false to refuse instead."); //$NON-NLS-1$
+						"p2 asked whether to trust content that is unsigned or signed by a certificate this IDE does not trust, and this server accepted it, because an install it performs is unattended and there is nobody to answer a dialog. A client can configure a new repository through eclipse_add_repository, so which sites are configured does not bound this. Nothing was added to the IDE's permanent trust store. Pass trustUnsigned false to refuse instead."); //$NON-NLS-1$
 			}
 			if (trustPrompts.size() > 0 && !trustedUnsigned) {
 				json.put("blockedBy", //$NON-NLS-1$

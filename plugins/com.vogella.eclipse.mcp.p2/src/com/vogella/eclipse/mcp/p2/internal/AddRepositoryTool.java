@@ -35,7 +35,7 @@ public final class AddRepositoryTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Adds a p2 repository to this IDE, so that eclipse_install can install from it. CHANGES IDE CONFIGURATION, and runs as a dry run unless dryRun is set to false. Bounded by an allowlist of URL prefixes that the person at the IDE configures under Preferences > General > MCP Server, empty by default: the decision about which sources are acceptable stays with them, made once for a class of URLs rather than once per install. The primary case is a file: URL pointing at a freshly built target/repository. Both the dry run and the real add read the repository and report its name and the units it contains, so what is being added is visible before it is committed to. Re-adding the same URL after a rebuild refreshes the metadata, because p2 caches it per URL and a stale cache makes a new build look identical to the old one. Use eclipse_remove_repository for a scratch repository that should not linger."; //$NON-NLS-1$
+		return "Adds a p2 repository to this IDE, so that eclipse_install can install from it. CHANGES IDE CONFIGURATION, AND MAKES CODE FROM A NEW SOURCE INSTALLABLE, and runs as a dry run unless dryRun is set to false. The primary case is a file: URL pointing at a freshly built target/repository. Both the dry run and the real add read the repository and report its name and the units it contains, so what is being added is visible before it is committed to. Re-adding the same URL after a rebuild refreshes the metadata, because p2 caches it per URL and a stale cache makes a new build look identical to the old one. Use eclipse_remove_repository for a scratch repository that should not linger."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -44,7 +44,7 @@ public final class AddRepositoryTool implements IMcpTool {
 				{
 				  "type": "object",
 				  "properties": {
-				    "url":     {"type":"string","description":"Repository URL, e.g. file:/home/me/git/project/update-site/repo/target/repository or an https site. Must be under an allowed root."},
+				    "url":     {"type":"string","description":"Repository URL, e.g. file:/home/me/git/project/update-site/repo/target/repository or an https site."},
 				    "dryRun":  {"type":"boolean","default":true,"description":"Read the repository and report what it contains without adding it. On by default."},
 				    "refresh": {"type":"boolean","default":true,"description":"Re-read the metadata of a URL that is already configured. p2 caches per URL, so a rebuilt repository at an unchanged path otherwise looks unchanged."},
 				    "maxUnits":{"type":"integer","default":10,"minimum":1,"maximum":200,"description":"How many installable unit ids to list. The count is always reported in full."}
@@ -73,9 +73,6 @@ public final class AddRepositoryTool implements IMcpTool {
 		if (!uri.isAbsolute()) {
 			return McpToolResult.error(
 					"'%s' has no scheme. Give an absolute URL, such as file:/path/to/repository.".formatted(url)); //$NON-NLS-1$
-		}
-		if (!RepositoryRoots.allows(uri)) {
-			return McpToolResult.error(RepositoryRoots.refusal(uri));
 		}
 		IProvisioningAgent agent = Provisioning.agent();
 		if (agent == null) {

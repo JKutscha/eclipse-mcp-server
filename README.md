@@ -8,7 +8,7 @@ An agent with a shell already has files, grep and git.
 What it does not have is the resolved Java model, the incremental builder's problem markers and the user's current editor context.
 Those are the capabilities exposed here.
 
-Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration within an allowlist, `eclipse_set_project_state` opens and closes projects, `eclipse_set_bree` rewrites plug-in manifests, `eclipse_add_repository` and `eclipse_remove_repository` change the configured update sites within an allowlist that is empty by default, and `eclipse_run_command` runs arbitrary commands in directories that same preference page has to name first.
+Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration within an allowlist, `eclipse_set_project_state` opens and closes projects, `eclipse_set_bree` rewrites plug-in manifests, `eclipse_add_repository` and `eclipse_remove_repository` change the configured update sites, and `eclipse_run_command` runs arbitrary commands in directories that same preference page has to name first.
 There is no general file writing, no refactoring and no debugger control, commands run only in directories the user has named, and the only git operation is a branch switch through EGit.
 The server is **disabled by default**, listens on the loopback interface only, and rejects every request that does not carry a bearer token.
 
@@ -57,7 +57,6 @@ Pushing a `v<version>` tag runs the same workflow and additionally creates the G
 * **Enable MCP server**, off by default
 * **Port**, `8642` by default
 * **Tool call timeout**, `30` seconds by default, between 5 and 3600
-* **Allowed p2 repository roots**, empty by default, one URL prefix per line. Only under one of these may a client add an update site with `eclipse_add_repository`.
 * **Directories commands may run in**, empty by default, one path per line. Empty switches `eclipse_run_command` off entirely.
 
 The setting takes effect immediately, and the server also starts on the next IDE startup while it stays enabled.
@@ -622,7 +621,7 @@ Both are dry runs unless `dryRun` is set to `false`.
 
 | Argument | Type | Default | Meaning |
 |---|---|---|---|
-| `url` | string, required | | Repository URL. Must be under an allowed root. |
+| `url` | string, required | | Repository URL. |
 | `dryRun` | boolean | `true` | Read and report without changing anything. |
 | `refresh` | boolean | `true` | Add only. Re-read the metadata of a URL that is already configured. |
 | `maxUnits` | integer, 1 to 200 | 10 | Add only. How many unit ids to list; `groupCount` is always complete. |
@@ -634,16 +633,12 @@ Both are dry runs unless `dryRun` is set to `false`.
  "groups":[{"id":"com.vogella.eclipse.themes.feature.group","version":"1.0.0.202608231900"}]}
 ```
 
-**The allowlist is the point.**
-`eclipse_install` refuses a URL the IDE is not already configured with, because fetching and running code from a new source is a decision for the person at the IDE.
-That guard made a whole workflow impossible: build a p2 repository with Tycho, then be unable to install it without a human walking through *Available Software Sites*.
-So the decision moves rather than disappearing. Under *Preferences > General > MCP Server*, **Allowed p2 repository roots** takes one URL prefix per line, and it is **empty by default**, which allows nothing.
-A configured prefix is the person at the IDE saying "sources under here are acceptable" once, for a class of URLs, instead of once per install.
+**Why there is no allowlist.**
+`eclipse_install` still refuses a URL the IDE is not configured with, so this tool is what makes a freshly built repository installable at all.
+An earlier version bounded it with a preference naming acceptable URL prefixes. That is gone: the same feature ships `eclipse_run_command`, and anything that can run a shell command can already do strictly more than install a p2 feature, so guarding the smaller capability while the larger one is open was friction rather than a boundary.
+What remains is the dry run, which is a "show me what this contains" step rather than a permission gate, and it stays on by default.
 
-URLs are compared normalised, so `file:/home/me/git/../../etc` does not reach out of an allowed root, and a trailing slash does not decide the answer.
-The primary case is a `file:` URL under the user's own git directory, which is a materially weaker risk than an arbitrary `https` site.
-
-Removal is bounded by the same allowlist. A URL this server could never have added is one the person at the IDE configured by hand, and removing that is their decision. Nothing installed from the repository is uninstalled.
+Removal is unguarded for the same reason, and it will just as happily remove a site that was configured by hand, so read the dry run first. Nothing installed from the repository is uninstalled.
 
 `refresh` exists because p2 caches metadata per URL. Rebuilding into the same `target/repository` leaves the path unchanged, so without a refresh the new build looks identical to the old one, which is the same invisible-stale-cache trap `eclipse_check_for_updates` guards against.
 
