@@ -1,0 +1,1053 @@
+- generic [active] [ref=f3e1]:
+  - dialog "cookieconsent" [ref=f3e2]:
+    - generic [ref=f3e3]:
+      - text: Some Eclipse Foundation pages use cookies to better serve you when you return to the site. You can set your browser to notify you before you receive a cookie or turn off cookies. If you do so, however, some areas of some sites may not function properly. To read Eclipse Foundation Privacy Policy
+      - button "learn more about cookies" [ref=f3e4] [cursor=pointer]: click here.
+    - generic [ref=f3e5]:
+      - generic "deny cookies" [ref=f3e6] [cursor=pointer]: Deny
+      - generic "allow cookies" [ref=f3e7] [cursor=pointer]: Allow
+  - link "Skip to main content" [ref=f3e8] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=f3e9]:
+    - banner [ref=f3e10]:
+      - list [ref=f3e17]:
+        - listitem [ref=f3e18]:
+          - link "Welcome, Lars Vogel" [ref=f3e19] [cursor=pointer]:
+            - /url: "#"
+          - text:    
+      - generic [ref=f3e22]:
+        - link [ref=f3e25] [cursor=pointer]:
+          - /url: https://marketplace.eclipse.org
+          - img "Eclipse Foundation" [ref=f3e26]
+        - generic [ref=f3e29]:
+          - generic:
+            - navigation "Main menu":
+              - heading "Main menu" [level=2] [ref=f3e30]
+              - list [ref=f3e31]:
+                - listitem [ref=f3e32]:
+                  - link "My Marketplace" [ref=f3e33] [cursor=pointer]:
+                    - /url: /user/listings
+                - listitem [ref=f3e34]:
+                  - link "Add content" [ref=f3e35] [cursor=pointer]:
+                    - /url: /content/add-content
+                - listitem [ref=f3e36]:
+                  - button "More" [ref=f3e37] [cursor=pointer]
+                - listitem [ref=f3e39]:
+                  - button "Open Google Search menu" [ref=f3e40] [cursor=pointer]:
+                    - generic [ref=f3e41]: 
+    - list [ref=f3e46]:
+      - listitem [ref=f3e47]:
+        - link "Home" [ref=f3e48] [cursor=pointer]:
+          - /url: https://www.eclipse.org
+      - listitem [ref=f3e49]:
+        - text: /
+        - link "Marketplace" [ref=f3e50] [cursor=pointer]:
+          - /url: /
+      - listitem [ref=f3e51]: / New and Updated Solutions
+    - generic [ref=f3e53]:
+      - main [ref=f3e54]:
+        - generic [ref=f3e55]:
+          - heading [level=2] [ref=f3e57]:
+            - strong [ref=f3e58]: 54,641,894
+            - text: solutions installed directly from Eclipse!
+          - generic [ref=f3e60]:
+            - generic [ref=f3e61]:
+              - generic [ref=f3e62]:
+                - textbox "Search" [ref=f3e63]
+                - generic [ref=f3e64]: 
+              - generic [ref=f3e66]: 1296 Solutions and counting
+            - generic [ref=f3e67]:
+              - generic [ref=f3e68]:
+                - generic [ref=f3e69]: Category
+                - generic [ref=f3e70]:
+                  - combobox "Category" [ref=f3e71]:
+                    - option "All Solutions Categories" [selected]
+                    - option "Application Development Frameworks"
+                    - option "Application Management"
+                    - option "Application Server"
+                    - option "BIRT"
+                    - option "Build and Deploy"
+                    - option "Business Intelligence, Reporting and Charting"
+                    - option "Code Management"
+                    - option "Collaboration"
+                    - option "Database"
+                    - option "Database Development"
+                    - option "Database Persistence"
+                    - option "Documentation"
+                    - option "Eclipse Kura"
+                    - option "Eclipse SmartHome"
+                    - option "EclipseRT Target Platform Components"
+                    - option "Editor"
+                    - option "Entertainment"
+                    - option "General Purpose Tools"
+                    - option "Graphics"
+                    - option "IDE"
+                    - option "Internet of Things (IoT)"
+                    - option "J2EE Development Platform"
+                    - option "J2ME"
+                    - option "Languages"
+                    - option "Linux Tools"
+                    - option "Logging"
+                    - option "Mobile and Device Development"
+                    - option "Modeling"
+                    - option "Modeling Tools"
+                    - option "Mylyn Connectors"
+                    - option "Network"
+                    - option "Other"
+                    - option "Process"
+                    - option "Profiling"
+                    - option "Programming Languages"
+                    - option "Reporting"
+                    - option "Rich Client Applications"
+                    - option "Science"
+                    - option "SCM"
+                    - option "Search"
+                    - option "SOA Development"
+                    - option "Source Code Analyzer"
+                    - option "Systems Development"
+                    - option "Team Development"
+                    - option "Testing"
+                    - option "Tools"
+                    - option "UI"
+                    - option "UML"
+                    - option "Web"
+                    - option "Web Services"
+                    - option "Web, XML, Java EE and OSGi Enterprise Development"
+                    - option "XML"
+                  - text: 
+              - generic [ref=f3e72]:
+                - generic [ref=f3e73]: Markets
+                - generic [ref=f3e74]:
+                  - combobox "Markets" [ref=f3e75]:
+                    - option "All Markets" [selected]
+                    - option "Eclipse Project"
+                    - option "Tools"
+                    - option "IoT"
+                    - option "RCP Applications"
+                    - option "Training & Consulting"
+                  - text: 
+            - generic [ref=f3e76]:
+              - button "Advanced Search " [ref=f3e78] [cursor=pointer]
+              - text:  
+            - button "Search" [ref=f3e80] [cursor=pointer]:
+              - generic [ref=f3e81]: 
+              - text: Search
+          - generic [ref=f3e83]:
+            - heading " Spotlight" [level=2] [ref=f3e84]:
+              - generic [ref=f3e85]: 
+              - text: Spotlight
+            - generic [ref=f3e87]:
+              - generic [ref=f3e88]:
+                - generic:
+                  - article [ref=f3e90]:
+                    - generic [ref=f3e91]:
+                      - generic [ref=f3e95]:
+                        - link "Eclipse Marketplace Client" [ref=f3e97] [cursor=pointer]:
+                          - /url: /content/eclipse-marketplace-client
+                        - generic [ref=f3e99]:
+                          - link " 1107" [ref=f3e103] [cursor=pointer]:
+                            - /url: /flag/flag/favorite/4123770/teaser?destination=/frontpage%3Fcheck_logged_in%3D1&token=IaiAJtr8gkLtQv8mE42XGio3RSFXJMh2uWeseLIQ8v4
+                            - generic [ref=f3e104]: 
+                            - text: "1107"
+                          - link " 5" [ref=f3e107] [cursor=pointer]:
+                            - /url: /content/eclipse-marketplace-client#comment-form
+                            - generic [ref=f3e108]: 
+                            - text: "5"
+                        - link " Install" [ref=f3e111] [cursor=pointer]:
+                          - /url: https://marketplace.eclipse.org/marketplace-client-intro?mpc_install=4123770
+                          - generic [ref=f3e112]:
+                            - generic [ref=f3e113]: 
+                            - text: Install
+                        - generic [ref=f3e114]: Eclipse Project
+                        - generic [ref=f3e115]: Member
+                      - generic [ref=f3e116]:
+                        - heading [level=2] [ref=f3e117]:
+                          - link "Eclipse Marketplace Client" [ref=f3e118] [cursor=pointer]:
+                            - /url: /content/eclipse-marketplace-client
+                        - generic [ref=f3e120]:
+                          - generic [ref=f3e121]: Solution Description
+                          - paragraph [ref=f3e123]: The Eclipse Marketplace Client is a rich client solution for installing solutions listed on Eclipse Marketplace directly from an Eclipse Installation. The Eclipse community has...
+                  - article [ref=f3e125]:
+                    - generic [ref=f3e126]:
+                      - generic [ref=f3e130]:
+                        - link "GitHub Copilot" [ref=f3e132] [cursor=pointer]:
+                          - /url: /content/github-copilot
+                        - generic [ref=f3e134]:
+                          - link " 118" [ref=f3e138] [cursor=pointer]:
+                            - /url: /flag/flag/favorite/6600208/teaser?destination=/frontpage%3Fcheck_logged_in%3D1&token=hsKClZeJtJsYIf_g1K9dZASEaB394beVx0H3aVTMHAs
+                            - generic [ref=f3e139]: 
+                            - text: "118"
+                          - link " 93" [ref=f3e142] [cursor=pointer]:
+                            - /url: /content/github-copilot#comment-form
+                            - generic [ref=f3e143]: 
+                            - text: "93"
+                        - link " Install" [ref=f3e146] [cursor=pointer]:
+                          - /url: https://marketplace.eclipse.org/marketplace-client-intro?mpc_install=6600208
+                          - generic [ref=f3e147]:
+                            - generic [ref=f3e148]: 
+                            - text: Install
+                        - link "Top 10 MPC Downloads" [ref=f3e150] [cursor=pointer]:
+                          - /url: /metrics/successful_installs/last30days
+                          - text: Top 10 MPCDownloads
+                        - generic [ref=f3e151]: Member
+                      - generic [ref=f3e152]:
+                        - heading [level=2] [ref=f3e153]:
+                          - link "GitHub Copilot" [ref=f3e154] [cursor=pointer]:
+                            - /url: /content/github-copilot
+                        - generic [ref=f3e156]:
+                          - generic [ref=f3e157]: Solution Description
+                          - paragraph [ref=f3e159]: GitHub Copilot for Eclipse is the official plugin from GitHub, providing intelligent coding assistance. Enhance your development workflow on Eclipse with real-time suggestions and...
+              - link "" [ref=f3e160] [cursor=pointer]:
+                - /url: "#marketplace-blocks-spotlight"
+              - link "" [ref=f3e162] [cursor=pointer]:
+                - /url: "#marketplace-blocks-spotlight"
+              - list [ref=f3e164]:
+                - listitem [ref=f3e165] [cursor=pointer]
+          - heading "New and Updated Solutions" [level=1] [ref=f3e166]
+          - generic [ref=f3e168]:
+            - generic [ref=f3e169]:
+              - article [ref=f3e171]:
+                - generic [ref=f3e172]:
+                  - generic [ref=f3e176]:
+                    - link "Liberty Tools" [ref=f3e178] [cursor=pointer]:
+                      - /url: /content/liberty-tools
+                    - generic [ref=f3e180]:
+                      - link " 21" [ref=f3e184] [cursor=pointer]:
+                        - /url: /flag/flag/favorite/5571241/teaser?destination=/frontpage%3Fcheck_logged_in%3D1&token=CINtBZF1O-ILMwRyaLPpTHPfP72arLIUckQrJOwWT9s
+                        - generic [ref=f3e185]: 
+                        - text: "21"
+                      - link " 23" [ref=f3e188] [cursor=pointer]:
+                        - /url: /content/liberty-tools#comment-form
+                        - generic [ref=f3e189]: 
+                        - text: "23"
+                    - link " Install" [ref=f3e192] [cursor=pointer]:
+                      - /url: https://marketplace.eclipse.org/marketplace-client-intro?mpc_install=5571241
+                      - generic [ref=f3e193]:
+                        - generic [ref=f3e194]: 
+                        - text: Install
+                    - generic [ref=f3e195]: Member
+                  - generic [ref=f3e196]:
+                    - heading [level=2] [ref=f3e197]:
+                      - link "Liberty Tools" [ref=f3e198] [cursor=pointer]:
+                        - /url: /content/liberty-tools
+                    - generic [ref=f3e200]:
+                      - text: Thursday, August 20, 2026 - 09:08 by
+                      - link "Adam Wisniewski" [ref=f3e202] [cursor=pointer]:
+                        - /url: /user/awisniewski
+                    - generic [ref=f3e203]:
+                      - paragraph [ref=f3e205]: Liberty Tools for Eclipse IDE offers features for developing cloud-native Java applications with Open Liberty and WebSphere Liberty. Iterate fast with Liberty dev mode, code with...
+                      - generic [ref=f3e206]:
+                        - link "Application Server" [ref=f3e207] [cursor=pointer]:
+                          - /url: /listings/category/application-server
+                        - text: ","
+                        - link "IDE" [ref=f3e208] [cursor=pointer]:
+                          - /url: /listings/category/ide
+                        - text: ","
+                        - link "Tools" [ref=f3e209] [cursor=pointer]:
+                          - /url: /listings/category/tools
+              - article [ref=f3e211]:
+                - generic [ref=f3e212]:
+                  - generic [ref=f3e216]:
+                    - link "Bndtools - The OSGi Development Tool" [ref=f3e218] [cursor=pointer]:
+                      - /url: /content/bndtools-osgi-development-tool
+                    - generic [ref=f3e220]:
+                      - link " 89" [ref=f3e224] [cursor=pointer]:
+                        - /url: /flag/flag/favorite/1220/teaser?destination=/frontpage%3Fcheck_logged_in%3D1&token=GYjInKENzPVzh2MJNMaH3ahag0zpp0uapiOnHVToZIw
+                        - generic [ref=f3e225]: 
+                        - text: "89"
+                      - link " 4" [ref=f3e228] [cursor=pointer]:
+                        - /url: /content/bndtools-osgi-development-tool#comment-form
+                        - generic [ref=f3e229]: 
+                        - text: "4"
+                    - link " Install" [ref=f3e232] [cursor=pointer]:
+                      - /url: https://marketplace.eclipse.org/marketplace-client-intro?mpc_install=1220
+                      - generic [ref=f3e233]:
+                        - generic [ref=f3e234]: 
+                        - text: Install
+                  - generic [ref=f3e235]:
+                    - heading [level=2] [ref=f3e236]:
+                      - link "Bndtools - The OSGi Development Tool" [ref=f3e237] [cursor=pointer]:
+                        - /url: /content/bndtools-osgi-development-tool
+                    - generic [ref=f3e239]:
+                      - text: Wednesday, August 19, 2026 - 09:35 by
+                      - link "Neil Bartlett" [ref=f3e241] [cursor=pointer]:
+                        - /url: /user/nbartlett
+                    - generic [ref=f3e242]:
+                      - paragraph [ref=f3e244]: Bndtools is an Eclipse-based development environment for OSGi bundles and applications, based on Bnd.
+                      - generic [ref=f3e245]:
+                        - link "Build and Deploy" [ref=f3e246] [cursor=pointer]:
+                          - /url: /listings/category/build-and-deploy
+                        - text: ","
+                        - link "Editor" [ref=f3e247] [cursor=pointer]:
+                          - /url: /listings/category/editor
+                        - text: ","
+                        - link "IDE" [ref=f3e248] [cursor=pointer]:
+                          - /url: /listings/category/ide
+                        - text: ","
+                        - link "Tools" [ref=f3e249] [cursor=pointer]:
+                          - /url: /listings/category/tools
+              - article [ref=f3e251]:
+                - generic [ref=f3e252]:
+                  - generic [ref=f3e256]:
+                    - link "Protector4J" [ref=f3e258] [cursor=pointer]:
+                      - /url: /content/protector4j
+                    - generic [ref=f3e260]:
+                      - link " 9" [ref=f3e264] [cursor=pointer]:
+                        - /url: /flag/flag/favorite/3513853/teaser?destination=/frontpage%3Fcheck_logged_in%3D1&token=AEKQKKUri94Lxnl9XdgVnGujq_RPYg-WwAr5Hj0u0Mw
+                        - generic [ref=f3e265]: 
+                        - text: "9"
+                      - link " 0" [ref=f3e268] [cursor=pointer]:
+                        - /url: /content/protector4j#comment-form
+                        - generic [ref=f3e269]: 
+                        - text: "0"
+                    - link " Install" [ref=f3e272] [cursor=pointer]:
+                      - /url: https://marketplace.eclipse.org/marketplace-client-intro?mpc_install=3513853
+                      - generic [ref=f3e273]:
+                        - generic [ref=f3e274]: 
+                        - text: Install
+                  - generic [ref=f3e275]:
+                    - heading [level=2] [ref=f3e276]:
+                      - link "Protector4J" [ref=f3e277] [cursor=pointer]:
+                        - /url: /content/protector4j
+                    - generic [ref=f3e279]:
+                      - text: Tuesday, August 18, 2026 - 21:17 by
+                      - link "Yongfa Lin" [ref=f3e281] [cursor=pointer]:
+                        - /url: /user/ylin0gf
+                    - generic [ref=f3e282]:
+                      - paragraph [ref=f3e284]: Protect Java Application from Decompilation by Encrypting the Jar File, beyond Obfuscation. Support JavaSE App, Tomcat Web App, Spring Boot App, GlassFish App, Payara App and Java...
+                      - link "Tools" [ref=f3e286] [cursor=pointer]:
+                        - /url: /listings/category/tools
+              - article [ref=f3e288]:
+                - generic [ref=f3e289]:
+                  - generic [ref=f3e293]:
+                    - link "Liferay IDE" [ref=f3e295] [cursor=pointer]:
+                      - /url: /content/liferay-ide
+                    - generic [ref=f3e297]:
+                      - link " 75" [ref=f3e301] [cursor=pointer]:
+                        - /url: /flag/flag/favorite/1301/teaser?destination=/frontpage%3Fcheck_logged_in%3D1&token=apX3UohvyrDzP94o0twl7-_JAkQ9vSLj0qJGodS7xjQ
+                        - generic [ref=f3e302]: 
+                        - text: "75"
+                      - link " 2" [ref=f3e305] [cursor=pointer]:
+                        - /url: /content/liferay-ide#comment-form
+                        - generic [ref=f3e306]: 
+                        - text: "2"
+                    - link " Install" [ref=f3e309] [cursor=pointer]:
+                      - /url: https://marketplace.eclipse.org/marketplace-client-intro?mpc_install=1301
+                      - generic [ref=f3e310]:
+                        - generic [ref=f3e311]: 
+                        - text: Install
+                    - generic [ref=f3e312]: Member
+                  - generic [ref=f3e313]:
+                    - heading [level=2] [ref=f3e314]:
+                      - link "Liferay IDE" [ref=f3e315] [cursor=pointer]:
+                        - /url: /content/liferay-ide
+                    - generic [ref=f3e317]:
+                      - text: Tuesday, August 18, 2026 - 13:15 by
+                      - link "Greg Amerson" [ref=f3e319] [cursor=pointer]:
+                        - /url: /user/gamersonokv
+                    - generic [ref=f3e320]:
+                      - paragraph [ref=f3e322]: Liferay IDE provides Eclipse tooling for Liferay development platform for versions 6.2 and 7.0 including support for module development (OSGi) for Liferay Digital Enterprise 7.0...
+                      - generic [ref=f3e323]:
+                        - link "Application Server" [ref=f3e324] [cursor=pointer]:
+                          - /url: /listings/category/application-server
+                        - text: ","
+                        - link "Build and Deploy" [ref=f3e325] [cursor=pointer]:
+                          - /url: /listings/category/build-and-deploy
+                        - text: ","
+                        - link "IDE" [ref=f3e326] [cursor=pointer]:
+                          - /url: /listings/category/ide
+                        - text: ","
+                        - link "Tools" [ref=f3e327] [cursor=pointer]:
+                          - /url: /listings/category/tools
+                        - text: ","
+                        - link "Web" [ref=f3e328] [cursor=pointer]:
+                          - /url: /listings/category/web
+              - article [ref=f3e330]:
+                - generic [ref=f3e331]:
+                  - generic [ref=f3e335]:
+                    - link "Teamscale Integration for Eclipse" [ref=f3e337] [cursor=pointer]:
+                      - /url: /content/teamscale-integration-eclipse
+                    - generic [ref=f3e339]:
+                      - link " 5" [ref=f3e343] [cursor=pointer]:
+                        - /url: /flag/flag/favorite/2188950/teaser?destination=/frontpage%3Fcheck_logged_in%3D1&token=aoIVhVIFUSFJRx8jkCwaVIRiLI353iS4RSXAm-z9Xlg
+                        - generic [ref=f3e344]: 
+                        - text: "5"
+                      - link " 0" [ref=f3e347] [cursor=pointer]:
+                        - /url: /content/teamscale-integration-eclipse#comment-form
+                        - generic [ref=f3e348]: 
+                        - text: "0"
+                    - link " Install" [ref=f3e351] [cursor=pointer]:
+                      - /url: https://marketplace.eclipse.org/marketplace-client-intro?mpc_install=2188950
+                      - generic [ref=f3e352]:
+                        - generic [ref=f3e353]: 
+                        - text: Install
+                  - generic [ref=f3e354]:
+                    - heading [level=2] [ref=f3e355]:
+                      - link "Teamscale Integration for Eclipse" [ref=f3e356] [cursor=pointer]:
+                        - /url: /content/teamscale-integration-eclipse
+                    - generic [ref=f3e358]:
+                      - text: Tuesday, August 18, 2026 - 10:52 by
+                      - link "Thomas Kinnen" [ref=f3e360] [cursor=pointer]:
+                        - /url: /user/tkinnen
+                    - generic [ref=f3e361]:
+                      - paragraph [ref=f3e363]: The Teamscale Integration for Eclipse allows for seamless browsing of quality defects found by the Teamscale software‐quality analysis server. Teamscale analyzes your source code...
+                      - generic [ref=f3e364]:
+                        - link "Code Management" [ref=f3e365] [cursor=pointer]:
+                          - /url: /listings/category/code-management
+                        - text: ","
+                        - link "Source Code Analyzer" [ref=f3e366] [cursor=pointer]:
+                          - /url: /listings/category/source-code-analyzer
+                        - text: ","
+                        - link "Tools" [ref=f3e367] [cursor=pointer]:
+                          - /url: /listings/category/tools
+              - article [ref=f3e369]:
+                - generic [ref=f3e370]:
+                  - generic [ref=f3e374]:
+                    - link "SonarQube for IDE" [ref=f3e376] [cursor=pointer]:
+                      - /url: /content/sonarqube-ide
+                    - generic [ref=f3e378]:
+                      - link " 3366" [ref=f3e382] [cursor=pointer]:
+                        - /url: /flag/flag/favorite/2568658/teaser?destination=/frontpage%3Fcheck_logged_in%3D1&token=WPhSRv-xC_5X9bL6-bBjqDOCAqBfaKKM-euZ-FTdZdE
+                        - generic [ref=f3e383]: 
+                        - text: "3366"
+                      - link " 84" [ref=f3e386] [cursor=pointer]:
+                        - /url: /content/sonarqube-ide#comment-form
+                        - generic [ref=f3e387]: 
+                        - text: "84"
+                    - link " Install" [ref=f3e390] [cursor=pointer]:
+                      - /url: https://marketplace.eclipse.org/marketplace-client-intro?mpc_install=2568658
+                      - generic [ref=f3e391]:
+                        - generic [ref=f3e392]: 
+                        - text: Install
+                    - link "Top 10 MPC Downloads" [ref=f3e394] [cursor=pointer]:
+                      - /url: /metrics/successful_installs/last30days
+                      - text: Top 10 MPCDownloads
+                  - generic [ref=f3e395]:
+                    - heading [level=2] [ref=f3e396]:
+                      - link "SonarQube for IDE" [ref=f3e397] [cursor=pointer]:
+                        - /url: /content/sonarqube-ide
+                    - generic [ref=f3e399]:
+                      - text: Tuesday, August 18, 2026 - 05:04 by
+                      - link "Julien HENRY" [ref=f3e401] [cursor=pointer]:
+                        - /url: /user/jhenrym6y
+                    - generic [ref=f3e402]:
+                      - paragraph [ref=f3e404]: This plug-in helps you detect and fix quality and security issues as you write code in Java/JSP, C/C++, JS/TS/CSS, PHP, Python, and HTML/XML, as well as other languages.
+                      - generic [ref=f3e405]:
+                        - link "Collaboration" [ref=f3e406] [cursor=pointer]:
+                          - /url: /listings/category/collaboration
+                        - text: ","
+                        - link "Other" [ref=f3e407] [cursor=pointer]:
+                          - /url: /listings/category/other
+                        - text: ","
+                        - link "Programming Languages" [ref=f3e408] [cursor=pointer]:
+                          - /url: /listings/category/programming-languages
+                        - text: ","
+                        - link "Source Code Analyzer" [ref=f3e409] [cursor=pointer]:
+                          - /url: /listings/category/source-code-analyzer
+                        - text: ","
+                        - link "Tools" [ref=f3e410] [cursor=pointer]:
+                          - /url: /listings/category/tools
+              - article [ref=f3e412]:
+                - generic [ref=f3e413]:
+                  - generic [ref=f3e417]:
+                    - link "AI Coder for Eclipse ADT-ABAP (Claude Code, GitHub Copilot Models)- Lite" [ref=f3e419] [cursor=pointer]:
+                      - /url: /content/ai-coder-eclipse-adt-abap-claude-code-github-copilot-models-lite
+                    - generic [ref=f3e421]:
+                      - link " 2" [ref=f3e425] [cursor=pointer]:
+                        - /url: /flag/flag/favorite/7525320/teaser?destination=/frontpage%3Fcheck_logged_in%3D1&token=4MMeLxJ-g71W1v0_6uR_dv4fBqfY7c2NToANs1mLhCM
+                        - generic [ref=f3e426]: 
+                        - text: "2"
+                      - link " 1" [ref=f3e429] [cursor=pointer]:
+                        - /url: /content/ai-coder-eclipse-adt-abap-claude-code-github-copilot-models-lite#comment-form
+                        - generic [ref=f3e430]: 
+                        - text: "1"
+                    - link " Install" [ref=f3e433] [cursor=pointer]:
+                      - /url: https://marketplace.eclipse.org/marketplace-client-intro?mpc_install=7525320
+                      - generic [ref=f3e434]:
+                        - generic [ref=f3e435]: 
+                        - text: Install
+                  - generic [ref=f3e436]:
+                    - heading [level=2] [ref=f3e437]:
+                      - link "AI Coder for Eclipse ADT-ABAP (Claude Code, GitHub Copilot Models)- Lite" [ref=f3e438] [cursor=pointer]:
+                        - /url: /content/ai-coder-eclipse-adt-abap-claude-code-github-copilot-models-lite
+                    - generic [ref=f3e440]:
+                      - text: Tuesday, August 18, 2026 - 03:33 by
+                      - link "Orient CDS" [ref=f3e442] [cursor=pointer]:
+                        - /url: /user/orientcds360
+                    - generic [ref=f3e443]:
+                      - paragraph [ref=f3e445]: "AXLR8 Lite adds a focused AI chat panel to Eclipse for SAP ABAP developers — free and open source under Apache 2.0. Unlike generic AI chat, AXLR8 Lite is ABAP-aware: it reads the..."
+                      - generic [ref=f3e446]:
+                        - link "Application Development Frameworks" [ref=f3e447] [cursor=pointer]:
+                          - /url: /listings/category/application-development-frameworks
+                        - text: ","
+                        - link "Code Management" [ref=f3e448] [cursor=pointer]:
+                          - /url: /listings/category/code-management
+                        - text: ","
+                        - link "Editor" [ref=f3e449] [cursor=pointer]:
+                          - /url: /listings/category/editor
+                        - text: ","
+                        - link "IDE" [ref=f3e450] [cursor=pointer]:
+                          - /url: /listings/category/ide
+              - article [ref=f3e452]:
+                - generic [ref=f3e453]:
+                  - generic [ref=f3e457]:
+                    - link "AI Coder for Eclipse ADT- ABAP (Claude Code, OpenAi, Gemini, Codex, Github Copilot Models)" [ref=f3e459] [cursor=pointer]:
+                      - /url: /content/ai-coder-eclipse-adt-abap-claude-code-openai-gemini-codex-github-copilot-models
+                    - generic [ref=f3e461]:
+                      - link " 6" [ref=f3e465] [cursor=pointer]:
+                        - /url: /flag/flag/favorite/7507964/teaser?destination=/frontpage%3Fcheck_logged_in%3D1&token=ovn1c2O6ojP4xc42T7dmoYaEV9Cn5T7Tzsra2_OcsdA
+                        - generic [ref=f3e466]: 
+                        - text: "6"
+                      - link " 3" [ref=f3e469] [cursor=pointer]:
+                        - /url: /content/ai-coder-eclipse-adt-abap-claude-code-openai-gemini-codex-github-copilot-models#comment-form
+                        - generic [ref=f3e470]: 
+                        - text: "3"
+                    - link " Install" [ref=f3e473] [cursor=pointer]:
+                      - /url: https://marketplace.eclipse.org/marketplace-client-intro?mpc_install=7507964
+                      - generic [ref=f3e474]:
+                        - generic [ref=f3e475]: 
+                        - text: Install
+                  - generic [ref=f3e476]:
+                    - heading [level=2] [ref=f3e477]:
+                      - link "AI Coder for Eclipse ADT- ABAP (Claude Code, OpenAi, Gemini, Codex, Github Copilot Models)" [ref=f3e478] [cursor=pointer]:
+                        - /url: /content/ai-coder-eclipse-adt-abap-claude-code-openai-gemini-codex-github-copilot-models
+                    - generic [ref=f3e480]:
+                      - text: Tuesday, August 18, 2026 - 03:33 by
+                      - link "Orient CDS" [ref=f3e482] [cursor=pointer]:
+                        - /url: /user/orientcds360
+                    - generic [ref=f3e483]:
+                      - paragraph [ref=f3e485]: Orient AXLR8 & ACTV8 packages two AI products into a single Eclipse plug-in for SAP ABAP developers working inside ABAP Development Tools (ADT). Stable release out now!! ORIENT...
+                      - generic [ref=f3e486]:
+                        - link "Application Development Frameworks" [ref=f3e487] [cursor=pointer]:
+                          - /url: /listings/category/application-development-frameworks
+                        - text: ","
+                        - link "Application Management" [ref=f3e488] [cursor=pointer]:
+                          - /url: /listings/category/application-management
+                        - text: ","
+                        - link "Build and Deploy" [ref=f3e489] [cursor=pointer]:
+                          - /url: /listings/category/build-and-deploy
+                        - text: ","
+                        - link "Languages" [ref=f3e490] [cursor=pointer]:
+                          - /url: /listings/category/languages
+              - article [ref=f3e492]:
+                - generic [ref=f3e493]:
+                  - generic [ref=f3e497]:
+                    - link "Code Confidence Tools for FreeRTOS" [ref=f3e499] [cursor=pointer]:
+                      - /url: /content/code-confidence-tools-freertos
+                    - generic [ref=f3e501]:
+                      - link " 3" [ref=f3e505] [cursor=pointer]:
+                        - /url: /flag/flag/favorite/1856351/teaser?destination=/frontpage%3Fcheck_logged_in%3D1&token=3zZ2hvhThWbF_fdplW_gbkSfxEPTE_lb7hsPyrX06qI
+                        - generic [ref=f3e506]: 
+                        - text: "3"
+                      - link " 5" [ref=f3e509] [cursor=pointer]:
+                        - /url: /content/code-confidence-tools-freertos#comment-form
+                        - generic [ref=f3e510]: 
+                        - text: "5"
+                    - link " Install" [ref=f3e513] [cursor=pointer]:
+                      - /url: https://marketplace.eclipse.org/marketplace-client-intro?mpc_install=1856351
+                      - generic [ref=f3e514]:
+                        - generic [ref=f3e515]: 
+                        - text: Install
+                  - generic [ref=f3e516]:
+                    - heading [level=2] [ref=f3e517]:
+                      - link "Code Confidence Tools for FreeRTOS" [ref=f3e518] [cursor=pointer]:
+                        - /url: /content/code-confidence-tools-freertos
+                    - generic [ref=f3e520]:
+                      - text: Tuesday, August 18, 2026 - 03:21 by
+                      - link "John Dallaway" [ref=f3e522] [cursor=pointer]:
+                        - /url: /user/jdallawayflr
+                    - generic [ref=f3e523]:
+                      - paragraph [ref=f3e525]: The Code Confidence™ Tools provide the most productive debug environment for embedded application engineers working with the FreeRTOS™ kernel. All components are fully integrated...
+                      - generic [ref=f3e526]:
+                        - link "Build and Deploy" [ref=f3e527] [cursor=pointer]:
+                          - /url: /listings/category/build-and-deploy
+                        - text: ","
+                        - link "IDE" [ref=f3e528] [cursor=pointer]:
+                          - /url: /listings/category/ide
+                        - text: ","
+                        - link "Systems Development" [ref=f3e529] [cursor=pointer]:
+                          - /url: /listings/category/systems-development
+                        - text: ","
+                        - link "Tools" [ref=f3e530] [cursor=pointer]:
+                          - /url: /listings/category/tools
+              - article [ref=f3e532]:
+                - generic [ref=f3e533]:
+                  - generic [ref=f3e537]:
+                    - link "Design and Verification Tools (DVT) IDE for Verilog, SystemVerilog, Verilog-AMS, VHDL and PSS" [ref=f3e539] [cursor=pointer]:
+                      - /url: /content/design-and-verification-tools-dvt-ide-verilog-systemverilog-verilog-ams-vhdl-and-pss
+                    - generic [ref=f3e541]:
+                      - link " 23" [ref=f3e545] [cursor=pointer]:
+                        - /url: /flag/flag/favorite/192/teaser?destination=/frontpage%3Fcheck_logged_in%3D1&token=ybDdfn0Z0SZVQrTPsJy8F8fwADrnN9Qn6vaatUNVO9o
+                        - generic [ref=f3e546]: 
+                        - text: "23"
+                      - link " 1" [ref=f3e549] [cursor=pointer]:
+                        - /url: /content/design-and-verification-tools-dvt-ide-verilog-systemverilog-verilog-ams-vhdl-and-pss#comment-form
+                        - generic [ref=f3e550]: 
+                        - text: "1"
+                    - link " Install" [ref=f3e553] [cursor=pointer]:
+                      - /url: https://marketplace.eclipse.org/marketplace-client-intro?mpc_install=192
+                      - generic [ref=f3e554]:
+                        - generic [ref=f3e555]: 
+                        - text: Install
+                    - generic [ref=f3e556]: Member
+                  - generic [ref=f3e557]:
+                    - heading [level=2] [ref=f3e558]:
+                      - link "Design and Verification Tools (DVT) IDE for Verilog, SystemVerilog, Verilog-AMS, VHDL and PSS" [ref=f3e559] [cursor=pointer]:
+                        - /url: /content/design-and-verification-tools-dvt-ide-verilog-systemverilog-verilog-ams-vhdl-and-pss
+                    - generic [ref=f3e561]:
+                      - text: Monday, August 17, 2026 - 12:14 by
+                      - link "AMIQ EDA" [ref=f3e563] [cursor=pointer]:
+                        - /url: /user/emisingname6ia
+                    - generic [ref=f3e564]:
+                      - paragraph [ref=f3e566]: Design and Verification Tools (DVT) is an integrated development environment (IDE) for the design and verification engineers working with SystemVerilog, Verilog, VHDL, e Language...
+                      - generic [ref=f3e567]:
+                        - link "Editor" [ref=f3e568] [cursor=pointer]:
+                          - /url: /listings/category/editor
+                        - text: ","
+                        - link "IDE" [ref=f3e569] [cursor=pointer]:
+                          - /url: /listings/category/ide
+                        - text: ","
+                        - link "Programming Languages" [ref=f3e570] [cursor=pointer]:
+                          - /url: /listings/category/programming-languages
+                        - text: ","
+                        - link "Source Code Analyzer" [ref=f3e571] [cursor=pointer]:
+                          - /url: /listings/category/source-code-analyzer
+                        - text: ","
+                        - link "Testing" [ref=f3e572] [cursor=pointer]:
+                          - /url: /listings/category/testing
+            - navigation [ref=f3e573]:
+              - heading "Pagination" [level=4] [ref=f3e574]
+              - list [ref=f3e575]:
+                - listitem:
+                  - link "Current page 1" [ref=f3e576]:
+                    - /url: "?page=0"
+                    - generic [ref=f3e577]: Current page
+                    - text: "1"
+                - listitem:
+                  - link "Page 2" [ref=f3e578] [cursor=pointer]:
+                    - /url: "?page=1"
+                    - generic [ref=f3e579]: Page
+                    - text: "2"
+                - listitem:
+                  - link "Page 3" [ref=f3e580] [cursor=pointer]:
+                    - /url: "?page=2"
+                    - generic [ref=f3e581]: Page
+                    - text: "3"
+                - listitem:
+                  - link "Page 4" [ref=f3e582] [cursor=pointer]:
+                    - /url: "?page=3"
+                    - generic [ref=f3e583]: Page
+                    - text: "4"
+                - listitem:
+                  - link "Page 5" [ref=f3e584] [cursor=pointer]:
+                    - /url: "?page=4"
+                    - generic [ref=f3e585]: Page
+                    - text: "5"
+                - listitem:
+                  - link "Page 6" [ref=f3e586] [cursor=pointer]:
+                    - /url: "?page=5"
+                    - generic [ref=f3e587]: Page
+                    - text: "6"
+                - listitem:
+                  - link "Page 7" [ref=f3e588] [cursor=pointer]:
+                    - /url: "?page=6"
+                    - generic [ref=f3e589]: Page
+                    - text: "7"
+                - listitem:
+                  - link "Page 8" [ref=f3e590] [cursor=pointer]:
+                    - /url: "?page=7"
+                    - generic [ref=f3e591]: Page
+                    - text: "8"
+                - listitem:
+                  - link "Page 9" [ref=f3e592] [cursor=pointer]:
+                    - /url: "?page=8"
+                    - generic [ref=f3e593]: Page
+                    - text: "9"
+                - generic [ref=f3e594]: …
+                - listitem:
+                  - link "Next page" [ref=f3e595] [cursor=pointer]:
+                    - /url: "?page=1"
+                    - text: Next ›
+                - listitem:
+                  - link "Last page" [ref=f3e597] [cursor=pointer]:
+                    - /url: "?page=124"
+                    - text: Last »
+            - link " Subscribe to New and Updated Solutions" [ref=f3e600] [cursor=pointer]:
+              - /url: https://marketplace.eclipse.org/rss.xml
+              - generic [ref=f3e601]: 
+              - text: Subscribe to New and Updated Solutions
+      - complementary [ref=f3e602]:
+        - generic [ref=f3e603]:
+          - generic [ref=f3e604]:
+            - heading "Markets" [level=2] [ref=f3e605]
+            - list [ref=f3e606]:
+              - listitem [ref=f3e607]:
+                - link "Eclipse Project (48)" [ref=f3e608] [cursor=pointer]:
+                  - /url: /listings/market/eclipse-project
+              - listitem [ref=f3e609]:
+                - link "Tools (1196) " [ref=f3e610] [cursor=pointer]:
+                  - /url: /listings/market/tools
+                  - text: Tools (1196)
+                  - generic [ref=f3e611]: 
+              - listitem [ref=f3e612]:
+                - link "IoT - Eclipse Kura (134)" [ref=f3e613] [cursor=pointer]:
+                  - /url: /taxonomy/term/4396%2C4397
+              - listitem [ref=f3e614]:
+                - link "RCP Applications (61)" [ref=f3e615] [cursor=pointer]:
+                  - /url: /listings/market/rcp-applications
+              - listitem [ref=f3e616]:
+                - link "Training & Consulting (55)" [ref=f3e617] [cursor=pointer]:
+                  - /url: /listings/market/training-consulting
+          - generic [ref=f3e618]:
+            - heading "Top MPC Download" [level=2] [ref=f3e619]
+            - generic [ref=f3e621]:
+              - table [ref=f3e624]:
+                - rowgroup [ref=f3e625]:
+                  - row [ref=f3e626]:
+                    - cell [ref=f3e627]:
+                      - link "GitHub Copilot" [ref=f3e628] [cursor=pointer]:
+                        - /url: /content/github-copilot
+                    - cell "14,339" [ref=f3e629]
+                  - row [ref=f3e630]:
+                    - cell [ref=f3e631]:
+                      - link "TestNG for Eclipse" [ref=f3e632] [cursor=pointer]:
+                        - /url: /content/testng-eclipse
+                    - cell "8,974" [ref=f3e633]
+                  - row [ref=f3e634]:
+                    - cell [ref=f3e635]:
+                      - link "Spring Tools (aka Spring Tool Suite)" [ref=f3e636] [cursor=pointer]:
+                        - /url: /content/spring-tools-aka-spring-tool-suite
+                    - cell "8,031" [ref=f3e637]
+                  - row [ref=f3e638]:
+                    - cell [ref=f3e639]:
+                      - link "Eclipse Enterprise Java and Web Developer Tools" [ref=f3e640] [cursor=pointer]:
+                        - /url: /content/eclipse-enterprise-java-and-web-developer-tools
+                    - cell "5,529" [ref=f3e641]
+                  - row [ref=f3e642]:
+                    - cell [ref=f3e643]:
+                      - link "WindowBuilder" [ref=f3e644] [cursor=pointer]:
+                        - /url: /content/windowbuilder
+                    - cell "3,099" [ref=f3e645]
+                  - row [ref=f3e646]:
+                    - cell [ref=f3e647]:
+                      - link "SonarQube for IDE" [ref=f3e648] [cursor=pointer]:
+                        - /url: /content/sonarqube-ide
+                    - cell "2,847" [ref=f3e649]
+                  - row [ref=f3e650]:
+                    - cell [ref=f3e651]:
+                      - link "Darkest Dark Theme with DevStyle" [ref=f3e652] [cursor=pointer]:
+                        - /url: /content/darkest-dark-theme-devstyle
+                    - cell "2,821" [ref=f3e653]
+                  - row [ref=f3e654]:
+                    - cell [ref=f3e655]:
+                      - link "JBoss Tools" [ref=f3e656] [cursor=pointer]:
+                        - /url: /content/jboss-tools
+                    - cell "2,663" [ref=f3e657]
+                  - row [ref=f3e658]:
+                    - cell [ref=f3e659]:
+                      - link "Cucumber Eclipse Plugin" [ref=f3e660] [cursor=pointer]:
+                        - /url: /content/cucumber-eclipse-plugin
+                    - cell "2,652" [ref=f3e661]
+                  - row [ref=f3e662]:
+                    - cell [ref=f3e663]:
+                      - link "Claude Code for Eclipse IDE" [ref=f3e664] [cursor=pointer]:
+                        - /url: /content/claude-code-eclipse-ide
+                    - cell "2,149" [ref=f3e665]
+              - link "more" [ref=f3e667] [cursor=pointer]:
+                - /url: /metrics/successful_installs/last30days
+          - generic [ref=f3e668]:
+            - heading "Top favorites" [level=2] [ref=f3e669]
+            - table [ref=f3e674]:
+              - rowgroup [ref=f3e675]:
+                - row [ref=f3e676]:
+                  - cell [ref=f3e677]:
+                    - link "AI Coder for Eclipse ADT- ABAP (Claude Code, OpenAi, Gemini, Codex, Github Copilot Models)" [ref=f3e678] [cursor=pointer]:
+                      - /url: /content/ai-coder-eclipse-adt-abap-claude-code-openai-gemini-codex-github-copilot-models
+                - row [ref=f3e679]:
+                  - cell [ref=f3e680]:
+                    - link "GitHub Copilot" [ref=f3e681] [cursor=pointer]:
+                      - /url: /content/github-copilot
+                - row [ref=f3e682]:
+                  - cell [ref=f3e683]:
+                    - link "Code Intelligence" [ref=f3e684] [cursor=pointer]:
+                      - /url: /content/code-intelligence
+                - row [ref=f3e685]:
+                  - cell [ref=f3e686]:
+                    - link "Darkest Dark Theme with DevStyle" [ref=f3e687] [cursor=pointer]:
+                      - /url: /content/darkest-dark-theme-devstyle
+                - row [ref=f3e688]:
+                  - cell [ref=f3e689]:
+                    - link "JDT CLI Bridge for AI coding assistants" [ref=f3e690] [cursor=pointer]:
+                      - /url: /content/jdt-cli-bridge-ai-coding-assistants
+                - row [ref=f3e691]:
+                  - cell [ref=f3e692]:
+                    - link "Peon AI" [ref=f3e693] [cursor=pointer]:
+                      - /url: /content/peon-ai
+                - row [ref=f3e694]:
+                  - cell [ref=f3e695]:
+                    - link "QuerySweep" [ref=f3e696] [cursor=pointer]:
+                      - /url: /content/querysweep
+                - row [ref=f3e697]:
+                  - cell [ref=f3e698]:
+                    - link "AI Coder for Eclipse ADT-ABAP (Claude Code, GitHub Copilot Models)- Lite" [ref=f3e699] [cursor=pointer]:
+                      - /url: /content/ai-coder-eclipse-adt-abap-claude-code-github-copilot-models-lite
+                - row [ref=f3e700]:
+                  - cell [ref=f3e701]:
+                    - link "cppstyle" [ref=f3e702] [cursor=pointer]:
+                      - /url: /content/cppstyle
+                - row [ref=f3e703]:
+                  - cell [ref=f3e704]:
+                    - link "DBeaver" [ref=f3e705] [cursor=pointer]:
+                      - /url: /content/dbeaver
+          - generic [ref=f3e706]:
+            - heading "Explore favorites" [level=2] [ref=f3e707]
+            - table [ref=f3e712]:
+              - rowgroup [ref=f3e713]:
+                - row [ref=f3e714]:
+                  - cell [ref=f3e715]:
+                    - link "bhoopathy Mising name" [ref=f3e716] [cursor=pointer]:
+                      - /url: /user/bmisingnamed4d
+                - row [ref=f3e717]:
+                  - cell [ref=f3e718]:
+                    - link "赵 海琳" [ref=f3e719] [cursor=pointer]:
+                      - /url: /user/849538142
+                - row [ref=f3e720]:
+                  - cell [ref=f3e721]:
+                    - link "Martin Schayna" [ref=f3e722] [cursor=pointer]:
+                      - /url: /user/mschayna
+                - row [ref=f3e723]:
+                  - cell [ref=f3e724]:
+                    - link "Nazaret García" [ref=f3e725] [cursor=pointer]:
+                      - /url: /user/ngarca
+                - row [ref=f3e726]:
+                  - cell [ref=f3e727]:
+                    - link "Arttu Hanska" [ref=f3e728] [cursor=pointer]:
+                      - /url: /user/ahanska
+                - row [ref=f3e729]:
+                  - cell [ref=f3e730]:
+                    - link "Balazs Veres" [ref=f3e731] [cursor=pointer]:
+                      - /url: /user/bveres
+                - row [ref=f3e732]:
+                  - cell [ref=f3e733]:
+                    - link "murphy chang" [ref=f3e734] [cursor=pointer]:
+                      - /url: /user/murphy
+                - row [ref=f3e735]:
+                  - cell [ref=f3e736]:
+                    - link "ball programmer" [ref=f3e737] [cursor=pointer]:
+                      - /url: /user/bprogrammermjf
+                - row [ref=f3e738]:
+                  - cell [ref=f3e739]:
+                    - link "Thomas Clancy" [ref=f3e740] [cursor=pointer]:
+                      - /url: /user/tclancyorn
+                - row [ref=f3e741]:
+                  - cell [ref=f3e742]:
+                    - link "Konstantin Schukin" [ref=f3e743] [cursor=pointer]:
+                      - /url: /user/kschukin
+          - generic [ref=f3e744]:
+            - heading "My favorites" [level=2] [ref=f3e745]
+            - table [ref=f3e750]:
+              - rowgroup [ref=f3e751]:
+                - row [ref=f3e752]:
+                  - cell [ref=f3e753]:
+                    - link "egit-privacy" [ref=f3e754] [cursor=pointer]:
+                      - /url: /content/egit-privacy
+                  - cell [ref=f3e755]:
+                    - link " 10" [ref=f3e757] [cursor=pointer]:
+                      - /url: /flag/unflag/favorite/5163054/default?destination=/frontpage&token=K9UCdwqbZyFUBY0CUyGWLAbCjMs2jvAtTrMKUlfPXY4
+                      - generic [ref=f3e758]: 
+                      - text: "10"
+                - row [ref=f3e759]:
+                  - cell [ref=f3e760]:
+                    - link "Eclipse Terminal" [ref=f3e761] [cursor=pointer]:
+                      - /url: /content/eclipse-terminal
+                  - cell [ref=f3e762]:
+                    - link " 857" [ref=f3e764] [cursor=pointer]:
+                      - /url: /flag/unflag/favorite/1687099/default?destination=/frontpage&token=vBK9B9_LQSR8lEKJPhVrptLNNVpWpLdCWydcDdwqFEg
+                      - generic [ref=f3e765]: 
+                      - text: "857"
+                - row [ref=f3e766]:
+                  - cell [ref=f3e767]:
+                    - link "Buildship Gradle Integration" [ref=f3e768] [cursor=pointer]:
+                      - /url: /content/buildship-gradle-integration
+                  - cell [ref=f3e769]:
+                    - link " 1391" [ref=f3e771] [cursor=pointer]:
+                      - /url: /flag/unflag/favorite/2306961/default?destination=/frontpage&token=jCn2ppCYBLBtvcythacem_uinf62yviBi0RAGoc9xDk
+                      - generic [ref=f3e772]: 
+                      - text: "1391"
+                - row [ref=f3e773]:
+                  - cell [ref=f3e774]:
+                    - link "JSON Editor Plugin" [ref=f3e775] [cursor=pointer]:
+                      - /url: /content/json-editor-plugin
+                  - cell [ref=f3e776]:
+                    - link " 715" [ref=f3e778] [cursor=pointer]:
+                      - /url: /flag/unflag/favorite/945/default?destination=/frontpage&token=uOhVag_v8-BDVQsHsfFZZQmFxV1LnmwYk8WsyHbUwsc
+                      - generic [ref=f3e779]: 
+                      - text: "715"
+                - row [ref=f3e780]:
+                  - cell [ref=f3e781]:
+                    - link "EGit - Git Integration for Eclipse" [ref=f3e782] [cursor=pointer]:
+                      - /url: /content/egit-git-integration-eclipse
+                  - cell [ref=f3e783]:
+                    - link " 2111" [ref=f3e785] [cursor=pointer]:
+                      - /url: /flag/unflag/favorite/1336/default?destination=/frontpage&token=BDzIB2y9dmCnNFYzjjU0XJt90SbMYa_6FPzKwVgq0s8
+                      - generic [ref=f3e786]: 
+                      - text: "2111"
+    - region "Popup" [ref=f3e788] [cursor=pointer]:
+      - generic [ref=f3e789]: The CRA is here. Free training available
+      - generic:
+        - generic:
+          - paragraph
+          - link "Start learning" [ref=f3e792]:
+            - /url: https://orcwg.org/training/?utm_source=website&utm_medium=pop-up&utm_campaign=ORC-learning-hub&utm_content=website-popup
+    - generic [ref=f3e793]:
+      - generic [ref=f3e796]:
+        - generic [ref=f3e797]:
+          - heading "Sponsorship opportunities at OCX 2027 are open!" [level=2] [ref=f3e798]
+          - paragraph
+        - list [ref=f3e799]:
+          - listitem [ref=f3e800]:
+            - link "Sponsor OCX" [ref=f3e801] [cursor=pointer]:
+              - /url: https://www.ocxconf.org/event/2027/summary
+      - generic [ref=f3e802]:
+        - paragraph
+        - generic [ref=f3e805]:
+          - generic [ref=f3e806]:
+            - heading "Eclipse Foundation" [level=2] [ref=f3e807]
+            - list [ref=f3e808]:
+              - listitem [ref=f3e809]:
+                - link "About Us" [ref=f3e810] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/org/
+              - listitem [ref=f3e811]:
+                - link "Contact Us" [ref=f3e812] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/org/foundation/contact.php
+              - listitem [ref=f3e813]:
+                - link "Donate" [ref=f3e814] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/donate
+              - listitem [ref=f3e815]:
+                - link "Members" [ref=f3e816] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/membership/
+              - listitem [ref=f3e817]:
+                - link "Governance" [ref=f3e818] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/org/documents/
+              - listitem [ref=f3e819]:
+                - link "Code of Conduct" [ref=f3e820] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/org/documents/Community_Code_of_Conduct.php
+              - listitem [ref=f3e821]:
+                - link "Logo and Artwork" [ref=f3e822] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/artwork/
+              - listitem [ref=f3e823]:
+                - link "Board of Directors" [ref=f3e824] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/org/foundation/directors.php
+          - generic [ref=f3e825]:
+            - heading "Legal" [level=2] [ref=f3e826]
+            - list [ref=f3e827]:
+              - listitem [ref=f3e828]:
+                - link "Privacy Policy" [ref=f3e829] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/legal/privacy/
+              - listitem [ref=f3e830]:
+                - link "Terms of Use" [ref=f3e831] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/legal/terms-of-use/
+              - listitem [ref=f3e832]:
+                - link "Compliance" [ref=f3e833] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/legal/compliance/
+              - listitem [ref=f3e834]:
+                - link "Eclipse Public License" [ref=f3e835] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/legal/epl-2.0/
+              - listitem [ref=f3e836]:
+                - link "Legal Resources" [ref=f3e837] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/legal/
+          - generic [ref=f3e838]:
+            - heading "Useful Links" [level=2] [ref=f3e839]
+            - list [ref=f3e840]:
+              - listitem [ref=f3e841]:
+                - link "Report a Bug" [ref=f3e842] [cursor=pointer]:
+                  - /url: https://bugs.eclipse.org/bugs/
+              - listitem [ref=f3e843]:
+                - link "Documentation" [ref=f3e844] [cursor=pointer]:
+                  - /url: //help.eclipse.org/
+              - listitem [ref=f3e845]:
+                - link "How to Contribute" [ref=f3e846] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/contribute/
+              - listitem [ref=f3e847]:
+                - link "Mailing Lists" [ref=f3e848] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/mail/
+              - listitem [ref=f3e849]:
+                - link "Forums" [ref=f3e850] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/forums/
+              - listitem [ref=f3e851]:
+                - link "Marketplace" [ref=f3e852] [cursor=pointer]:
+                  - /url: //marketplace.eclipse.org
+          - generic [ref=f3e853]:
+            - heading "Other" [level=2] [ref=f3e854]
+            - list [ref=f3e855]:
+              - listitem [ref=f3e856]:
+                - link "IDE and Tools" [ref=f3e857] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/ide/
+              - listitem [ref=f3e858]:
+                - link "Projects" [ref=f3e859] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/projects
+              - listitem [ref=f3e860]:
+                - link "Working Groups" [ref=f3e861] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/org/workinggroups/
+              - listitem [ref=f3e862]:
+                - link "Research@Eclipse" [ref=f3e863] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/org/research/
+              - listitem [ref=f3e864]:
+                - link "Report a Vulnerability" [ref=f3e865] [cursor=pointer]:
+                  - /url: https://www.eclipse.org/security/
+              - listitem [ref=f3e866]:
+                - link "Service Status" [ref=f3e867] [cursor=pointer]:
+                  - /url: https://status.eclipse.org
+          - generic [ref=f3e869]:
+            - paragraph [ref=f3e871]: Copyright © Eclipse Foundation AISBL. All Rights Reserved.
+            - list [ref=f3e873]:
+              - listitem [ref=f3e874]:
+                - link "X account" [ref=f3e875] [cursor=pointer]:
+                  - /url: https://x.com/EclipseFdn
+                  - generic [ref=f3e876]:
+                    - generic [ref=f3e877]: 
+                    - generic [ref=f3e878]: 
+                    - generic [ref=f3e879]: X account
+              - listitem [ref=f3e880]:
+                - link "Bluesky account" [ref=f3e881] [cursor=pointer]:
+                  - /url: https://bsky.app/profile/eclipse.org
+                  - generic [ref=f3e882]:
+                    - generic [ref=f3e883]: 
+                    - generic [ref=f3e884]: 
+                    - generic [ref=f3e885]: Bluesky account
+              - listitem [ref=f3e886]:
+                - link "Mastodon account" [ref=f3e887] [cursor=pointer]:
+                  - /url: https://mastodon.social/@EclipseFdn
+                  - generic [ref=f3e888]:
+                    - generic [ref=f3e889]: 
+                    - generic [ref=f3e890]: 
+                    - generic [ref=f3e891]: Mastodon account
+              - listitem [ref=f3e892]:
+                - link "Facebook account" [ref=f3e893] [cursor=pointer]:
+                  - /url: https://www.facebook.com/eclipse.org
+                  - generic [ref=f3e894]:
+                    - generic [ref=f3e895]: 
+                    - generic [ref=f3e896]: 
+                    - generic [ref=f3e897]: Facebook account
+              - listitem [ref=f3e898]:
+                - link "Instagram account" [ref=f3e899] [cursor=pointer]:
+                  - /url: https://www.instagram.com/eclipsefoundation/
+                  - generic [ref=f3e900]:
+                    - generic [ref=f3e901]: 
+                    - generic [ref=f3e902]: 
+                    - generic [ref=f3e903]: Instagram account
+              - listitem [ref=f3e904]:
+                - link "YouTube account" [ref=f3e905] [cursor=pointer]:
+                  - /url: https://www.youtube.com/user/EclipseFdn
+                  - generic [ref=f3e906]:
+                    - generic [ref=f3e907]: 
+                    - generic [ref=f3e908]: 
+                    - generic [ref=f3e909]: YouTube account
+              - listitem [ref=f3e910]:
+                - link "LinkedIn account" [ref=f3e911] [cursor=pointer]:
+                  - /url: https://www.linkedin.com/company/eclipse-foundation
+                  - generic [ref=f3e912]:
+                    - generic [ref=f3e913]: 
+                    - generic [ref=f3e914]: 
+                    - generic [ref=f3e915]: LinkedIn account
+  - status [ref=f3e916]

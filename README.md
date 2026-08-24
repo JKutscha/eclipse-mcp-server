@@ -9,7 +9,7 @@ What it does not have is the resolved Java model, the incremental builder's prob
 Those are the capabilities exposed here.
 
 Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration within an allowlist, `eclipse_set_project_state` opens and closes projects, `eclipse_set_bree` rewrites plug-in manifests, `eclipse_add_repository` and `eclipse_remove_repository` change the configured update sites within an allowlist that is empty by default, and `eclipse_run_command` runs arbitrary commands in directories that same preference page has to name first.
-There is no general file writing, no refactoring and no debugger control, and commands run only in directories the user has named.
+There is no general file writing, no refactoring and no debugger control, commands run only in directories the user has named, and the only git operation is a branch switch through EGit.
 The server is **disabled by default**, listens on the loopback interface only, and rejects every request that does not carry a bearer token.
 
 ## Building
@@ -646,6 +646,25 @@ The primary case is a `file:` URL under the user's own git directory, which is a
 Removal is bounded by the same allowlist. A URL this server could never have added is one the person at the IDE configured by hand, and removing that is their decision. Nothing installed from the repository is uninstalled.
 
 `refresh` exists because p2 caches metadata per URL. Rebuilding into the same `target/repository` leaves the path unchanged, so without a refresh the new build looks identical to the old one, which is the same invisible-stale-cache trap `eclipse_check_for_updates` guards against.
+
+### `eclipse_checkout` and `eclipse_get_git_status`
+
+**`eclipse_checkout` changes the working tree**, and is a dry run unless `dryRun` is set to `false`. Both need EGit; without it they say so rather than the bundle failing to resolve.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `target` | string, required | | Branch, tag or commit. `eclipse_checkout` only. |
+| `project` | string | | Project whose repository, resolved as the Git Repositories view resolves it. |
+| `directory` | string | | Working tree or `.git` directory, for a repository outside the workspace. |
+| `dryRun` | boolean | `true` | `eclipse_checkout` only. |
+
+The switch goes through EGit's `BranchOperation` rather than running `git`, and that is the entire point.
+A checkout run outside the IDE leaves the workspace believing the old files are still there, so everything derived from them, problem markers above all, is stale until something refreshes.
+EGit runs the switch as a workspace operation, so the affected projects refresh as part of it and that window never opens.
+It also refuses a switch that would conflict instead of leaving a half completed one behind, and reports the conflicting paths.
+
+`eclipse_get_git_status` reports `branch`, `head`, `state`, `clean` and the modified, untracked and conflicting paths.
+Record `head` alongside a problem set: comparing errors across branches without knowing which commit each set belongs to is how one branch's failures get attributed to another.
 
 ### `eclipse_run_tests` and `eclipse_get_test_results`
 

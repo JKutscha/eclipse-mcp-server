@@ -1,0 +1,498 @@
+- generic [active] [ref=f6e1]:
+  - link "Skip to main content" [ref=f6e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - main [ref=f6e4]:
+    - generic [ref=f6e7]:
+      - navigation [ref=f6e10]:
+        - heading "Breadcrumb" [level=2] [ref=f6e11]
+        - list [ref=f6e12]:
+          - listitem [ref=f6e13]:
+            - link "Home" [ref=f6e14] [cursor=pointer]:
+              - /url: /
+          - listitem [ref=f6e15]:
+            - link "Add content item" [ref=f6e16] [cursor=pointer]:
+              - /url: /node/add
+      - heading "Create Solution" [level=1] [ref=f6e19]
+    - generic [ref=f6e25]:
+      - generic [ref=f6e27]:
+        - button "Submit content for moderation" [ref=f6e29] [cursor=pointer]
+        - generic [ref=f6e30]:
+          - generic [ref=f6e32]:
+            - generic [ref=f6e33] [cursor=pointer]: Solution Name *
+            - textbox "Solution Name *" [ref=f6e34]:
+              - /placeholder: ""
+              - text: Eclipse MCP Server
+            - generic [ref=f6e35]: Product Names only. Do not include Taglines.
+          - generic [ref=f6e37]:
+            - generic [ref=f6e38] [cursor=pointer]: Solution URL
+            - textbox "Solution URL" [ref=f6e39]:
+              - /placeholder: ""
+              - text: https://github.com/vogellacompany/eclipse-mcp-server
+          - generic [ref=f6e41]:
+            - generic [ref=f6e42] [cursor=pointer]: Organization Name
+            - textbox "Organization Name" [ref=f6e43]:
+              - /placeholder: ""
+              - text: vogella GmbH
+          - generic [ref=f6e45]:
+            - generic [ref=f6e46] [cursor=pointer]: Eclipse Foundation Member Organization *
+            - combobox "Eclipse Foundation Member Organization *" [ref=f6e47]:
+              - option "No" [selected]
+              - option "Yes"
+            - generic [ref=f6e48]: Is this company a Member of the Eclipse Foundation?
+        - group [ref=f6e486]:
+          - button "Solution Logo" [expanded] [ref=f6e487] [cursor=pointer]
+          - generic [ref=f6e489]:
+            - generic [ref=f6e490] [cursor=pointer]: Solution Logo
+            - generic [ref=f6e492]:
+              - generic [ref=f6e493]:
+                - link "logo-110x80_0.png" [ref=f6e494] [cursor=pointer]:
+                  - /url: /sites/default/files/logo-110x80_0.png
+                - text: (8.43 KB)
+              - button "Remove" [ref=f6e495] [cursor=pointer]
+            - generic [ref=f6e500]: Images will be forced to 110x80 pixels in size. Please provide images with the correct aspect ratio.
+        - generic [ref=f6e63]:
+          - generic [ref=f6e64] [cursor=pointer]:
+            - text: Solution Description
+            - generic [ref=f6e65]:
+              - text: (
+              - button "Edit summary" [ref=f6e66]
+              - text: )
+            - text: "*"
+          - application "Rich Text Editor" [ref=f6e68]:
+            - toolbar "Editor toolbar" [ref=f6e71]:
+              - generic [ref=f6e72]:
+                - button "Paragraph, Heading" [ref=f6e74]:
+                  - generic [ref=f6e75]: Paragraph
+                - button "Bold" [ref=f6e76]
+                - button "Italic" [ref=f6e79]
+                - button "Link" [ref=f6e83]
+                - button "Underline" [ref=f6e86]
+                - button "Block quote" [ref=f6e89]
+                - button "Code" [ref=f6e92]
+                - generic [ref=f6e96]:
+                  - button "Bulleted List" [ref=f6e97]
+                  - button "Bulleted List" [ref=f6e100]
+                - generic [ref=f6e104]:
+                  - button "Numbered List" [ref=f6e105]
+                  - button "Numbered List" [ref=f6e108]
+              - button "Show more items" [ref=f6e113]
+            - 'textbox "Rich Text Editor. Editing area: main. Press Alt+0 for help." [ref=f6e118]':
+              - paragraph [ref=f6e119]: Turns a running Eclipse IDE into an MCP server, so that external LLM clients such as Claude Code or Cursor can ask the IDE for information they cannot cheaply reconstruct from files alone.
+              - paragraph [ref=f6e469]: An agent with a shell already has files, grep and git. What it does not have is the resolved Java model, the problem markers of the incremental builder, the Error Log and the file you are currently looking at. Those are the capabilities exposed here.
+              - paragraph [ref=f6e470]: The server offers 16 tools. It finds references with the JDT search engine, splitting field accesses into reads and writes so that a field written but never read is visible as dead. It returns type hierarchies and the source of types from jars with a source attachment. It reports the compilation errors of the workspace, and the entries of the Error Log including the full stack traces of UI freezes, which never become problem markers. It reads preferences and reports which scope each value comes from. It reports the active editor with its cursor and selection, so that a model can resolve "this method".
+              - paragraph [ref=f6e471]: "A few tools change something, and each says so in its own description: organize imports, format, run a build, open and close projects, write preferences within an allowlist, and set the execution environment of plug-in projects together with the matching compiler settings. There is no general file writing, no refactoring, no terminal and no debugger control."
+              - paragraph [ref=f6e472]: The server is disabled by default. It binds to the loopback interface only, checks the Host header, and rejects every request that does not carry a bearer token. Enable it under Preferences > General > MCP Server, which also shows the URL and token to configure a client with.
+              - paragraph [ref=f6e473]:
+                - text: "Sources, documentation and issue tracker:"
+                - link "https://github.com/vogellacompany/eclipse-mcp-server" [ref=f6e474]:
+                  - /url: https://github.com/vogellacompany/eclipse-mcp-server
+              - paragraph [ref=f6e475]: "For help and support: info@vogella.com"
+        - generic [ref=f6e120]:
+          - generic [ref=f6e122]:
+            - generic [ref=f6e123] [cursor=pointer]: Status
+            - combobox "Status" [ref=f6e124]:
+              - option "- None -"
+              - option "Alpha" [selected]
+              - option "Beta"
+              - option "Production/Stable"
+              - option "Mature"
+          - generic [ref=f6e126]:
+            - generic [ref=f6e127] [cursor=pointer]: License Type
+            - combobox "License Type" [ref=f6e128]:
+              - option "- None -"
+              - option "Commercial"
+              - option "Commercial - Free"
+              - option "EPL"
+              - option "EPL 2.0" [selected]
+              - option "GPL"
+              - option "LGPL"
+              - option "Apache 2.0"
+              - option "BSD"
+              - option "Free for non-commerical use"
+              - option "Other"
+              - option "Other Open Source"
+              - option "MIT"
+        - group "Solution Type" [ref=f6e130]:
+          - generic [ref=f6e134]:
+            - generic [ref=f6e135]:
+              - radio "N/A" [ref=f6e136]
+              - text: N/A
+            - generic [ref=f6e137]:
+              - radio "This product requires an existing Eclipse installation to function" [checked] [ref=f6e138]
+              - text: This product requires an existing Eclipse installation to function
+            - generic [ref=f6e139]:
+              - radio "This is a standalone product." [ref=f6e140]
+              - text: This is a standalone product.
+        - generic [ref=f6e141]:
+          - generic [ref=f6e143]:
+            - generic [ref=f6e144] [cursor=pointer]: Support URL
+            - textbox "Support URL" [ref=f6e145]:
+              - /placeholder: ""
+              - text: https://github.com/vogellacompany/eclipse-mcp-server/issues
+          - generic [ref=f6e147]:
+            - generic [ref=f6e148] [cursor=pointer]: RSS Feed
+            - textbox "RSS Feed" [ref=f6e149]:
+              - /placeholder: ""
+          - generic [ref=f6e151]:
+            - generic [ref=f6e152] [cursor=pointer]: Categories *
+            - listbox "Categories *" [ref=f6e153]:
+              - option "Application Development Frameworks" [ref=f6e154]
+              - option "Application Management" [ref=f6e155]
+              - option "Application Server" [ref=f6e156]
+              - option "BIRT" [ref=f6e157]
+              - option "Build and Deploy" [ref=f6e158]
+              - option "Business Intelligence, Reporting and Charting" [ref=f6e159]
+              - option "Code Management" [ref=f6e160]
+              - option "Collaboration" [ref=f6e161]
+              - option "Database" [ref=f6e162]
+              - option "Database Development" [ref=f6e163]
+              - option "Database Persistence" [ref=f6e164]
+              - option "Documentation" [ref=f6e165]
+              - option "Eclipse Kura" [ref=f6e166]
+              - option "Eclipse SmartHome" [ref=f6e167]
+              - option "EclipseRT Target Platform Components" [ref=f6e168]
+              - option "Editor" [ref=f6e169]
+              - option "Entertainment" [ref=f6e170]
+              - option "General Purpose Tools" [selected] [ref=f6e171]
+              - option "Graphics" [ref=f6e172]
+              - option "IDE" [selected] [ref=f6e173]
+              - option "Internet of Things (IoT)" [ref=f6e174]
+              - option "J2EE Development Platform" [ref=f6e175]
+              - option "J2ME" [ref=f6e176]
+              - option "Languages" [ref=f6e177]
+              - option "Linux Tools" [ref=f6e178]
+              - option "Logging" [ref=f6e179]
+              - option "Mobile and Device Development" [ref=f6e180]
+              - option "Modeling" [ref=f6e181]
+              - option "Modeling Tools" [ref=f6e182]
+              - option "Mylyn Connectors" [ref=f6e183]
+              - option "Network" [ref=f6e184]
+              - option "Other" [ref=f6e185]
+              - option "Process" [ref=f6e186]
+              - option "Profiling" [ref=f6e187]
+              - option "Programming Languages" [ref=f6e188]
+              - option "Reporting" [ref=f6e189]
+              - option "Rich Client Applications" [ref=f6e190]
+              - option "Science" [ref=f6e191]
+              - option "SCM" [ref=f6e192]
+              - option "Search" [ref=f6e193]
+              - option "SOA Development" [ref=f6e194]
+              - option "Source Code Analyzer" [ref=f6e195]
+              - option "Systems Development" [ref=f6e196]
+              - option "Team Development" [ref=f6e197]
+              - option "Testing" [ref=f6e198]
+              - option "Tools" [selected] [ref=f6e199]
+              - option "UI" [ref=f6e200]
+              - option "UML" [ref=f6e201]
+              - option "Web" [ref=f6e202]
+              - option "Web Services" [ref=f6e203]
+              - option "Web, XML, Java EE and OSGi Enterprise Development" [ref=f6e204]
+              - option "XML" [ref=f6e205]
+            - generic [ref=f6e206]: Please limit your Categories to 5 or less.
+          - generic [ref=f6e208]:
+            - generic [ref=f6e209] [cursor=pointer]: Markets *
+            - combobox "Markets *" [ref=f6e210]:
+              - option "Tools" [selected]
+              - option "IoT"
+              - option "RCP Applications"
+              - option "Training & Consulting"
+        - generic [ref=f6e212]:
+          - generic [ref=f6e213] [cursor=pointer]: Tags
+          - textbox "Tags" [ref=f6e215]:
+            - /placeholder: ""
+            - text: mcp, ai, llm, jdt, agent
+          - generic [ref=f6e216]: "A comma-separated list of terms describing this content. Example: funny, bungee jumping, \"Company, Inc.\"."
+        - generic [ref=f6e219]:
+          - button "Show row weights" [ref=f6e221] [cursor=pointer]
+          - table [ref=f6e223]:
+            - rowgroup [ref=f6e224]:
+              - row [ref=f6e225]:
+                - columnheader [ref=f6e226]:
+                  - heading "Solution Version(s)" [level=4] [ref=f6e227]
+                  - button "Toggle Actions" [ref=f6e230]
+            - rowgroup [ref=f6e232]:
+              - row [ref=f6e502]:
+                - cell [ref=f6e234]:
+                  - link "Change order" [ref=f6e236]:
+                    - /url: "#"
+                - cell "Solution Collapse Toggle Actions Version number 0.2.0 Please enter a version number for this solution version. Update Site URL * https://vogellacompany.github.io/eclipse-mcp-server/ Update Sites are used to organize and export features so they can be installed into Eclipse applications. Supported Eclipse Release(s) * Supported Platform(s) * Minimum Java Version * Java 25 Select the minimum Java version this solution version is compatible with. Feature IDs * Feature Ids Remove Feature ID * com.vogella.eclipse.mcp.feature.feature.group Please list each Feature ID you wish to be installed through the Eclipse Marketplace Client. What's this? Install state * Required Specify the default install state of this feature for the Eclipse Marketplace client. About Solution Version Add Feature Ids" [ref=f6e503]:
+                  - generic [ref=f6e239]:
+                    - generic [ref=f6e240]:
+                      - generic [ref=f6e241]: Solution
+                      - generic [ref=f6e242]:
+                        - button "Collapse" [ref=f6e243] [cursor=pointer]
+                        - button "Toggle Actions" [ref=f6e245]
+                    - generic [ref=f6e247]:
+                      - generic [ref=f6e249]:
+                        - generic [ref=f6e250] [cursor=pointer]: Version number
+                        - textbox "Version number" [ref=f6e251]:
+                          - /placeholder: ""
+                          - text: 0.2.0
+                        - generic [ref=f6e252]: Please enter a version number for this solution version.
+                      - generic [ref=f6e254]:
+                        - generic [ref=f6e255] [cursor=pointer]: Update Site URL *
+                        - textbox "Update Site URL *" [ref=f6e256]:
+                          - /placeholder: ""
+                          - text: https://vogellacompany.github.io/eclipse-mcp-server/
+                        - generic [ref=f6e257]: Update Sites are used to organize and export features so they can be installed into Eclipse applications.
+                      - group "Supported Eclipse Release(s) *" [ref=f6e259]:
+                        - generic [ref=f6e262]:
+                          - generic [ref=f6e263]:
+                            - generic [ref=f6e264]:
+                              - checkbox "2026-09 (4.41)" [checked] [ref=f6e265]
+                              - text: 2026-09 (4.41)
+                            - generic [ref=f6e266]:
+                              - checkbox "2026-06 (4.40)" [checked] [ref=f6e267]
+                              - text: 2026-06 (4.40)
+                            - generic [ref=f6e268]:
+                              - checkbox "2026-03 (4.39)" [ref=f6e269]
+                              - text: 2026-03 (4.39)
+                            - generic [ref=f6e270]:
+                              - checkbox "2025-12 (4.38)" [ref=f6e271]
+                              - text: 2025-12 (4.38)
+                            - generic [ref=f6e272]:
+                              - checkbox "2025-09 (4.37)" [ref=f6e273]
+                              - text: 2025-09 (4.37)
+                            - generic [ref=f6e274]:
+                              - checkbox "2025-06 (4.36)" [ref=f6e275]
+                              - text: 2025-06 (4.36)
+                            - generic [ref=f6e276]:
+                              - checkbox "2025-03 (4.35)" [ref=f6e277]
+                              - text: 2025-03 (4.35)
+                            - generic [ref=f6e278]:
+                              - checkbox "2024-12 (4.34)" [ref=f6e279]
+                              - text: 2024-12 (4.34)
+                            - generic [ref=f6e280]:
+                              - checkbox "2024-09 (4.33)" [ref=f6e281]
+                              - text: 2024-09 (4.33)
+                            - generic [ref=f6e282]:
+                              - checkbox "2024-06 (4.32)" [ref=f6e283]
+                              - text: 2024-06 (4.32)
+                            - generic [ref=f6e284]:
+                              - checkbox "2024-03 (4.31)" [ref=f6e285]
+                              - text: 2024-03 (4.31)
+                            - generic [ref=f6e286]:
+                              - checkbox "2023-12 (4.30)" [ref=f6e287]
+                              - text: 2023-12 (4.30)
+                            - generic [ref=f6e288]:
+                              - checkbox "2023-09 (4.29)" [ref=f6e289]
+                              - text: 2023-09 (4.29)
+                            - generic [ref=f6e290]:
+                              - checkbox "2023-06 (4.28)" [ref=f6e291]
+                              - text: 2023-06 (4.28)
+                            - generic [ref=f6e292]:
+                              - checkbox "2023-03 (4.27)" [ref=f6e293]
+                              - text: 2023-03 (4.27)
+                            - generic [ref=f6e294]:
+                              - checkbox "2022-12 (4.26)" [ref=f6e295]
+                              - text: 2022-12 (4.26)
+                            - generic [ref=f6e296]:
+                              - checkbox "2022-09 (4.25)" [ref=f6e297]
+                              - text: 2022-09 (4.25)
+                            - generic [ref=f6e298]:
+                              - checkbox "2022-06 (4.24)" [ref=f6e299]
+                              - text: 2022-06 (4.24)
+                            - generic [ref=f6e300]:
+                              - checkbox "2022-03 (4.23)" [ref=f6e301]
+                              - text: 2022-03 (4.23)
+                            - generic [ref=f6e302]:
+                              - checkbox "2021-12 (4.22)" [ref=f6e303]
+                              - text: 2021-12 (4.22)
+                            - generic [ref=f6e304]:
+                              - checkbox "2021-09 (4.21)" [ref=f6e305]
+                              - text: 2021-09 (4.21)
+                            - generic [ref=f6e306]:
+                              - checkbox "2021-06 (4.20)" [ref=f6e307]
+                              - text: 2021-06 (4.20)
+                            - generic [ref=f6e308]:
+                              - checkbox "2021-03 (4.19)" [ref=f6e309]
+                              - text: 2021-03 (4.19)
+                            - generic [ref=f6e310]:
+                              - checkbox "2020-12 (4.18)" [ref=f6e311]
+                              - text: 2020-12 (4.18)
+                            - generic [ref=f6e312]:
+                              - checkbox "2020-09 (4.17)" [ref=f6e313]
+                              - text: 2020-09 (4.17)
+                            - generic [ref=f6e314]:
+                              - checkbox "2020-06 (4.16)" [ref=f6e315]
+                              - text: 2020-06 (4.16)
+                            - generic [ref=f6e316]:
+                              - checkbox "2020-03 (4.15)" [ref=f6e317]
+                              - text: 2020-03 (4.15)
+                            - generic [ref=f6e318]:
+                              - checkbox "2019-12 (4.14)" [ref=f6e319]
+                              - text: 2019-12 (4.14)
+                            - generic [ref=f6e320]:
+                              - checkbox "2019-09 (4.13)" [ref=f6e321]
+                              - text: 2019-09 (4.13)
+                            - generic [ref=f6e322]:
+                              - checkbox "2019-06 (4.12)" [ref=f6e323]
+                              - text: 2019-06 (4.12)
+                            - generic [ref=f6e324]:
+                              - checkbox "2019-03 (4.11)" [ref=f6e325]
+                              - text: 2019-03 (4.11)
+                            - generic [ref=f6e326]:
+                              - checkbox "2018-12 (4.10)" [ref=f6e327]
+                              - text: 2018-12 (4.10)
+                            - generic [ref=f6e328]:
+                              - checkbox "2018-09 (4.9)" [ref=f6e329]
+                              - text: 2018-09 (4.9)
+                            - generic [ref=f6e330]:
+                              - checkbox "Photon (4.8)" [ref=f6e331]
+                              - text: Photon (4.8)
+                            - generic [ref=f6e332]:
+                              - checkbox "Oxygen (4.7)" [ref=f6e333]
+                              - text: Oxygen (4.7)
+                            - generic [ref=f6e334]:
+                              - checkbox "Neon (4.6)" [ref=f6e335]
+                              - text: Neon (4.6)
+                            - generic [ref=f6e336]:
+                              - checkbox "Mars (4.5)" [ref=f6e337]
+                              - text: Mars (4.5)
+                            - generic [ref=f6e338]:
+                              - checkbox "Luna (4.4)" [ref=f6e339]
+                              - text: Luna (4.4)
+                            - generic [ref=f6e340]:
+                              - checkbox "Kepler (4.3)" [ref=f6e341]
+                              - text: Kepler (4.3)
+                            - generic [ref=f6e342]:
+                              - checkbox "Juno (4.2, 3.8)" [ref=f6e343]
+                              - text: Juno (4.2, 3.8)
+                            - generic [ref=f6e344]:
+                              - checkbox "Previous to Juno (<=4.1)" [ref=f6e345]
+                              - text: Previous to Juno (<=4.1)
+                          - generic [ref=f6e346]: Select all applicable Eclipse releases for this solution version.
+                      - group "Supported Platform(s) *" [ref=f6e348]:
+                        - generic [ref=f6e351]:
+                          - generic [ref=f6e352]:
+                            - generic [ref=f6e353]:
+                              - checkbox "Windows" [checked] [ref=f6e354]
+                              - text: Windows
+                            - generic [ref=f6e355]:
+                              - checkbox "Mac" [checked] [ref=f6e356]
+                              - text: Mac
+                            - generic [ref=f6e357]:
+                              - checkbox "Linux/GTK" [checked] [ref=f6e358]
+                              - text: Linux/GTK
+                          - generic [ref=f6e359]: Select all applicable Platform this solution version is compatible with.
+                      - generic [ref=f6e361]:
+                        - generic [ref=f6e362] [cursor=pointer]: Minimum Java Version *
+                        - combobox "Minimum Java Version *" [ref=f6e363]:
+                          - option "Java 6"
+                          - option "Java 7"
+                          - option "Java 8"
+                          - option "Java 9"
+                          - option "Java 10"
+                          - option "Java 11"
+                          - option "Java 12"
+                          - option "Java 13"
+                          - option "Java 14"
+                          - option "Java 15"
+                          - option "Java 16"
+                          - option "Java 17"
+                          - option "Java 18"
+                          - option "Java 19"
+                          - option "Java 20"
+                          - option "Java 21"
+                          - option "Java 22"
+                          - option "Java 23"
+                          - option "Java 24"
+                          - option "Java 25" [selected]
+                          - option "Java 26"
+                        - generic [ref=f6e364]: Select the minimum Java version this solution version is compatible with.
+                      - generic [ref=f6e367]:
+                        - table [ref=f6e368]:
+                          - rowgroup [ref=f6e369]:
+                            - row [ref=f6e370]:
+                              - columnheader [ref=f6e371]:
+                                - heading "Feature IDs *" [level=4] [ref=f6e372]
+                          - rowgroup [ref=f6e373]:
+                            - row [ref=f6e504]:
+                              - cell [ref=f6e375]:
+                                - link "Change order" [ref=f6e377]:
+                                  - /url: "#"
+                              - cell "Feature Ids Remove Feature ID * com.vogella.eclipse.mcp.feature.feature.group Please list each Feature ID you wish to be installed through the Eclipse Marketplace Client. What's this? Install state * Required Specify the default install state of this feature for the Eclipse Marketplace client." [ref=f6e505]:
+                                - generic [ref=f6e380]:
+                                  - generic [ref=f6e381]:
+                                    - generic [ref=f6e382]: Feature Ids
+                                    - button "Remove" [ref=f6e384] [cursor=pointer]
+                                  - generic [ref=f6e385]:
+                                    - generic [ref=f6e387]:
+                                      - generic [ref=f6e388] [cursor=pointer]: Feature ID *
+                                      - textbox "Feature ID *" [ref=f6e389]:
+                                        - /placeholder: ""
+                                        - text: com.vogella.eclipse.mcp.feature.feature.group
+                                      - generic [ref=f6e390]:
+                                        - text: Please list each Feature ID you wish to be installed through the Eclipse Marketplace Client.
+                                        - link "What's this?" [ref=f6e391] [cursor=pointer]:
+                                          - /url: /feature-how-to
+                                    - generic [ref=f6e393]:
+                                      - generic [ref=f6e394] [cursor=pointer]: Install state *
+                                      - combobox "Install state *" [ref=f6e395]:
+                                        - option "Required" [selected]
+                                        - option "Optional - Selected"
+                                        - option "Optional"
+                                      - generic [ref=f6e396]: Specify the default install state of this feature for the Eclipse Marketplace client.
+                        - generic:
+                          - generic "About Solution Version"
+                        - button "Add Feature Ids" [ref=f6e399] [cursor=pointer]
+          - generic:
+            - generic "About Solution Version"
+          - generic [ref=f6e400]:
+            - button "Add Solution" [ref=f6e402] [cursor=pointer]
+            - text: to
+            - emphasis [ref=f6e403]: Solution Version(s)
+        - group [ref=f6e406]:
+          - button "Screenshot" [expanded] [ref=f6e407] [cursor=pointer]
+          - generic [ref=f6e411]:
+            - generic [ref=f6e412] [cursor=pointer]: Add a new file
+            - button "Add a new file" [ref=f6e415]
+            - generic [ref=f6e416]: "Maximum 4 files.16 MB limit.Allowed types: png gif jpg jpeg."
+        - generic [ref=f6e419]:
+          - button "Show row weights" [ref=f6e421] [cursor=pointer]
+          - table [ref=f6e423]:
+            - rowgroup [ref=f6e424]:
+              - row [ref=f6e425]:
+                - columnheader [ref=f6e426]:
+                  - heading "Additional Editors" [level=4] [ref=f6e427]
+                - columnheader [ref=f6e428]
+            - rowgroup [ref=f6e429]:
+              - row [ref=f6e430]:
+                - cell [ref=f6e431]:
+                  - link "Change order" [ref=f6e433]:
+                    - /url: "#"
+                - cell [ref=f6e434]:
+                  - generic [ref=f6e435]:
+                    - generic [ref=f6e436] [cursor=pointer]: Additional Editors (value 1)
+                    - textbox "Additional Editors (value 1)" [ref=f6e438]:
+                      - /placeholder: ""
+                - cell [ref=f6e439]:
+                  - button "Remove" [ref=f6e440] [cursor=pointer]
+          - generic [ref=f6e441]: List the people that can edit this listing.
+          - button "Add another item" [ref=f6e443] [cursor=pointer]
+      - generic [ref=f6e447]:
+        - generic [ref=f6e448]:
+          - generic [ref=f6e449] [cursor=pointer]: "Last saved:"
+          - text: Not saved yet
+        - generic [ref=f6e450]:
+          - generic [ref=f6e451] [cursor=pointer]: "Author:"
+          - text: Lars Vogel
+        - generic [ref=f6e452]:
+          - generic [ref=f6e453] [cursor=pointer]: "Moderation State:"
+          - text: Initial draft
+        - generic [ref=f6e456]:
+          - generic [ref=f6e457] [cursor=pointer]: Revision log message
+          - textbox "Revision log message" [ref=f6e459]:
+            - /placeholder: ""
+          - generic [ref=f6e460]: Briefly describe the changes you have made.
+      - button "Submit content for moderation" [ref=f6e464] [cursor=pointer]
+  - status [ref=f6e465]:
+    - generic [ref=f6e476]: 7 results are available, use up and down arrow keys to navigate.
+  - status [ref=f6e466]
+  - generic:
+    - application:
+      - generic:
+        - generic:
+          - list
+        - generic:
+          - list

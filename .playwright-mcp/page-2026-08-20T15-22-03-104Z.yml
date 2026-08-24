@@ -1,0 +1,31 @@
+- generic [active] [ref=f5e1]:
+  - link "Skip to main content" [ref=f5e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - main [ref=f5e4]:
+    - generic [ref=f5e7]:
+      - navigation [ref=f5e10]:
+        - heading "Breadcrumb" [level=2] [ref=f5e11]
+        - list [ref=f5e12]:
+          - listitem [ref=f5e13]:
+            - link "Home" [ref=f5e14] [cursor=pointer]:
+              - /url: /
+      - heading "Add content item" [level=1] [ref=f5e17]
+    - generic [ref=f5e22]:
+      - generic [ref=f5e23]:
+        - term [ref=f5e24]:
+          - link "IoT Package" [ref=f5e25] [cursor=pointer]:
+            - /url: /node/add/iot_package
+        - definition [ref=f5e26]: This Content Type is used to store IoT package information.
+      - generic [ref=f5e27]:
+        - term [ref=f5e28]:
+          - link "LTS provider" [ref=f5e29] [cursor=pointer]:
+            - /url: /node/add/lts_provider
+        - definition [ref=f5e30]: This form should be used by new maintenance providers to fill in their contact data so that customers can get in touch with them
+      - generic [ref=f5e31]:
+        - term [ref=f5e32]:
+          - link "Solution" [ref=f5e33] [cursor=pointer]:
+            - /url: /node/add/resource
+        - definition [ref=f5e34]: This Content Type is used to store plugin information
+      - term [ref=f5e36]:
+        - link "Training and Consulting" [ref=f5e37] [cursor=pointer]:
+          - /url: /node/add/training
