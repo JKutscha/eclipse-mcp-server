@@ -199,7 +199,7 @@ public final class ScreenshotTools {
 
 		@Override
 		public String getDescription() {
-			return "Captures the IDE as a PNG and writes it to a file, returning the path. Targets are a workbench part by id, a shell by title, or the whole display; passing part or shellTitle selects the target on its own. The answer reports which method worked: rootCapture reads the real screen pixels, widgetPrint paints the widget hierarchy instead, which is the fallback on a compositing window manager where reading the X11 root yields nothing. Use it for UI work such as layout, theming and dialog rendering; for anything textual the other tools answer better and shorter. The display target captures whatever else is on the screen, so it is not the default. A part that is not visible is refused rather than captured blank, unless activate is set. On a HiDPI monitor widgetPrint captures at the monitor's zoom, so the image is larger than the widget's size in points: capturedArea is the pixels returned, areaInPoints is the widget, and zoom is the percentage between them. Set includeToolbar to capture a view together with its toolbar, which lives in the surrounding part stack and is in no plain part capture."; //$NON-NLS-1$
+			return "Captures the IDE as a PNG and writes it to a file, returning the path. Targets are a workbench part by id, a shell by title, or the whole display; passing part or shellTitle selects the target on its own. The answer reports which method worked: rootCapture reads the real screen pixels, widgetPrint paints the widget hierarchy instead, which is the fallback on a compositing window manager where reading the X11 root yields nothing. Use it for UI work such as layout, theming and dialog rendering; for anything textual the other tools answer better and shorter. The display target captures whatever else is on the screen, so it is not the default. A part that is not visible is refused rather than captured blank, unless activate is set. On a HiDPI monitor widgetPrint captures at the monitor's zoom, so the image is larger than the widget's size in points: capturedArea is the pixels returned, areaInPoints is the widget, and zoom is the percentage between them. Set includeToolbar to capture a part together with its surrounding stack, but note that the stack's topRight children, the view toolbar among them, are not painted by any widget print rooted inside the window; capture the shell and crop to the bounds from eclipse_get_widget_tree for those."; //$NON-NLS-1$
 		}
 
 		@Override
@@ -215,7 +215,7 @@ public final class ScreenshotTools {
 					    "maxWidth":   {"type":"integer","default":1200,"minimum":100,"maximum":4000,"description":"Downscale to this width. A full HD PNG is over a megabyte once base64 encoded."},
 					    "outputPath": {"type":"string","description":"Absolute file to write. Defaults to a temporary file."},
 					    "includeBase64": {"type":"boolean","default":false,"description":"Also return the image inline. Large; prefer reading the file."},
-				    "includeToolbar": {"type":"boolean","default":false,"description":"For a part, capture the whole part stack instead. A view's toolbar is rendered by the surrounding CTabFolder rather than by the part, so it appears in no plain part capture; this is how to see one. The image then also contains the tabs and any sibling view sharing the stack."}
+				    "includeToolbar": {"type":"boolean","default":false,"description":"For a part, capture the whole part stack instead: the tabs and any sibling view sharing the stack. KNOWN GAP: it does NOT paint the CTabFolder's topRight children, which are the view toolbar, the view menu and the min and max buttons, and nothing in the answer says they are missing. To see those, capture target=shell and crop to the bounds eclipse_get_widget_tree reports for them."}
 					  },
 					  "additionalProperties": false
 					}"""; //$NON-NLS-1$
@@ -253,9 +253,6 @@ public final class ScreenshotTools {
 			Rectangle area;
 			// the control to paint if reading the root drawable comes back empty
 			Control printable = null;
-			// the region of the painted control to keep, when what was asked about is
-			// smaller than what has to be painted to get it
-			Rectangle clip = null;
 			if ("display".equals(target)) { //$NON-NLS-1$
 				area = display.getBounds();
 			} else if ("shell".equals(target)) { //$NON-NLS-1$
@@ -273,20 +270,7 @@ public final class ScreenshotTools {
 									.formatted(partId));
 				}
 				if (includeToolbar) {
-					Control stack = stackOf(control);
-					// print rooted at the CTabFolder does not paint its topRight control,
-					// which is the view toolbar, the view menu and the min and max
-					// buttons: the one thing this flag is named after. Nor does rooting
-					// one level up. A print of the window's content composite does paint
-					// them, so that is what is printed, and the result is cropped back to
-					// the stack so the answer is still the stack and not its neighbours.
-					Composite content = contentOf(stack);
-					if (stack != control && content != null && content != stack) {
-						clip = display.map(stack.getParent(), content, stack.getBounds());
-						control = content;
-					} else {
-						control = stack;
-					}
+					control = stackOf(control);
 				}
 				// map to display coordinates and capture the real pixels, rather than
 				// Control.print(), which has GTK gaps the widget on screen does not
@@ -350,13 +334,6 @@ public final class ScreenshotTools {
 					method = "widgetPrint"; //$NON-NLS-1$
 				}
 				ImageData data = image.getImageData(zoom);
-				if (clip != null && "widgetPrint".equals(method)) { //$NON-NLS-1$
-					ImageData cropped = crop(display, data, clip, zoom);
-					if (cropped != null) {
-						data = cropped;
-						area = new Rectangle(area.x, area.y, clip.width, clip.height);
-					}
-				}
 				if (isBlank(data)) {
 					return failure(printable == null
 							? "The capture came back uniform, so this display cannot be captured through the X11 root drawable. A compositing window manager redirects window contents into an offscreen pixmap, so reading the root yields nothing. There is no fallback for the whole display; capture a part or a shell instead, which can be painted directly." //$NON-NLS-1$
@@ -512,42 +489,6 @@ public final class ScreenshotTools {
 				page.activate(part);
 			}
 			return controlOf(part);
-		}
-
-		/** The window's top level content composite, which is the highest print that works. */
-		private static Composite contentOf(Control control) {
-			Shell shell = control.getShell();
-			if (shell == null || shell.getChildren().length == 0) {
-				return null;
-			}
-			return shell.getChildren()[0] instanceof Composite composite ? composite : null;
-		}
-
-		/** Cuts {@code region}, given in points, out of device pixel data. */
-		private static ImageData crop(Display display, ImageData data, Rectangle region, int zoom) {
-			int x = region.x * zoom / 100;
-			int y = region.y * zoom / 100;
-			int width = Math.min(region.width * zoom / 100, data.width - x);
-			int height = Math.min(region.height * zoom / 100, data.height - y);
-			if (x < 0 || y < 0 || width <= 0 || height <= 0) {
-				return null;
-			}
-			// both images are built from ImageData and are therefore 1:1, so the device
-			// pixels above stay device pixels and nothing is rescaled on the way through
-			Image full = new Image(display, data);
-			Image cut = new Image(display, width, height);
-			GC gc = new GC(cut);
-			try {
-				gc.drawImage(full, x, y, width, height, 0, 0, width, height);
-			} finally {
-				gc.dispose();
-				full.dispose();
-			}
-			try {
-				return cut.getImageData();
-			} finally {
-				cut.dispose();
-			}
 		}
 
 		private static JsonObject failure(String reason) {

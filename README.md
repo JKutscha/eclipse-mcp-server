@@ -633,6 +633,8 @@ Read-only. What a widget is, and what the CSS engine made of it.
 
 `eclipse_get_widget_tree` walks a part or a shell and reports each widget's class, bounds, CSS id, CSS class and the `path` that addresses it. `filter` narrows by class name, so "which Trees does this view contain and what are their ids" is one call.
 
+**A known gap in `eclipse_screenshot`.** `includeToolbar` captures the part stack, but a widget print rooted anywhere inside the window does not paint the `CTabFolder`'s `topRight` children, which are the view toolbar, the view menu and the min and max buttons. Rooting at the folder, at its parent and at the window's content composite were all tried and all miss them, and nothing in the answer says they are absent, so an empty toolbar region reads as "there is no toolbar" rather than "the capture missed it". The reliable way to see one is to capture `target=shell` and crop to the bounds `eclipse_get_widget_tree` reports for the toolbar, which is why the two tools are worth using together.
+
 `eclipse_inspect_widget` takes a `path` from that tree and adds the CSS element it maps to, the ancestor chain, and what the engine resolved for each requested property, under an optional `pseudo` class.
 
 ```json
