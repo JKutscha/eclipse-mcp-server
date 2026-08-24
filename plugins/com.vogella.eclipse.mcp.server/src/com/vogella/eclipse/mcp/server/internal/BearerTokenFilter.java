@@ -36,10 +36,15 @@ public final class BearerTokenFilter implements Filter {
 		String authorization = httpRequest.getHeader("Authorization"); //$NON-NLS-1$
 		if (authorization == null
 				|| !MessageDigest.isEqual(authorization.getBytes(StandardCharsets.UTF_8), expected)) {
-			httpResponse.setHeader("WWW-Authenticate", "Bearer"); //$NON-NLS-1$ //$NON-NLS-2$
-			// a client turns this into "requires re-authorization" and disconnects, so
-			// the body has to say what to do rather than only that something is wrong:
-			// the token is stale, and here are the two files it can be re-read from
+			// error and error_description as RFC 6750 defines them, because a client
+			// that discards the body may still read the challenge. Claude Code reads
+			// neither: it renders any 401 as "requires re-authorization" and drops the
+			// payload, so a stale token reaches the model as an auth problem it cannot
+			// act on. Answering 200 with a JSON-RPC error would reach it, and is not
+			// worth it: a rejected credential has to be a 401, or every other client's
+			// auth handling is wrong instead.
+			httpResponse.setHeader("WWW-Authenticate", //$NON-NLS-1$
+					"Bearer error=\"invalid_token\", error_description=\"The bearer token is not the one this server is using. Re-read it from the token file or from endpoint.json in the workspace, and update the client configuration.\""); //$NON-NLS-1$
 			httpResponse.sendError(HttpServletResponse.SC_UNAUTHORIZED,
 					"The bearer token sent is not the one this server is using, which usually means a client is configured with a token from before it last changed. Nothing needs re-authorizing: re-read the current token from %s, or from the 'token' field of %s, and update the client configuration. This server is serving the workspace %s." //$NON-NLS-1$
 							.formatted(TokenStore.location(), EndpointFile.location(), EndpointFile.workspace()));

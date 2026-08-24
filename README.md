@@ -114,7 +114,9 @@ Every request has to carry the token:
 Authorization: Bearer <token>
 ```
 
-Requests without it are answered with `401`. The message says the token is stale rather than that something needs re-authorizing, and names both files it can be re-read from, because a client turns a `401` into "requires re-authorization" and disconnects, which reads as an auth problem with no way forward rather than a configured value that has gone out of date.
+Requests without it are answered with `401`. The message says the token is stale rather than that something needs re-authorizing, and names both files it can be re-read from; the `WWW-Authenticate` challenge repeats it as `error="invalid_token"` with an `error_description`, the way RFC 6750 defines.
+
+Whether any of that reaches the caller is the client's decision, and Claude Code's is unhelpful: it renders every `401` as "requires re-authorization" and discards both the body and the challenge, so a stale token arrives as an authorization problem that no amount of authorizing fixes. Answering `200` with a JSON-RPC error would get the text through, and this server does not do it: a rejected credential has to be a `401`, and trading every other client's auth handling for one client's rendering is the wrong trade. The mitigation that works is the token not moving in the first place.
 
 **Which workspace answered.**
 The port is the same everywhere, so with two IDEs open the one that started first owns it and the second stays down.
