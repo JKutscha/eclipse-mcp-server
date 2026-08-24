@@ -253,6 +253,9 @@ public final class ScreenshotTools {
 			Rectangle area;
 			// the control to paint if reading the root drawable comes back empty
 			Control printable = null;
+			// the region of the painted control to keep, when what was asked about is
+			// smaller than what has to be painted to get it
+			Rectangle clip = null;
 			if ("display".equals(target)) { //$NON-NLS-1$
 				area = display.getBounds();
 			} else if ("shell".equals(target)) { //$NON-NLS-1$
@@ -270,7 +273,20 @@ public final class ScreenshotTools {
 									.formatted(partId));
 				}
 				if (includeToolbar) {
-					control = stackOf(control);
+					Control stack = stackOf(control);
+					// print rooted at the CTabFolder does not paint its topRight control,
+					// which is the view toolbar, the view menu and the min and max
+					// buttons: the one thing this flag is named after. Nor does rooting
+					// one level up. A print of the window's content composite does paint
+					// them, so that is what is printed, and the result is cropped back to
+					// the stack so the answer is still the stack and not its neighbours.
+					Composite content = contentOf(stack);
+					if (stack != control && content != null && content != stack) {
+						clip = display.map(stack.getParent(), content, stack.getBounds());
+						control = content;
+					} else {
+						control = stack;
+					}
 				}
 				// map to display coordinates and capture the real pixels, rather than
 				// Control.print(), which has GTK gaps the widget on screen does not
@@ -334,6 +350,13 @@ public final class ScreenshotTools {
 					method = "widgetPrint"; //$NON-NLS-1$
 				}
 				ImageData data = image.getImageData(zoom);
+				if (clip != null && "widgetPrint".equals(method)) { //$NON-NLS-1$
+					ImageData cropped = crop(display, data, clip, zoom);
+					if (cropped != null) {
+						data = cropped;
+						area = new Rectangle(area.x, area.y, clip.width, clip.height);
+					}
+				}
 				if (isBlank(data)) {
 					return failure(printable == null
 							? "The capture came back uniform, so this display cannot be captured through the X11 root drawable. A compositing window manager redirects window contents into an offscreen pixmap, so reading the root yields nothing. There is no fallback for the whole display; capture a part or a shell instead, which can be painted directly." //$NON-NLS-1$
@@ -489,6 +512,42 @@ public final class ScreenshotTools {
 				page.activate(part);
 			}
 			return controlOf(part);
+		}
+
+		/** The window's top level content composite, which is the highest print that works. */
+		private static Composite contentOf(Control control) {
+			Shell shell = control.getShell();
+			if (shell == null || shell.getChildren().length == 0) {
+				return null;
+			}
+			return shell.getChildren()[0] instanceof Composite composite ? composite : null;
+		}
+
+		/** Cuts {@code region}, given in points, out of device pixel data. */
+		private static ImageData crop(Display display, ImageData data, Rectangle region, int zoom) {
+			int x = region.x * zoom / 100;
+			int y = region.y * zoom / 100;
+			int width = Math.min(region.width * zoom / 100, data.width - x);
+			int height = Math.min(region.height * zoom / 100, data.height - y);
+			if (x < 0 || y < 0 || width <= 0 || height <= 0) {
+				return null;
+			}
+			// both images are built from ImageData and are therefore 1:1, so the device
+			// pixels above stay device pixels and nothing is rescaled on the way through
+			Image full = new Image(display, data);
+			Image cut = new Image(display, width, height);
+			GC gc = new GC(cut);
+			try {
+				gc.drawImage(full, x, y, width, height, 0, 0, width, height);
+			} finally {
+				gc.dispose();
+				full.dispose();
+			}
+			try {
+				return cut.getImageData();
+			} finally {
+				cut.dispose();
+			}
 		}
 
 		private static JsonObject failure(String reason) {
