@@ -283,8 +283,6 @@ public final class ScreenshotTools {
 
 			Image image = new Image(display, area.width, area.height);
 			String method = "rootCapture"; //$NON-NLS-1$
-			// 100 until the widget print path learns better: the root capture reads
-			// real pixels and needs no scaling
 			int zoom = 100;
 			try {
 				GC gc = new GC(display);
@@ -316,41 +314,46 @@ public final class ScreenshotTools {
 					Rectangle own = printable.getBounds();
 					int width = Math.max(1, own.width);
 					int height = Math.max(1, own.height);
-					// Control.print paints at the monitor's device scale whatever the
-					// image is sized in, so on a HiDPI display it wrote a 2x picture
-					// into a 1x canvas and the top left quarter was all that fitted,
-					// silently. Scaling the GC by the inverse cancels that, which is
-					// the one correction that works wherever print gets its scale from:
-					// an ImageGcDrawer does not, because SWT pre-scales its GC and print
-					// then scales again on top.
+					// print paints at the monitor's device scale, so drawing into an
+					// image sized in points wrote a 2x picture into a 1x canvas and kept
+					// the top left quarter, silently. An ImageGcDrawer is given a GC that
+					// SWT has set up for the target zoom, and asking that image for its
+					// data AT that zoom returns the full resolution picture. Correcting
+					// with a GC transform instead does not work: it shrinks the paint to
+					// a quarter of a canvas that is still device sized.
 					zoom = zoomOf(painted);
-					image = new Image(display, width, height);
-					GC printer = new GC(image);
-					org.eclipse.swt.graphics.Transform transform = null;
-					try {
-						if (zoom != 100) {
-							transform = new org.eclipse.swt.graphics.Transform(display);
-							transform.scale(100f / zoom, 100f / zoom);
-							printer.setTransform(transform);
-						}
-						painted.print(printer);
-					} finally {
-						printer.dispose();
-						if (transform != null) {
-							transform.dispose();
-						}
-					}
+					image = new Image(display, (drawer, drawnWidth, drawnHeight) -> {
+						// anything print leaves untouched stays this colour. White would
+						// be indistinguishable from the unstyled widgets a dark theme bug
+						// produces, which is most of what these captures are used for
+						drawer.setBackground(display.getSystemColor(SWT.COLOR_MAGENTA));
+						drawer.fillRectangle(0, 0, drawnWidth, drawnHeight);
+						painted.print(drawer);
+					}, width, height);
 					area = new Rectangle(area.x, area.y, width, height);
 					method = "widgetPrint"; //$NON-NLS-1$
 				}
-				ImageData data = image.getImageData();
+				ImageData data = image.getImageData(zoom);
 				if (isBlank(data)) {
 					return failure(printable == null
 							? "The capture came back uniform, so this display cannot be captured through the X11 root drawable. A compositing window manager redirects window contents into an offscreen pixmap, so reading the root yields nothing. There is no fallback for the whole display; capture a part or a shell instead, which can be painted directly." //$NON-NLS-1$
 							: "The capture came back uniform through both the X11 root drawable and by painting the widget, so this display cannot be captured at all. Nothing was written; do not trust screenshots here."); //$NON-NLS-1$
 				}
-				return write(display, image, data, area, maxWidth, outputPath, includeBase64).put("method", method) //$NON-NLS-1$
+				JsonObject written = write(display, image, data, area, maxWidth, outputPath, includeBase64)
+						.put("method", method) //$NON-NLS-1$
 						.put("zoom", Integer.valueOf(zoom)); //$NON-NLS-1$
+				// zoom, the pixels and the points have to agree, and when they do not the
+				// paint landed at the wrong scale and part of the image is whatever the
+				// canvas was filled with. Saying so beats returning a picture that is
+				// three quarters filler and looks like a rendering bug in the IDE
+				if (data.width != area.width * zoom / 100 || data.height != area.height * zoom / 100) {
+					written.put("scaleMismatch", //$NON-NLS-1$
+							"The capture is %dx%d pixels for a widget of %dx%d points at zoom %d, which does not agree. Part of the image is the magenta fill rather than the widget, so treat it as unreliable." //$NON-NLS-1$
+									.formatted(Integer.valueOf(data.width), Integer.valueOf(data.height),
+											Integer.valueOf(area.width), Integer.valueOf(area.height),
+											Integer.valueOf(zoom)));
+				}
+				return written;
 			} finally {
 				image.dispose();
 			}
