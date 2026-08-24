@@ -175,3 +175,33 @@ default. Hit headlessly by both `OrganizeImportsTool` and `RenameTool`, the
 latter only for field renames, through `GetterSetterUtil`.
 
 Worked around by setting `JavaManipulation.setPreferenceNodeId("org.eclipse.jdt.ui")`.
+
+### e4 CSS: a snippet cannot be applied through `IThemeEngine`
+
+Applying an ad-hoc stylesheet needs `resetCurrentTheme()` and `getCSSEngines()`,
+and both are on `org.eclipse.e4.ui.css.swt.internal.theme.ThemeEngine` rather
+than on `IThemeEngine`, whose package is exported `x-friends` to the workbench
+bundles.
+PDE's own CSS scratch pad casts to the implementation and carries the comment
+`FIXME: expose these new protocols: resetCurrentTheme() and getCSSEngines()`
+(`ui/org.eclipse.pde.spy.css/.../CSSScratchPadPart.java`), so the gap is known
+inside the platform and unfiled.
+
+`CssStyling` reaches both reflectively and looks the engine up by name through
+`IEclipseContext`, which keeps this bundle off the friends list entirely.
+
+### e4 CSS: `CSSEngine.parseStyleSheet` changed its return type
+
+`org.w3c.dom.stylesheets.StyleSheet` in 4.40, `CSSStyleSheetImpl` in 4.41. That
+is source compatible and binary incompatible: a call site compiled against the
+older interface fails with `NoSuchMethodError` on the newer engine, which is
+exactly the situation of a plug-in built against a release target platform and
+installed into a newer IDE.
+
+The same change dropped `org.w3c.dom.css.CSSStyleSheet` from the returned type,
+so a rule count has to be read as `getCssRules()` or as `getRules()` depending
+on which engine is running.
+
+Not filed; the package is `x-friends` and therefore provisional by convention,
+though it is what every theme in the wild is styled by. `CssStyling.parse` calls
+it reflectively and `CssStyling.rules` handles both shapes.

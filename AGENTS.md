@@ -426,6 +426,27 @@ Correcting with a GC transform instead was tried and shipped and is wrong: it sh
 `capturedArea` is the pixels, `areaInPoints` the widget, `zoom` the ratio, and `scaleMismatch` fires when the three disagree, which is the check that would have caught the transform.
 Unpainted canvas is magenta, never white, because white is what the unstyled widgets of a broken dark theme look like.
 
+**A computed CSS value is read back off the widget, so it is not evidence that a rule ran.**
+`CSSEngine.retrieveCSSProperty` asks the property handler, and the SWT handlers answer from the widget's current colour or font, which means a `ToolBar` no rule matches reports the window system's grey exactly the way a themed one reports the theme's grey.
+`CssStyling.styles` therefore also reads the cascade, `getViewCSS().getComputedStyle(element, pseudo)`, and reports `declared` and `origin` beside `computed`.
+That is the merged declaration of the rules that matched, which is as far as the engine goes: it keeps no list of which rule or which stylesheet a property came from.
+
+**The CSS engine's API is not binary stable, and this bundle is compiled against one release and run on another.**
+`CSSEngine.parseStyleSheet` changed its return type from `org.w3c.dom.stylesheets.StyleSheet` to `CSSStyleSheetImpl`, which is a source-compatible change and a binary incompatible one: a call site compiled against the target platform dies with `NoSuchMethodError` on an IDE that has the newer engine.
+`CssStyling.parse` calls it reflectively for that reason, and `CssStyling.rules` reads the rule count under either spelling.
+The development IDE here already runs a newer platform than `com.vogella.eclipse.mcp.target` names, so this is the normal case and not an exotic one.
+Check a signature against both before adding a call: `javap` on the jar in `~/.m2/repository/.cache/tycho` answers it in a second.
+
+**`eclipse_apply_css` reaches the theme engine reflectively, because the two methods it needs are not on the interface.**
+`resetCurrentTheme()` and `getCSSEngines()` live on `org.eclipse.e4.ui.css.swt.internal.theme.ThemeEngine`; PDE's CSS scratch pad casts to it and carries a `FIXME` asking for them to be exposed.
+The engine itself is looked up by name through `IEclipseContext`, so nothing here compiles against `IThemeEngine`, whose package is `x-friends` to a list this bundle is not on.
+Re-applying the theme first is what makes a snippet replace the one before it instead of stacking, and it is the whole of what `reset` does.
+
+**`org.w3c.dom.css` comes from the JRE and is deliberately not imported.**
+The package lives in the `jdk.xml.dom` module, which Equinox exports as a system package because `eclipse.ini` passes `--add-modules=ALL-SYSTEM`.
+`org.eclipse.e4.ui.css.core` uses it with no `Import-Package` either.
+Adding an optional import here was considered and rejected: an optional import that the target platform cannot resolve turns the package into a compile error rather than a graceful degradation.
+
 ## Verifying UI work
 
 A UI change is not verified by reading the JSON.

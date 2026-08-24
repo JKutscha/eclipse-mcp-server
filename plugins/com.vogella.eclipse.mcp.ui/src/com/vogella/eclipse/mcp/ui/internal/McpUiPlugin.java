@@ -31,6 +31,8 @@ public class McpUiPlugin extends AbstractUIPlugin {
 		// a hidden window has no menu to bring it back, so the plug-in going away
 		// must not be the moment the IDE becomes unrecoverable
 		VisibilityTool.restoreIfHidden();
+		// the same reasoning for an ad-hoc stylesheet: it can leave the IDE unreadable
+		CssStyling.dropIfApplied();
 		plugin = null;
 		serverPreferences = null;
 		super.stop(context);

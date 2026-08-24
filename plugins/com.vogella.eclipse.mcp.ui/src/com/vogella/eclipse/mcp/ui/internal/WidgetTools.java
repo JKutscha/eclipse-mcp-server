@@ -155,26 +155,6 @@ public final class WidgetTools {
 		return widget instanceof Control ? "control" : "item"; //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
-	/** The CSS view of a widget, empty when the CSS bundles are not installed. */
-	private static JsonObject css(Widget widget) {
-		JsonObject result = new JsonObject();
-		try {
-			result.put("cssId", org.eclipse.e4.ui.css.swt.dom.WidgetElement.getID(widget)) //$NON-NLS-1$
-					.put("cssClass", org.eclipse.e4.ui.css.swt.dom.WidgetElement.getCSSClass(widget)); //$NON-NLS-1$
-			var engine = org.eclipse.e4.ui.css.swt.dom.WidgetElement.getEngine(widget);
-			if (engine == null) {
-				return result.put("cssElement", null) //$NON-NLS-1$
-						.put("cssNote", "No CSS engine is attached, so this widget is not styled by the theme engine."); //$NON-NLS-1$ //$NON-NLS-2$
-			}
-			org.w3c.dom.Element element = engine.getElement(widget);
-			result.put("cssElement", element == null ? null : element.getLocalName()); //$NON-NLS-1$
-		} catch (LinkageError | RuntimeException e) {
-			result.put("cssNote", //$NON-NLS-1$
-					"The e4 CSS bundles are not available in this IDE, so only the SWT side can be reported."); //$NON-NLS-1$
-		}
-		return result;
-	}
-
 	/** Lists the widgets of a part, so their paths can be read off rather than guessed. */
 	public static final class GetWidgetTree implements IMcpTool {
 
@@ -252,7 +232,7 @@ public final class WidgetTools {
 			if (wanted) {
 				total[0]++;
 				if (into.size() < maxResults) {
-					into.add(css(widget).put("path", path.isEmpty() ? "/" : path) //$NON-NLS-1$ //$NON-NLS-2$
+					into.add(CssStyling.describe(widget).put("path", path.isEmpty() ? "/" : path) //$NON-NLS-1$ //$NON-NLS-2$
 							.put("kind", kindOf(widget)) //$NON-NLS-1$
 							.put("class", widget.getClass().getName()) //$NON-NLS-1$
 							.put("text", textOf(widget)) //$NON-NLS-1$
@@ -301,7 +281,7 @@ public final class WidgetTools {
 
 		@Override
 		public String getDescription() {
-			return "Reports one widget: its SWT class, the CSS element it maps to, its CSS id and classes, its bounds, its ancestor chain, and what the CSS engine resolved for each property asked about. Changes nothing. This is what turns a colour on screen into an explanation, and in particular it shows a '#token' reference that resolved to nothing, which otherwise only shows up as something rendering black or white. Address the widget with a path from eclipse_get_widget_tree, an i prefixed segment for an item. A ToolItem is reachable this way and only this way, which is what makes the pseudo parameter usable for a question like whether a toggle computes differently when checked. It does NOT report which rules matched or from which stylesheet: the engine does not expose the matched declarations, so that half of a CSS spy is not available here and reading the stylesheets is still the way to find the rule."; //$NON-NLS-1$
+			return "Reports one widget: its SWT class, the CSS element it maps to, its CSS id and classes, its bounds, its ancestor chain, and what the CSS engine resolved for each property asked about. Changes nothing. This is what turns a colour on screen into an explanation, and in particular it shows a '#token' reference that resolved to nothing, which otherwise only shows up as something rendering black or white. Address the widget with a path from eclipse_get_widget_tree, an i prefixed segment for an item. A ToolItem is reachable this way and only this way, which is what makes the pseudo parameter usable for a question like whether a toggle computes differently when checked. Read 'computed' together with 'declared': computed is the widget's live value, which the engine reads back from SWT and which therefore always answers something, so a colour there is no evidence that a rule set it; declared is what the matching rules set for this element, cssDeclaration is that whole merged declaration, and origin says 'css' or 'widget' per property. That is how a themed colour is told apart from the window system's default, and how an 'inherit' that resolved to the wrong parent is spotted. Which rule and which stylesheet it came from is still not reported: the engine keeps the merged declaration and not its source. A control that paints a background image reports backgroundImage, and on such a control nothing reported here is what is on screen: a CTabFolder handing its children a gradient clears their background first, so the computed colour is the window system's default rather than the theme's, and reading it as the colour under the image is the mistake this flag exists to prevent. Use eclipse_apply_css to test a rule against the running IDE and inspect again."; //$NON-NLS-1$
 		}
 
 		@Override
@@ -358,34 +338,26 @@ public final class WidgetTools {
 			}
 			JsonArray ancestors = new JsonArray();
 			for (Control parent = parentOf(control); parent != null; parent = parent.getParent()) {
-				ancestors.add(css(parent).put("class", parent.getClass().getName())); //$NON-NLS-1$
+				ancestors.add(CssStyling.describe(parent).put("class", parent.getClass().getName())); //$NON-NLS-1$
 			}
-			JsonObject computed = new JsonObject();
-			String note = null;
-			try {
-				var engine = org.eclipse.e4.ui.css.swt.dom.WidgetElement.getEngine(control);
-				if (engine == null) {
-					note = "No CSS engine is attached to this widget, so nothing was computed for it."; //$NON-NLS-1$
-				} else {
-					for (String property : properties) {
-						computed.put(property, engine.retrieveCSSProperty(control, property, pseudo));
-					}
-				}
-			} catch (LinkageError | RuntimeException e) {
-				note = "The e4 CSS bundles are not available in this IDE, so no computed values could be read."; //$NON-NLS-1$
-			}
-			return css(control).put("found", Boolean.TRUE) //$NON-NLS-1$
+			JsonObject result = CssStyling.describe(control).put("found", Boolean.TRUE) //$NON-NLS-1$
 					.put("path", path == null || path.isBlank() ? "/" : path.strip()) //$NON-NLS-1$ //$NON-NLS-2$
 					.put("kind", kindOf(control)) //$NON-NLS-1$
 					.put("class", control.getClass().getName()) //$NON-NLS-1$
 					.put("bounds", bounds(control)) //$NON-NLS-1$
 					.put("visible", control instanceof Control visible ? Boolean.valueOf(visible.isVisible()) : null) //$NON-NLS-1$
-					.put("pseudo", pseudo) //$NON-NLS-1$
-					.put("computed", computed) //$NON-NLS-1$
-					.put("computedNote", note) //$NON-NLS-1$
-					.put("ancestors", ancestors) //$NON-NLS-1$
+					.put("pseudo", pseudo); //$NON-NLS-1$
+			CssStyling.styles(control, properties, pseudo, result);
+			if (control instanceof Control painted && painted.getBackgroundImage() != null) {
+				// the image is on screen and the reported colour is not, and it is not the
+				// colour under the image either: CTabFolder.updateBkImages clears it
+				result.put("backgroundImage", Boolean.TRUE) //$NON-NLS-1$
+						.put("backgroundImageNote", //$NON-NLS-1$
+								"This control paints a background image, so nothing reported here is what is on screen. Do not read the computed background-color as the colour under the image either: a CTabFolder handing its children a gradient calls setBackground(null) on each of them first, so the value read back is the window system's default for that widget and has no relationship to the theme. Three different colours are then in play for one widget, and the computed one is the least relevant.");
+			}
+			return result.put("ancestors", ancestors) //$NON-NLS-1$
 					.put("matchedRulesNote", //$NON-NLS-1$
-							"Which rules matched, and from which stylesheet, is not reported: the engine keeps no matched declaration list to read. A null computed value for a property the theme sets is the signal that a rule did not apply, or that a '#token' reference resolved to nothing.");
+							"Which rules matched, and from which stylesheet, is not reported: the engine keeps the merged declaration and not the rules it came from. 'declared' is that declaration, so it says whether a rule decided the property; finding the rule itself still means reading the stylesheets.");
 		}
 	}
 }

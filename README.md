@@ -640,7 +640,10 @@ Read-only. What a widget is, and what the CSS engine made of it.
 ```json
 {"found":true,"path":"0/1","class":"org.eclipse.swt.widgets.ToolBar",
  "cssId":null,"cssClass":"MToolBar","cssElement":"ToolBar",
- "computed":{"background-color":"#1F1F1F","color":null}}
+ "computed":{"background-color":"#1F1F1F","color":null},
+ "declared":{"background-color":"inherit","color":null},
+ "origin":{"background-color":"css","color":"unset"},
+ "cssDeclaration":"background-color: inherit;"}
 ```
 
 `includeItems` enumerates `Item`s as well as `Control`s: the buttons of a toolbar, the tabs of a folder, the columns of a table or tree. A `ToolItem` is not a `Control`, so it appears in no walk over the control hierarchy, while the CSS engine styles each one as its own element; without this there is no way to address a toolbar button at all, and `pseudo` on the inspector is unusable for exactly the toggle-state question it exists for. Item paths carry an `i` prefix, as in `2/i0`, and `kind` says `control` or `item` so the two are never confused. Off by default because a `Menu` can be large.
@@ -649,7 +652,33 @@ Read-only. What a widget is, and what the CSS engine made of it.
 
 A `null` computed value for a property the theme sets is the useful signal: either no rule applied, or a `#token` reference resolved to nothing, which otherwise shows up only as something rendering black or white.
 
-**What these do not do.** They do not report which rules matched or which stylesheet they came from. The engine keeps no matched-declaration list to read, so that half of a CSS spy is not available and finding the rule still means reading the stylesheets.
+**`computed` is not evidence that a rule ran.** The engine answers `retrieveCSSProperty` by reading the value back off the widget, so a `ToolBar` that no rule matches reports the window system's grey exactly the way a themed one reports the theme's grey, and the two are indistinguishable unless you already know the palette. `declared` is the other half: the merged declaration the matching rules produce for that element, `origin` says `css`, `widget` or `unset` per property, and `cssDeclaration` is the whole declaration, including properties that were not asked about. A `declared` of `inherit` beside a `computed` colour is how an inherited value that froze against the wrong parent shows itself.
+
+**A background image beats every value reported here.** A control whose `getBackgroundImage()` is set paints that image, so the answer carries `backgroundImage` and nothing else in it is what is on screen. The computed colour is not the colour under the image either: `CTabFolder.updateBkImages` calls `control.setBackground(null)` on each child before handing it the gradient image (`CTabFolder.java:4118`), so what `getBackground()` reads back afterwards is the window system's default for that widget, with no relationship to the theme. Three colours are then in play for one widget and the computed one is the least relevant, which is a wrong conclusion this project has already watched somebody reach and hold.
+
+A stylesheet declaring a two-stop `swt-unselected-tabs-color` is enough to get there: `CSSPropertyUnselectedTabsSWTHandler` branches on the value being a list rather than a primitive, takes the gradient API, and `gradientColors` then stays non-null permanently.
+
+**What these do not do.** They do not report which rule matched or which stylesheet it came from. The engine keeps the merged declaration and not its source, so finding the rule still means reading the stylesheets, or applying a candidate rule with `eclipse_apply_css` and inspecting again.
+
+### `eclipse_apply_css`
+
+**Changes what the user sees.** Applies a CSS snippet on top of the current theme and re-styles every shell, the way PDE's CSS scratch pad does.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `css` | string | | The stylesheet to apply. Appended after the theme's own sheets, so it wins ties of equal specificity. |
+| `reset` | boolean | `false` | Take the snippet back and leave the IDE on the unmodified theme. Give this instead of `css`, not with it. |
+
+```json
+{"applied":true,"previousSnippet":null,"theme":"com.vogella.eclipse.themes.nord",
+ "themeReapplied":true,"engines":1,"rules":3,"errors":[],"elapsedMillis":412}
+```
+
+Nothing is written to disk. The snippet lives in the engine, and a restart, a theme change or the plug-in stopping drops it; `McpUiPlugin.stop` takes it back for the same reason `eclipse_set_ide_visibility` restores a hidden window, since a snippet can leave the IDE unreadable.
+
+Every call re-applies the current theme first, so snippets replace each other instead of piling up, and `reset` is that step alone. `rules` says how many rules were parsed, and `errors` carries what the engine's error handler reported, which is where a selector typo surfaces; a snippet that parses to zero rules is the answer to "why did nothing change".
+
+This is what turns a theme question into an experiment. Whether a selector matches at all is not something `eclipse_inspect_widget` can answer on its own, and rebuilding a theme plug-in and restarting for every attempt is the alternative: apply a rule with an unmistakable colour, inspect, and read `origin`.
 
 ### `eclipse_get_installation`
 

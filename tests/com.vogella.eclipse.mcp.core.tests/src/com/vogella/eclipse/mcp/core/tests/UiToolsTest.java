@@ -86,6 +86,20 @@ class UiToolsTest {
 				"no running workbench");
 	}
 
+	@Test
+	void applyingCssNeedsExactlyOneOfItsTwoArguments() throws Exception {
+		assertRefused(TestFixture.call("eclipse_apply_css", Map.of()), "'css' or 'reset' is required");
+		assertRefused(TestFixture.call("eclipse_apply_css", Map.of("css", "Label {color: #ff0000;}", "reset",
+				Boolean.TRUE)), "not both");
+	}
+
+	@Test
+	void applyingCssRefusesWithoutAWorkbench() throws Exception {
+		assertRefused(TestFixture.call("eclipse_apply_css", Map.of("css", "Label {color: #ff0000;}")),
+				"no running workbench");
+		assertRefused(TestFixture.call("eclipse_apply_css", Map.of("reset", Boolean.TRUE)), "no running workbench");
+	}
+
 	private static IFile write(IProject project, String name, String content) throws Exception {
 		IFile file = project.getFile(name);
 		file.create(new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)), true,
