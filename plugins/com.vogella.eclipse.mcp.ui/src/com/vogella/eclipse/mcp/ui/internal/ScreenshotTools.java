@@ -181,7 +181,7 @@ public final class ScreenshotTools {
 					.put("availableViewsTruncated", Boolean.valueOf(matching.size() > maxResults)); //$NON-NLS-1$
 		}
 
-		private static java.util.List<IWorkbenchPartReference> allReferences(IWorkbenchPage page) {
+		static java.util.List<IWorkbenchPartReference> allReferences(IWorkbenchPage page) {
 			java.util.List<IWorkbenchPartReference> references = new java.util.ArrayList<>();
 			references.addAll(java.util.Arrays.asList(page.getViewReferences()));
 			references.addAll(java.util.Arrays.asList(page.getEditorReferences()));
@@ -406,7 +406,7 @@ public final class ScreenshotTools {
 			return true;
 		}
 
-		private static Shell findShell(Display display, String title) {
+		static Shell findShell(Display display, String title) {
 			if (title == null) {
 				// the modal one is what is blocking, otherwise whatever is active
 				for (Shell candidate : display.getShells()) {
@@ -443,13 +443,23 @@ public final class ScreenshotTools {
 		 * by the part, so it appears in no part capture at all. Walking up to the folder
 		 * is the only way to ask for a view together with its toolbar.
 		 */
-		private static Control stackOf(Control control) {
+		static Control stackOf(Control control) {
 			for (Control candidate = control; candidate != null; candidate = candidate.getParent()) {
 				if (candidate instanceof org.eclipse.swt.custom.CTabFolder) {
 					return candidate;
 				}
 			}
 			return control;
+		}
+
+		/** The composite an e4 part renders into, or {@code null} when it has none yet. */
+		static Control controlOf(IWorkbenchPart part) {
+			Object widget = part.getSite().getService(org.eclipse.e4.ui.model.application.ui.basic.MPart.class);
+			if (widget instanceof org.eclipse.e4.ui.model.application.ui.basic.MPart model
+					&& model.getWidget() instanceof Composite composite) {
+				return composite;
+			}
+			return null;
 		}
 
 		private static Control findPart(String partId, boolean activate) {
@@ -478,12 +488,7 @@ public final class ScreenshotTools {
 				}
 				page.activate(part);
 			}
-			Object widget = part.getSite().getService(org.eclipse.e4.ui.model.application.ui.basic.MPart.class);
-			if (widget instanceof org.eclipse.e4.ui.model.application.ui.basic.MPart model
-					&& model.getWidget() instanceof Composite composite) {
-				return composite;
-			}
-			return null;
+			return controlOf(part);
 		}
 
 		private static JsonObject failure(String reason) {

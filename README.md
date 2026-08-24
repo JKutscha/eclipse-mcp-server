@@ -616,6 +616,37 @@ stdout and stderr are merged, because whoever reads a build log wants the failur
 The last 2000 lines are kept and `droppedLines` says how many fell out, since a Tycho log is long and the useful part is at the end.
 `eclipse_get_command_output` takes `tailLines` to see further back, `wait` to block, and `cancel` to stop a run, which ends the process and everything it started.
 
+### `eclipse_set_shell_bounds` and `eclipse_set_part_state`
+
+**Change what the user sees**, the way `eclipse_set_ide_visibility` does.
+
+`eclipse_set_shell_bounds` takes `shellTitle`, `x`, `y`, `width`, `height` and `maximized`, any subset.
+`eclipse_set_part_state` takes `part` and a `state` of `maximized`, `minimized`, `restored` or `activated`; `activated` focuses an editor without knowing its file path, which `eclipse_open` needs.
+
+Both report the previous value, `previousBounds` and `previousMaximized` or `previousState`, so a caller can put the IDE back exactly as it found it. That is what makes them usable on somebody's running workbench rather than only on a throwaway one.
+
+They exist for the states that only a size change produces, and that nothing else here can reach: tab overflow and its chevron, text truncation, scrollbars, sash and border rendering between stacks, reflowing form layouts, and the trim stack a minimised part uses. Each is drawn by a different set of CSS selectors.
+
+### `eclipse_get_widget_tree` and `eclipse_inspect_widget`
+
+Read-only. What a widget is, and what the CSS engine made of it.
+
+`eclipse_get_widget_tree` walks a part or a shell and reports each widget's class, bounds, CSS id, CSS class and the `path` that addresses it. `filter` narrows by class name, so "which Trees does this view contain and what are their ids" is one call.
+
+`eclipse_inspect_widget` takes a `path` from that tree and adds the CSS element it maps to, the ancestor chain, and what the engine resolved for each requested property, under an optional `pseudo` class.
+
+```json
+{"found":true,"path":"0/1","class":"org.eclipse.swt.widgets.ToolBar",
+ "cssId":null,"cssClass":"MToolBar","cssElement":"ToolBar",
+ "computed":{"background-color":"#1F1F1F","color":null}}
+```
+
+**Paths, not coordinates.** A path is slash separated child indices. Screen coordinates were the obvious interface and are the wrong one: a client cannot point at anything, and a pixel does not survive a resize or a restart where an index does.
+
+A `null` computed value for a property the theme sets is the useful signal: either no rule applied, or a `#token` reference resolved to nothing, which otherwise shows up only as something rendering black or white.
+
+**What these do not do.** They do not report which rules matched or which stylesheet they came from. The engine keeps no matched-declaration list to read, so that half of a CSS spy is not available and finding the rule still means reading the stylesheets.
+
 ### `eclipse_get_installation`
 
 Reports the product, the installed feature groups with their versions, and the configuration timestamps this installation can be reverted to. Changes nothing.
