@@ -71,6 +71,9 @@ public final class BuildRegistry {
 		private volatile long endedAt;
 		private volatile long refreshMillis = -1;
 		private volatile long buildMillis = -1;
+		private volatile int[] refreshedFiles;
+		private volatile int[] builtFiles;
+		private volatile List<String> builtProjects = List.of();
 		private volatile String note;
 		private volatile List<String> builderFailures = List.of();
 		private volatile int errors = -1;
@@ -110,6 +113,27 @@ public final class BuildRegistry {
 		/** Time spent building, {@code -1} for a refresh that never built. */
 		public long buildMillis() {
 			return buildMillis;
+		}
+
+		/**
+		 * Files the refresh read in as {added, changed, removed}, or {@code null}
+		 * when no refresh ran.
+		 * <p>
+		 * A duration alone cannot tell a refresh that picked up a whole branch
+		 * switch from one that found nothing, and both look like a fast build.
+		 */
+		public int[] refreshedFiles() {
+			return refreshedFiles;
+		}
+
+		/** Files the builders wrote as {added, changed, removed}, {@code null} when nothing was built. */
+		public int[] builtFiles() {
+			return builtFiles;
+		}
+
+		/** The projects a build delta actually arrived for. */
+		public List<String> builtProjects() {
+			return builtProjects;
 		}
 
 		/** Set when the outcome needs a caveat, such as a clean that rebuilt nothing. */
@@ -179,6 +203,8 @@ public final class BuildRegistry {
 
 		if (request.refresh()) {
 			long startedRefresh = System.currentTimeMillis();
+			ResourceCounter counter = ResourceCounter.forRefresh();
+			counter.start();
 			try {
 				for (IResource scope : scopes(projectNames)) {
 					WorkspaceSync.refresh(scope, monitor);
@@ -188,12 +214,17 @@ public final class BuildRegistry {
 				collect(e.getStatus(), failures);
 			} catch (OperationCanceledException e) {
 				state = "cancelled"; //$NON-NLS-1$
+			} finally {
+				counter.stop();
 			}
+			build.refreshedFiles = new int[] { counter.added(), counter.changed(), counter.removed() };
 			build.refreshMillis = System.currentTimeMillis() - startedRefresh;
 		}
 
 		if (!REFRESH.equals(kind) && "done".equals(state)) { //$NON-NLS-1$
 			long startedBuild = System.currentTimeMillis();
+			ResourceCounter counter = ResourceCounter.forBuild();
+			counter.start();
 			try {
 				build(workspace, kindOf(kind), projectNames, failures, monitor);
 				if (CLEAN.equals(kind) && request.buildAfterClean()) {
@@ -204,7 +235,11 @@ public final class BuildRegistry {
 				collect(e.getStatus(), failures);
 			} catch (OperationCanceledException e) {
 				state = "cancelled"; //$NON-NLS-1$
+			} finally {
+				counter.stop();
 			}
+			build.builtFiles = new int[] { counter.added(), counter.changed(), counter.removed() };
+			build.builtProjects = List.copyOf(counter.projects());
 			build.buildMillis = System.currentTimeMillis() - startedBuild;
 		}
 

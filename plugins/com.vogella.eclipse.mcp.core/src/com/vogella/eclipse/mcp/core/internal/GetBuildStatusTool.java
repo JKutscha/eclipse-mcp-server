@@ -58,11 +58,24 @@ public final class GetBuildStatusTool implements IMcpTool {
 		return McpToolResult.of(toJson(build).toString());
 	}
 
+	/** {added, changed, removed} as an object, or null when that phase did not run. */
+	private static JsonObject counts(int[] counts) {
+		if (counts == null) {
+			return null;
+		}
+		return new JsonObject().put("total", Integer.valueOf(counts[0] + counts[1] + counts[2])) //$NON-NLS-1$
+				.put("added", Integer.valueOf(counts[0])) //$NON-NLS-1$
+				.put("changed", Integer.valueOf(counts[1])) //$NON-NLS-1$
+				.put("removed", Integer.valueOf(counts[2])); //$NON-NLS-1$
+	}
+
 	static JsonObject toJson(BuildRegistry.Build build) {
 		JsonArray projects = new JsonArray();
 		build.projects().forEach(projects::add);
 		JsonArray failures = new JsonArray();
 		build.builderFailures().forEach(failures::add);
+		JsonArray builtProjects = new JsonArray();
+		build.builtProjects().forEach(builtProjects::add);
 		return new JsonObject().put("buildId", build.id()) //$NON-NLS-1$
 				.put("kind", build.kind()) //$NON-NLS-1$
 				.put("state", build.state()) //$NON-NLS-1$
@@ -71,6 +84,11 @@ public final class GetBuildStatusTool implements IMcpTool {
 				.put("elapsedMillis", build.elapsedMillis()) //$NON-NLS-1$
 				.put("refreshMillis", build.refreshMillis() < 0 ? null : Long.valueOf(build.refreshMillis())) //$NON-NLS-1$
 				.put("buildMillis", build.buildMillis() < 0 ? null : Long.valueOf(build.buildMillis())) //$NON-NLS-1$
+				// what a duration alone cannot say: a refresh that picked up a whole
+				// branch switch and one that found nothing both finish quickly
+				.put("refreshedFiles", counts(build.refreshedFiles())) //$NON-NLS-1$
+				.put("builtFiles", counts(build.builtFiles())) //$NON-NLS-1$
+				.put("builtProjects", builtProjects) //$NON-NLS-1$
 				.put("note", build.note()) //$NON-NLS-1$
 				.put("errors", build.errors() < 0 ? null : Integer.valueOf(build.errors())) //$NON-NLS-1$
 				.put("warnings", build.warnings() < 0 ? null : Integer.valueOf(build.warnings())) //$NON-NLS-1$
