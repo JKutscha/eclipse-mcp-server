@@ -41,7 +41,7 @@ public final class GetProblemsTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Returns compilation errors and warnings from the Eclipse workspace, as computed by the incremental builder. It refreshes from disk by default, scoped to the project when one is named, and WAITS for a build already running, but it NEVER STARTS ONE. Asking for markers used to start an incremental build that JDT turned into a batch compile of every open project, so reading them cost thirty seconds; starting a build is eclipse_build's job. With auto-build off the markers are therefore from the last build and upToDate says so. messageFilter narrows to problems whose message contains a substring, which is how to ask for deprecation warnings alone rather than pulling every warning and filtering them yourself."; //$NON-NLS-1$
+		return "Returns compilation errors and warnings from the Eclipse workspace, as computed by the incremental builder. It refreshes from disk by default, scoped to the project when one is named, and WAITS for a build already running, but it NEVER STARTS ONE. Asking for markers used to start an incremental build that JDT turned into a batch compile of every open project, so reading them cost thirty seconds; starting a build is eclipse_build's job. With auto-build off the markers are therefore from the last build and upToDate says so. messageFilter narrows to problems whose message contains a substring, which is how to ask for deprecation warnings alone rather than pulling every warning and filtering them yourself. types and excludeTypes filter by marker type with subtypes included: markers from a builder that did not rerun can appear and disappear across rebuilds of an unchanged commit, so excluding that builder's type is how a before/after comparison stops reporting them as regressions. byType counts what came back, so which builders contribute is visible without asking twice."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -56,6 +56,8 @@ public final class GetProblemsTool implements IMcpTool {
 				    "maxResults": {"type":"integer","default":200,"minimum":1,"maximum":2000},
 				    "marker":     {"type":"string","description":"A marker from eclipse_mark_problems. Reports only the problems that appeared since it, plus the ones that went away, instead of everything."},
 				    "messageFilter": {"type":"string","description":"Only problems whose message contains this text, case insensitive. Use 'deprecated' for deprecation warnings."},
+				    "types":        {"type":"array","items":{"type":"string"},"description":"Only markers of these types, subtypes included, e.g. ['org.eclipse.jdt.core.problem'] for compilation problems alone."},
+				    "excludeTypes": {"type":"array","items":{"type":"string"},"description":"Drop markers of these types, subtypes included. ['org.eclipse.pde.api.tools.version_numbering'] removes the API Tools version markers, which flicker in and out across rebuilds of an unchanged commit and otherwise read as regressions in a before/after comparison."},
 				    "refresh":    {"type":"boolean","default":true,"description":"Read changes made outside the IDE into the workspace first, restricted to 'project' when one is named. Cheap: seconds for the whole workspace."}
 				  },
 				  "additionalProperties": false
@@ -108,10 +110,15 @@ public final class GetProblemsTool implements IMcpTool {
 			throw new McpToolException("Could not read the problem markers of the workspace", e); //$NON-NLS-1$
 		}
 
+		List<String> types = stringList(arguments, "types"); //$NON-NLS-1$
+		List<String> excludeTypes = stringList(arguments, "excludeTypes"); //$NON-NLS-1$
 		List<Problem> problems = new ArrayList<>();
 		for (IMarker marker : markers) {
 			if (monitor.isCanceled()) {
 				return McpToolResult.error("The request was cancelled."); //$NON-NLS-1$
+			}
+			if (!typeWanted(marker, types, excludeTypes)) {
+				continue;
 			}
 			Problem problem = toProblem(marker, severity, projectName, pathPrefix);
 			if (problem != null && (messageFilter == null || problem.message()
@@ -157,7 +164,15 @@ public final class GetProblemsTool implements IMcpTool {
 					.put("message", problem.message()) //$NON-NLS-1$
 					.put("type", problem.type())); //$NON-NLS-1$
 		}
+		// which builders contribute, so that a set flickering across rebuilds can be
+		// narrowed without a second call to find out what to exclude
+		java.util.Map<String, Integer> perType = new java.util.TreeMap<>();
+		problems.forEach(problem -> perType.merge(problem.type(), Integer.valueOf(1),
+				(left, right) -> Integer.valueOf(left.intValue() + right.intValue())));
+		JsonObject byType = new JsonObject();
+		perType.forEach(byType::put);
 		JsonObject result = new JsonObject().put("total", problems.size()) //$NON-NLS-1$
+				.put("byType", byType) //$NON-NLS-1$
 				.put("truncated", problems.size() > reported.size()) //$NON-NLS-1$
 				.put("refreshed", Boolean.valueOf(refresh)) //$NON-NLS-1$
 				.put("waitedForBuild", Boolean.valueOf(waited)) //$NON-NLS-1$
@@ -240,6 +255,41 @@ public final class GetProblemsTool implements IMcpTool {
 			// everything as new rather than silently reporting nothing
 		}
 		return keys;
+	}
+
+	/**
+	 * Whether a marker survives the type filters, subtypes included.
+	 * <p>
+	 * {@code IMarker.isSubtypeOf} rather than a string comparison, because the type
+	 * a builder reports is usually a subtype of the one a caller knows the name of.
+	 */
+	private static boolean typeWanted(IMarker marker, List<String> types, List<String> excludeTypes) {
+		try {
+			for (String excluded : excludeTypes) {
+				if (marker.isSubtypeOf(excluded)) {
+					return false;
+				}
+			}
+			if (types.isEmpty()) {
+				return true;
+			}
+			for (String wanted : types) {
+				if (marker.isSubtypeOf(wanted)) {
+					return true;
+				}
+			}
+			return false;
+		} catch (CoreException e) {
+			// the marker disappeared between findMarkers and this read
+			return false;
+		}
+	}
+
+	private static List<String> stringList(java.util.Map<String, Object> arguments, String name) {
+		if (arguments == null || !(arguments.get(name) instanceof List<?> list)) {
+			return List.of();
+		}
+		return list.stream().map(String::valueOf).map(String::strip).filter(value -> !value.isEmpty()).toList();
 	}
 
 	private static Problem toProblem(IMarker marker, String severity, String projectName, String pathPrefix) {
