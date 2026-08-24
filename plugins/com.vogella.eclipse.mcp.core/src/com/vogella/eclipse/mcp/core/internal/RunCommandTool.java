@@ -9,6 +9,7 @@ import java.util.Map;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 
+import com.vogella.eclipse.mcp.core.CallBudget;
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolException;
 import com.vogella.eclipse.mcp.core.McpToolResult;
@@ -72,14 +73,19 @@ public final class RunCommandTool implements IMcpTool {
 
 		CommandRegistry.Execution execution = CommandRegistry.getInstance().start(command, directory,
 				environment(arguments));
+		int requested = args.getInt("timeoutSeconds", 25, 1, 3600); //$NON-NLS-1$
 		if (args.getBoolean("wait", false)) { //$NON-NLS-1$
-			execution.await(args.getInt("timeoutSeconds", 25, 1, 3600) * 1000L); //$NON-NLS-1$
+			execution.await(CallBudget.boundedWaitSeconds(requested) * 1000L);
 		}
-		return McpToolResult.of(CommandOutput.describe(execution, 100).put("note", //$NON-NLS-1$
-				execution.isRunning()
-						? "Still running. Poll eclipse_get_command_output with this commandId, and pass cancel to stop it." //$NON-NLS-1$
-						: null)
-				.toString());
+		JsonObject json = CommandOutput.describe(execution, 100);
+		if (execution.isRunning()) {
+			String clamped = CallBudget.clampNote(requested,
+					"eclipse_get_command_output with this commandId"); //$NON-NLS-1$
+			json.put("note", clamped == null //$NON-NLS-1$
+					? "Still running. Poll eclipse_get_command_output with this commandId, and pass cancel to stop it." //$NON-NLS-1$
+					: clamped);
+		}
+		return McpToolResult.of(json.toString());
 	}
 
 	private static List<String> command(Map<String, Object> arguments, ToolArguments args) {

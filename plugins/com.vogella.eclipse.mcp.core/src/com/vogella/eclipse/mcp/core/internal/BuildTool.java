@@ -10,6 +10,7 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.IProgressMonitor;
 
+import com.vogella.eclipse.mcp.core.CallBudget;
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolException;
 import com.vogella.eclipse.mcp.core.McpToolResult;
@@ -46,7 +47,7 @@ public final class BuildTool implements IMcpTool {
 				    "project":        {"type":"string","description":"Single project to build. Omit both this and 'projects' to build the whole workspace."},
 				    "projects":       {"type":"array","items":{"type":"string"},"description":"Projects to build."},
 				    "wait":           {"type":"boolean","default":true,"description":"Wait for the build to finish before answering."},
-				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":3600,"description":"How long to wait before returning with state 'running'. Keep this below the server's tool call timeout, which is set in Preferences > General > MCP Server."},
+				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":3600,"description":"How long to wait before returning with state 'running'. Capped at the server's tool call timeout less a margin, so asking for more than that returns early with the buildId and a waitNote rather than being killed as a timed out call."},
 				    "returnProblems": {"type":"boolean","default":true,"description":"Count errors and warnings once the build ended."},
 				    "refresh":        {"type":"boolean","default":true,"description":"Refresh from disk first, so that edits made outside the IDE are built. Scoped to the named projects. The refresh runs inside the job, so it never blocks a call with wait false, and its cost is reported as refreshMillis."},
 				    "buildAfterClean":{"type":"boolean","default":false,"description":"After a clean, build again, the way the 'Build immediately' checkbox of Project > Clean does. Without it a clean only deletes build state, so the error count afterwards means nothing."}
@@ -76,14 +77,20 @@ public final class BuildTool implements IMcpTool {
 		BuildRegistry.Build build = BuildRegistry.getInstance()
 				.start(new BuildRegistry.Request(kind, projects, returnProblems, args.getBoolean("refresh", true), //$NON-NLS-1$
 						args.getBoolean("buildAfterClean", false))); //$NON-NLS-1$
+		String clamped = null;
 		if (wait) {
 			try {
-				build.await(timeoutSeconds, TimeUnit.SECONDS);
+				build.await(CallBudget.boundedWaitSeconds(timeoutSeconds), TimeUnit.SECONDS);
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 			}
+			clamped = CallBudget.clampNote(timeoutSeconds, "eclipse_get_build_status with this buildId"); //$NON-NLS-1$
 		}
-		return McpToolResult.of(GetBuildStatusTool.toJson(build).toString());
+		var json = GetBuildStatusTool.toJson(build);
+		if (clamped != null && "running".equals(build.state())) { //$NON-NLS-1$
+			json.put("waitNote", clamped); //$NON-NLS-1$
+		}
+		return McpToolResult.of(json.toString());
 	}
 
 	private static List<String> projectNames(Map<String, Object> arguments, ToolArguments args) {

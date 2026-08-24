@@ -4,6 +4,7 @@ import java.util.Map;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 
+import com.vogella.eclipse.mcp.core.CallBudget;
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolException;
 import com.vogella.eclipse.mcp.core.McpToolResult;
@@ -60,10 +61,16 @@ public final class GetCommandOutputTool implements IMcpTool {
 		if (args.getBoolean("cancel", false) && execution.isRunning()) { //$NON-NLS-1$
 			execution.cancel();
 		}
+		int requested = args.getInt("timeoutSeconds", 25, 1, 3600); //$NON-NLS-1$
 		if (args.getBoolean("wait", false)) { //$NON-NLS-1$
-			execution.await(args.getInt("timeoutSeconds", 25, 1, 3600) * 1000L); //$NON-NLS-1$
+			execution.await(CallBudget.boundedWaitSeconds(requested) * 1000L);
 		}
 		int tail = args.getInt("tailLines", DEFAULT_TAIL, 1, 2000); //$NON-NLS-1$
-		return McpToolResult.of(RunCommandTool.CommandOutput.describe(execution, tail).toString());
+		JsonObject json = RunCommandTool.CommandOutput.describe(execution, tail);
+		if (execution.isRunning()) {
+			json.put("note", CallBudget.clampNote(requested, //$NON-NLS-1$
+					"this tool again with the same commandId")); //$NON-NLS-1$
+		}
+		return McpToolResult.of(json.toString());
 	}
 }
