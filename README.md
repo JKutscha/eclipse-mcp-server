@@ -643,7 +643,9 @@ Read-only. What a widget is, and what the CSS engine made of it.
  "computed":{"background-color":"#1F1F1F","color":null}}
 ```
 
-**Paths, not coordinates.** A path is slash separated child indices. Screen coordinates were the obvious interface and are the wrong one: a client cannot point at anything, and a pixel does not survive a resize or a restart where an index does.
+`includeItems` enumerates `Item`s as well as `Control`s: the buttons of a toolbar, the tabs of a folder, the columns of a table or tree. A `ToolItem` is not a `Control`, so it appears in no walk over the control hierarchy, while the CSS engine styles each one as its own element; without this there is no way to address a toolbar button at all, and `pseudo` on the inspector is unusable for exactly the toggle-state question it exists for. Item paths carry an `i` prefix, as in `2/i0`, and `kind` says `control` or `item` so the two are never confused. Off by default because a `Menu` can be large.
+
+**Paths, not coordinates.** A path is slash separated indices. Screen coordinates were the obvious interface and are the wrong one: a client cannot point at anything, and a pixel does not survive a resize or a restart where an index does.
 
 A `null` computed value for a property the theme sets is the useful signal: either no rule applied, or a `#token` reference resolved to nothing, which otherwise shows up only as something rendering black or white.
 
