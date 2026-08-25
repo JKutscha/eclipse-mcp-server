@@ -1292,6 +1292,47 @@ An ambiguous name is **refused with the candidates** rather than guessed, and a 
 
 There is no tool for closing editors. An editor can hold unsaved work, and losing it is not something a client should be able to do by accident.
 
+### `eclipse_list_perspectives`, `eclipse_switch_perspective` and `eclipse_reset_perspective`
+
+A perspective owns the layout: which views exist, where they sit and how big they are.
+`eclipse_show_view`, `eclipse_hide_view`, `eclipse_move_part` and `eclipse_set_part_state` all change the active perspective and nothing else, and Eclipse remembers those changes across restarts.
+
+`eclipse_list_perspectives` reads only. It reports every registered perspective with `open` and `active`, the ids that are open in the window, and honours `filter` and `maxResults`.
+
+`eclipse_switch_perspective` takes `perspective`, an id or the label a person reads, so `Debug` works as well as `org.eclipse.debug.ui.DebugPerspective`.
+An ambiguous name is refused with the candidates rather than guessed, the same way `eclipse_show_view` resolves one.
+It reports `previousPerspective`, so a caller can put the IDE back, and takes `reset` to start from the registered layout.
+Switching is usually cheaper than opening five views one at a time.
+
+`eclipse_reset_perspective` puts the active perspective back to the layout it was registered with, without the confirmation dialog the menu entry shows.
+That makes it **the undo** for every layout tool here, none of which can be undone individually.
+It also **discards** whatever layout the perspective currently has, which may be one the user built by hand, so it needs `confirm: true` and is worth asking about on somebody's running IDE.
+
+### `eclipse_move_part`
+
+Moves a view into another stack, beside one, or out into a window of its own. This is dragging a tab, without a mouse.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `part` | string, required | | Id of the view to move. |
+| `target` | string | | A part id or a stack id. Required unless `position` is `detached`. |
+| `position` | `stack` \| `left` \| `right` \| `above` \| `below` \| `detached` | `stack` | |
+| `index` | integer | last | Tab position, for `position: stack`. |
+| `ratio` | integer, 10 to 90 | 50 | Percent of the target's area the new stack takes, for the four splits. |
+| `bounds` | string | `200,200 700x500` | `x,y widthxheight` of the detached window. |
+| `activate` | boolean | `true` | Bring it to the front of its new stack. |
+| `maxResults` | integer | 50 | Cap on the stacks reported back. |
+
+**It answers with the layout either way.** `layout.stacks` lists every stack the active perspective shows with the parts in it, on success and on refusal alike, so a call with a target that does not exist tells you what does. A stack is addressed by its `id`, and a stack whose id is `null` is still reachable through any part in it, because `target` accepts either.
+
+It reports `previousStack` and `previousIndex` to move the part back, and `eclipse_reset_perspective` puts the whole perspective back.
+
+The moved element is the perspective's placeholder for the view, not the shared part behind it, so the move belongs to the active perspective and does not follow the view into the others.
+
+Only views move. An editor belongs to the editor area, and there is no meaningful place to put it.
+
+The splits build the states that need a particular layout and that nothing else here can reach: a stack with several tabs against one with a single tab, a column narrow enough for the tabs to overflow into the chevron, and a detached view, which is its own shell and is drawn by a different set of CSS selectors again.
+
 ### `eclipse_screenshot`
 
 Captures the IDE as a PNG, writes it to a file and returns the path.

@@ -100,6 +100,46 @@ class UiToolsTest {
 		assertRefused(TestFixture.call("eclipse_apply_css", Map.of("reset", Boolean.TRUE)), "no running workbench");
 	}
 
+	@Test
+	void thePerspectiveToolsRefuseWithoutAWorkbench() throws Exception {
+		assertRefused(TestFixture.call("eclipse_list_perspectives", Map.of()), "no running workbench");
+		assertRefused(TestFixture.call("eclipse_switch_perspective", Map.of("perspective", "Java")),
+				"no running workbench");
+		assertRefused(TestFixture.call("eclipse_reset_perspective", Map.of("confirm", Boolean.TRUE)),
+				"no running workbench");
+	}
+
+	@Test
+	void switchingAPerspectiveNamesItsRequiredArgument() throws Exception {
+		assertRefused(TestFixture.call("eclipse_switch_perspective", Map.of()), "'perspective' is required");
+	}
+
+	@Test
+	void resettingAPerspectiveNeedsToBeConfirmed() throws Exception {
+		// it discards a layout the user may have spent time on and nothing can undo it
+		assertRefused(TestFixture.call("eclipse_reset_perspective", Map.of()), "confirm");
+	}
+
+	@Test
+	void movingAPartChecksItsArgumentsBeforeTheUiThread() throws Exception {
+		assertRefused(TestFixture.call("eclipse_move_part", Map.of()), "'part' is required");
+		assertRefused(TestFixture.call("eclipse_move_part", Map.of("part", "org.eclipse.ui.views.ProblemView")),
+				"'target' is required");
+		assertRefused(
+				TestFixture.call("eclipse_move_part", Map.of("part", "org.eclipse.ui.views.ProblemView", //
+						"target", "org.eclipse.ui.console.ConsoleView", "position", "sideways")),
+				"Unknown position");
+	}
+
+	@Test
+	void movingAPartRefusesWithoutAWorkbench() throws Exception {
+		assertRefused(TestFixture.call("eclipse_move_part", Map.of("part", "org.eclipse.ui.views.ProblemView", //
+				"target", "org.eclipse.ui.console.ConsoleView")), "no running workbench");
+		// detaching is the one position that needs no target
+		assertRefused(TestFixture.call("eclipse_move_part", Map.of("part", "org.eclipse.ui.views.ProblemView", //
+				"position", "detached")), "no running workbench");
+	}
+
 	private static IFile write(IProject project, String name, String content) throws Exception {
 		IFile file = project.getFile(name);
 		file.create(new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)), true,

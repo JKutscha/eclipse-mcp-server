@@ -29,7 +29,7 @@ There is no faster partial build worth using: `mvn verify -pl` on a single bundl
 plugins/com.vogella.eclipse.mcp.core     tool API, registry, extension point, workspace tools
 plugins/com.vogella.eclipse.mcp.server   MCP protocol, embedded Jetty, bearer token
 plugins/com.vogella.eclipse.mcp.jdt      Java model tools, declaration sweep and registry index
-plugins/com.vogella.eclipse.mcp.ui       editor, view and compare tools, screenshots, preference page, startup hook
+plugins/com.vogella.eclipse.mcp.ui       editor, view, perspective and layout tools, compare, screenshots, preference page, startup hook
 plugins/com.vogella.eclipse.mcp.pde      PDE tools
 features/com.vogella.eclipse.mcp.feature
 tests/com.vogella.eclipse.mcp.core.tests    the tools, headless

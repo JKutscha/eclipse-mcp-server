@@ -18,6 +18,10 @@
       <tool class="com.vogella.eclipse.mcp.ui.internal.DismissDialogTool"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.ViewTools$Show"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.ViewTools$Hide"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.PerspectiveTools$ListPerspectives"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.PerspectiveTools$Switch"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.PerspectiveTools$Reset"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.MovePartTool"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.CompareTool"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.VisibilityTool"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.EditorTools$ListEditors"/>
