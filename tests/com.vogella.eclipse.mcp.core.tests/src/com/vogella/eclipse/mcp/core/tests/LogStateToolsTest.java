@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Platform;
@@ -14,7 +15,9 @@ import org.eclipse.core.runtime.Status;
 import org.junit.jupiter.api.Test;
 import org.osgi.framework.FrameworkUtil;
 
+import com.vogella.eclipse.mcp.core.LogClearedHandlers;
 import com.vogella.eclipse.mcp.core.McpToolResult;
+import com.vogella.eclipse.mcp.core.json.JsonObject;
 
 /**
  * Marking and clearing the Error Log.
@@ -103,6 +106,47 @@ class LogStateToolsTest {
 		// to prevent
 		assertEquals(Boolean.TRUE, result.get("markerStale"), "got " + result);
 		assertNotNull(result.get("markerNote"));
+	}
+
+	@Test
+	void whatShowsTheLogIsToldAboutARealClearOnly() throws Exception {
+		AtomicInteger calls = new AtomicInteger();
+		LogClearedHandlers.Handler handler = () -> {
+			calls.incrementAndGet();
+			return new JsonObject().put("updated", Boolean.TRUE).put("viewsCleared", Integer.valueOf(1));
+		};
+		LogClearedHandlers.set(handler);
+		try {
+			TestFixture.callAndParse("eclipse_clear_log", Map.of());
+			assertEquals(0, calls.get(), "a dry run deletes nothing, so there is nothing to update");
+
+			Map<String, Object> cleared = TestFixture.callAndParse("eclipse_clear_log",
+					Map.of("dryRun", Boolean.FALSE));
+			assertEquals(1, calls.get(), "a real clear has to update what is showing the log");
+			@SuppressWarnings("unchecked")
+			Map<String, Object> view = (Map<String, Object>) cleared.get("errorLogView");
+			assertEquals(Boolean.TRUE, view.get("updated"), "got " + cleared);
+		} finally {
+			LogClearedHandlers.unset(handler);
+		}
+	}
+
+	@Test
+	void aFailingViewUpdateStillLeavesTheLogCleared() throws Exception {
+		LogClearedHandlers.Handler handler = () -> {
+			throw new IllegalStateException("the view is gone");
+		};
+		LogClearedHandlers.set(handler);
+		try {
+			Map<String, Object> cleared = TestFixture.callAndParse("eclipse_clear_log",
+					Map.of("dryRun", Boolean.FALSE));
+			assertEquals(Boolean.TRUE, cleared.get("cleared"), "got " + cleared);
+			@SuppressWarnings("unchecked")
+			Map<String, Object> view = (Map<String, Object>) cleared.get("errorLogView");
+			assertEquals(Boolean.FALSE, view.get("updated"), "and it has to say the view was not updated");
+		} finally {
+			LogClearedHandlers.unset(handler);
+		}
 	}
 
 	@SuppressWarnings("unchecked")

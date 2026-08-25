@@ -176,6 +176,22 @@ latter only for field renames, through `GetterSetterUtil`.
 
 Worked around by setting `JavaManipulation.setPreferenceNodeId("org.eclipse.jdt.ui")`.
 
+### Error Log view: no API and no command to clear what it shows
+
+The view keeps the parsed log in memory and does not watch the file, so deleting
+the file underneath it leaves it showing entries that are gone. Its own delete
+action handles that by calling `LogView.handleClear()` right after
+`fInputFile.delete()` (`LogView.doDeleteLog`), but there is no way for anyone
+else to reach that: `LogView` lives in `org.eclipse.ui.internal.views.log`,
+exported `x-friends:="org.eclipse.pde.ui"`, the clear is an anonymous `Action`
+built in `createClearAction` rather than a command, and nothing is contributed
+to the command framework. `IViewPart` offers nothing either.
+
+`ErrorLogRefresh` calls `handleClear()` reflectively on the open view, which
+works because the class and the method are public, and reports what it came to
+rather than assuming it worked. A command id for "clear the Error Log view", or
+a `handleClear` on a published interface, would remove the need.
+
 ### e4 CSS: a snippet cannot be applied through `IThemeEngine`
 
 Applying an ad-hoc stylesheet needs `resetCurrentTheme()` and `getCSSEngines()`,

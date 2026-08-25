@@ -10,6 +10,7 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.Platform;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
+import com.vogella.eclipse.mcp.core.LogClearedHandlers;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.ToolArguments;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
@@ -88,7 +89,7 @@ public final class LogStateTools {
 
 		@Override
 		public String getDescription() {
-			return "Deletes the Error Log file, the same thing the Error Log view's delete action does. DESTROYS THE LOG IRREVERSIBLY, including entries from earlier sessions, and runs as a dry run unless dryRun is set to false. Consider eclipse_mark_log instead: it gives the same 'everything after this point' boundary for a test run without throwing away a log that may turn out to hold the thing you needed. The rotated .log.bak sibling is removed too unless includeRotated is false, because leaving it means a later query can still reach entries from before the clear. After a real clear this writes one entry and reads it back, and reports whether that worked, because a framework still holding the old file open would leave later entries going nowhere."; //$NON-NLS-1$
+			return "Deletes the Error Log file, the same thing the Error Log view's delete action does. DESTROYS THE LOG IRREVERSIBLY, including entries from earlier sessions, and runs as a dry run unless dryRun is set to false. Consider eclipse_mark_log instead: it gives the same 'everything after this point' boundary for a test run without throwing away a log that may turn out to hold the thing you needed. The rotated .log.bak sibling is removed too unless includeRotated is false, because leaving it means a later query can still reach entries from before the clear. After a real clear this writes one entry and reads it back, and reports whether that worked, because a framework still holding the old file open would leave later entries going nowhere. An open Error Log view is emptied along with the file, the way its own delete action does it, and errorLogView says what that came to; the view parses the file once and keeps the entries in memory, so without that it would go on showing entries that no longer exist."; //$NON-NLS-1$
 		}
 
 		@Override
@@ -157,7 +158,14 @@ public final class LogStateTools {
 			if (failed.size() > 0) {
 				return McpToolResult.of(result.put("cleared", Boolean.FALSE).put("couldNotDelete", failed).toString()); //$NON-NLS-1$ //$NON-NLS-2$
 			}
-			return McpToolResult.of(result.put("cleared", Boolean.TRUE).put("stillLogging", verify()).toString()); //$NON-NLS-1$ //$NON-NLS-2$
+			// before the probe entry of verify() is written, so that what the view shows
+			// and what the file holds end up the same
+			JsonObject uiUpdate = LogClearedHandlers.notifyCleared();
+			result.put("cleared", Boolean.TRUE); //$NON-NLS-1$
+			if (uiUpdate != null) {
+				result.put("errorLogView", uiUpdate); //$NON-NLS-1$
+			}
+			return McpToolResult.of(result.put("stillLogging", verify()).toString()); //$NON-NLS-1$
 		}
 
 		/**

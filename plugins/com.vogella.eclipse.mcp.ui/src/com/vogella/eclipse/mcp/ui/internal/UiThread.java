@@ -24,9 +24,23 @@ final class UiThread {
 	private UiThread() {
 	}
 
+	/** What the UI thread answered, or why it did not. Exactly one of the two is set. */
+	record Outcome(JsonObject value, String error) {
+	}
+
 	static McpToolResult call(long timeoutSeconds, Supplier<JsonObject> work) {
+		Outcome outcome = run(timeoutSeconds, work);
+		return outcome.error() == null ? McpToolResult.of(outcome.value().toString())
+				: McpToolResult.error(outcome.error());
+	}
+
+	/**
+	 * The same, for a caller that is not answering a tool call of its own and has
+	 * to fold the failure into an answer somebody else is writing.
+	 */
+	static Outcome run(long timeoutSeconds, Supplier<JsonObject> work) {
 		if (!PlatformUI.isWorkbenchRunning()) {
-			return McpToolResult.error("There is no running workbench."); //$NON-NLS-1$
+			return new Outcome(null, "There is no running workbench."); //$NON-NLS-1$
 		}
 		CompletableFuture<JsonObject> pending = new CompletableFuture<>();
 		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
@@ -37,17 +51,17 @@ final class UiThread {
 			}
 		});
 		try {
-			return McpToolResult.of(pending.get(timeoutSeconds, TimeUnit.SECONDS).toString());
+			return new Outcome(pending.get(timeoutSeconds, TimeUnit.SECONDS), null);
 		} catch (TimeoutException e) {
 			pending.cancel(false);
-			return McpToolResult.error("The Eclipse UI did not process the request within %d seconds." //$NON-NLS-1$
+			return new Outcome(null, "The Eclipse UI did not process the request within %d seconds." //$NON-NLS-1$
 					.formatted(Long.valueOf(timeoutSeconds)));
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			return McpToolResult.error("The request was interrupted."); //$NON-NLS-1$
+			return new Outcome(null, "The request was interrupted."); //$NON-NLS-1$
 		} catch (ExecutionException e) {
 			Throwable cause = e.getCause() == null ? e : e.getCause();
-			return McpToolResult.error("The request failed: " + cause); //$NON-NLS-1$
+			return new Outcome(null, "The request failed: " + cause); //$NON-NLS-1$
 		}
 	}
 }

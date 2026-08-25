@@ -259,6 +259,11 @@ Two ways to get "everything in the log is from this run" before a long test run.
 
 It deletes the file, which is exactly what the Error Log view's own delete action does. The rotated sibling goes too by default, because leaving it means a later query can still reach entries from before the clear.
 
+**An open Error Log view is emptied with it**, and `errorLogView` says whether that happened, how many views it came to and why not when it did not.
+The view parses the log once and then keeps the entries in memory, so deleting the file underneath it would leave the person at the IDE reading entries that no longer exist.
+This is the same call the view's own delete action makes after it deletes the file, so the tool and the toolbar button end in the same state.
+The clear itself does not depend on it: a view that refuses to empty is reported, not turned into a failed clear.
+
 After a real clear it writes one entry, reads it back, and reports `stillLogging`. The framework writes the log through a handle of its own, so a delete underneath it could in principle leave later entries going somewhere nothing can read, and that failure would be silent until someone noticed an empty log much later. Equinox reopens the file, so this works, and `LogStateToolsTest.clearingLeavesTheLogWritableAndReadable` holds it that way rather than leaving it as an assumption.
 
 ### `eclipse_get_preferences`

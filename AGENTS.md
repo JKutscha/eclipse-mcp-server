@@ -45,6 +45,7 @@ releng/update-composite-site.sh
 No reference to the MCP SDK, to Jetty or to any UI bundle.
 The bundle is meant to stay a candidate for contribution to the Eclipse Platform, and the split exists only for that reason.
 It also has no JSON library, which is why it carries the small writer in `com.vogella.eclipse.mcp.core.json`.
+When a core tool needs something to happen in the UI, it goes through a hook the UI side registers, the way `eclipse_clear_log` empties the Error Log view through `LogClearedHandlers`: core declares the interface, `McpUiPlugin.start` registers the implementation, and the handler's answer is folded into the tool's result. A failing handler must never turn a completed operation into a failed call.
 
 **Most tools are read-only, and the exceptions are deliberate.**
 `eclipse_organize_imports` and `eclipse_format` modify the file they are given, `eclipse_write_file` creates and replaces files, `eclipse_set_target_platform` replaces what the workspace compiles against, `eclipse_build` runs builders, and `eclipse_get_problems` triggers a build when auto-build is off.
