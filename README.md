@@ -623,6 +623,8 @@ The last 2000 lines are kept and `droppedLines` says how many fell out, since a 
 `eclipse_set_shell_bounds` takes `shellTitle`, `x`, `y`, `width`, `height` and `maximized`, any subset.
 `eclipse_set_part_state` takes `part` and a `state` of `maximized`, `minimized`, `restored` or `activated`; `activated` focuses an editor without knowing its file path, which `eclipse_open` needs.
 
+**`activated` is not one of the window states.** A part has three of those, `restored`, `maximized` and `minimized`, and activating changes none of them: it brings the part to the front of its stack and gives it focus. So the answer to `activated` reports `requested`, `focusGiven` and a `state` that is whatever window state the part kept, usually `restored`. Reading only `state` back makes a successful activation look like a request that was ignored, which is why the other two fields are there.
+
 Both report the previous value, `previousBounds` and `previousMaximized` or `previousState`, so a caller can put the IDE back exactly as it found it. That is what makes them usable on somebody's running workbench rather than only on a throwaway one.
 
 They exist for the states that only a size change produces, and that nothing else here can reach: tab overflow and its chevron, text truncation, scrollbars, sash and border rendering between stacks, reflowing form layouts, and the trim stack a minimised part uses. Each is drawn by a different set of CSS selectors.

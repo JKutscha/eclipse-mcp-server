@@ -7,6 +7,7 @@ import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.IWorkbenchPage;
+import org.eclipse.ui.IWorkbenchPart;
 import org.eclipse.ui.IWorkbenchPartReference;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PlatformUI;
@@ -135,7 +136,7 @@ public final class LayoutTools {
 
 		@Override
 		public String getDescription() {
-			return "Maximizes, minimizes, restores or activates a part, by id, editors included. CHANGES WHAT THE USER SEES. Maximizing is the Ctrl+M behaviour and puts a part in a known large state, which also makes captures of it comparable between runs; minimizing moves it to the trim stack, which is rendered by a different set of CSS selectors again and is otherwise unreachable. Activating works for an editor without knowing its file path, which eclipse_open needs. The answer reports the previous state so it can be put back."; //$NON-NLS-1$
+			return "Maximizes, minimizes, restores or activates a part, by id, editors included. CHANGES WHAT THE USER SEES. Maximizing is the Ctrl+M behaviour and puts a part in a known large state, which also makes captures of it comparable between runs; minimizing moves it to the trim stack, which is rendered by a different set of CSS selectors again and is otherwise unreachable. Activating works for an editor without knowing its file path, which eclipse_open needs; note that it is not one of the three window states, so it answers with focusGiven and leaves state at whatever window state the part kept. The answer reports the previous state so it can be put back."; //$NON-NLS-1$
 		}
 
 		@Override
@@ -145,7 +146,7 @@ public final class LayoutTools {
 					  "type": "object",
 					  "properties": {
 					    "part":  {"type":"string","description":"Part id, from eclipse_list_ui_targets."},
-					    "state": {"type":"string","enum":["maximized","minimized","restored","activated"],"description":"Omit to only activate."}
+					    "state": {"type":"string","enum":["maximized","minimized","restored","activated"],"description":"Omit to only activate. activated gives focus and brings the part forward; it is not a window state, so the answer reports focusGiven and 'state' stays the window state the part had."}
 					  },
 					  "required": ["part"],
 					  "additionalProperties": false
@@ -181,17 +182,27 @@ public final class LayoutTools {
 						.put("reason", "No open part '%s'. Use eclipse_list_ui_targets.".formatted(partId)); //$NON-NLS-1$ //$NON-NLS-2$
 			}
 			String previous = nameOf(page.getPartState(reference));
-			if ("activated".equals(state)) { //$NON-NLS-1$
-				if (reference.getPart(true) != null) {
-					page.activate(reference.getPart(true));
-				}
-			} else {
-				page.setPartState(reference, stateOf(state));
-			}
-			return new JsonObject().put("changed", Boolean.TRUE) //$NON-NLS-1$
+			JsonObject result = new JsonObject().put("changed", Boolean.TRUE) //$NON-NLS-1$
 					.put("part", partId) //$NON-NLS-1$
-					.put("previousState", previous) //$NON-NLS-1$
-					.put("state", nameOf(page.getPartState(reference))) //$NON-NLS-1$
+					.put("requested", state) //$NON-NLS-1$
+					.put("previousState", previous); //$NON-NLS-1$
+			if ("activated".equals(state)) { //$NON-NLS-1$
+				// activating is not one of the three window states, so reporting only
+				// 'state' back reads as if the request had been ignored
+				IWorkbenchPart part = reference.getPart(true);
+				if (part != null) {
+					page.activate(part);
+				}
+				result.put("changed", Boolean.valueOf(part != null)) //$NON-NLS-1$
+						.put("focusGiven", Boolean.valueOf(part != null)) //$NON-NLS-1$
+						.put("state", nameOf(page.getPartState(reference))) //$NON-NLS-1$
+						.put("note", part == null //$NON-NLS-1$
+								? "The part could not be created, so nothing was focused. Its window state is unchanged." //$NON-NLS-1$
+								: "activated is not a window state: the part was brought to the front and given focus, and 'state' is the window state it kept. Only maximized, minimized and restored are window states."); //$NON-NLS-1$
+				return result;
+			}
+			page.setPartState(reference, stateOf(state));
+			return result.put("state", nameOf(page.getPartState(reference))) //$NON-NLS-1$
 					.put("note", "Pass previousState back to put it as it was."); //$NON-NLS-1$ //$NON-NLS-2$
 		}
 
