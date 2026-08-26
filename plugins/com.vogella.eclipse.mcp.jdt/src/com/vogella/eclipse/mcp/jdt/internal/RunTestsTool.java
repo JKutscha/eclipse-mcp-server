@@ -88,6 +88,7 @@ public final class RunTestsTool implements IMcpTool {
 				    "testClass":      {"type":"string","description":"Fully qualified test class. Omit to run every test in the project."},
 				    "testMethod":     {"type":"string","description":"Single method of testClass."},
  				    "pluginTest":     {"type":"string","enum":["auto","true","false"],"default":"auto","description":"Run as a JUnit Plug-in Test, which launches a second Eclipse with a running platform. 'auto' uses it when the project is a plug-in project. Tests that need OSGi fail as plain JUnit with errors that look like broken tests rather than real results."},
+				    "workspacePlugins": {"type":"string","enum":["required","all"],"default":"required","description":"Which workspace plug-ins the launched platform gets. required is the test bundle and what it needs; all adds every plug-in in the workspace, which is the PDE launch tab's own default and which breaks a UI test launch in a workspace holding unbuilt copies of platform bundles."},
 				    "ui":             {"type":"boolean","default":false,"description":"Use the UI test application, which opens a workbench window on the user's screen. Off by default: a launched IDE should never be a surprise."},
 				    "debug":          {"type":"boolean","default":false,"description":"Launch in debug mode instead of plain run. The session appears in eclipse_debug_status and its state at a failure is readable through eclipse_debug_get_frames and eclipse_debug_evaluate."},
 				    "runtimeWorkspace": {"type":"string","description":"Workspace directory for the launched platform. Defaults to a sibling junit-workspace, and it is cleared on every run."},
@@ -170,6 +171,10 @@ public final class RunTestsTool implements IMcpTool {
 			configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.TARGET_RUN_PERSPECTIVE,
 					com.vogella.eclipse.mcp.core.LaunchAttributes.PERSPECTIVE_NONE);
 			configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.STARTED_BY_MCP, true);
+			// launching a working copy saves it, and a saved configuration shows up in
+			// the user's Run Configurations dialog. Private keeps this server's launches
+			// out of a list that belongs to the person at the IDE.
+			configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.PRIVATE, true);
 			if (type == null) {
 				// a container runs everything under it, which is how Run As on a project works
 				configuration.setAttribute(ATTR_CONTAINER, javaProject.getHandleIdentifier());
@@ -179,8 +184,11 @@ public final class RunTestsTool implements IMcpTool {
 					configuration.setAttribute(ATTR_TEST_NAME, testMethod);
 				}
 			}
+			boolean allWorkspacePlugins = "all".equals(args.getString("workspacePlugins", "required")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+			String testBundle = symbolicName(project);
 			if (asPlugin) {
-				configurePlatform(configuration, args.getString("runtimeWorkspace"), ui); //$NON-NLS-1$
+				configurePlatform(configuration, args.getString("runtimeWorkspace"), ui, allWorkspacePlugins, //$NON-NLS-1$
+						testBundle);
 			}
 			// only for the UI application: it is the one that needs a workbench, and a
 			// workspace plug-in with unbuilt classes shadows the installed bundle and
@@ -229,6 +237,8 @@ public final class RunTestsTool implements IMcpTool {
 								configuration.getAttribute(IPDELauncherConstants.APPLICATION, (String) null))
 						.put(IPDELauncherConstants.APP_TO_TEST,
 								configuration.getAttribute(IPDELauncherConstants.APP_TO_TEST, (String) null))
+						.put("workspacePlugins", allWorkspacePlugins ? "all" : "required") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+						.put("workspaceBundle", testBundle) //$NON-NLS-1$
 						.put(IPDELauncherConstants.RUN_IN_UI_THREAD,
 								configuration.getAttribute(IPDELauncherConstants.RUN_IN_UI_THREAD, true))
 						.put(IPDELauncherConstants.LOCATION,
@@ -324,7 +334,7 @@ public final class RunTestsTool implements IMcpTool {
 	 * user's screen, which should never happen by surprise.
 	 */
 	private static void configurePlatform(ILaunchConfigurationWorkingCopy configuration, String runtimeWorkspace,
-			boolean ui) {
+			boolean ui, boolean allWorkspacePlugins, String testBundle) {
 		// APPLICATION is the switch, per PDE's own comment in getApplication: "if
 		// application is set, it must be a headless app". Leaving it unset yields the
 		// UI test application. APP_TO_TEST is a different thing, the product the UI
@@ -343,9 +353,17 @@ public final class RunTestsTool implements IMcpTool {
 		configuration.setAttribute(IPDELauncherConstants.DOCLEAR, true);
 		configuration.setAttribute(IPDELauncherConstants.ASKCLEAR, false);
 		configuration.setAttribute(IPDELauncherConstants.CONFIG_CLEAR_AREA, true);
-		// take the whole target platform plus the workspace plug-ins, which is what
-		// the launch tab does by default and what makes an unconfigured run resolve
-		configuration.setAttribute(IPDELauncherConstants.AUTOMATIC_ADD, true);
+		// AUTOMATIC_ADD decides only how the workspace list is read: true means
+		// everything except the deselected, false means only the selected. Whether
+		// dependencies come along is a separate switch and stays on, so the narrow set
+		// is still the test bundle plus its closure plus the target platform. Taking
+		// everything is the launch tab's default and it kills a UI test launch in a
+		// workspace that holds unbuilt copies of the bundles the workbench is made of.
+		configuration.setAttribute(IPDELauncherConstants.AUTOMATIC_ADD, allWorkspacePlugins);
+		configuration.setAttribute(IPDELauncherConstants.AUTOMATIC_INCLUDE_REQUIREMENTS, true);
+		if (!allWorkspacePlugins && testBundle != null) {
+			configuration.setAttribute(IPDELauncherConstants.SELECTED_WORKSPACE_BUNDLES, java.util.Set.of(testBundle));
+		}
 	}
 
 	/**
@@ -385,7 +403,25 @@ public final class RunTestsTool implements IMcpTool {
 				.put("truncated", Boolean.valueOf(projects.size() < total)) //$NON-NLS-1$
 				.put("autoBuilding", Boolean.valueOf(autoBuilding)) //$NON-NLS-1$
 				.put("note", //$NON-NLS-1$
-						"The UI test application starts a workbench, and every workspace plug-in is on this launch's bundle list, so a workspace copy without compiled classes shadows the installed bundle and the workbench fails to start. That reports as a run with no tests rather than as an error. These are PDE's markers only, so with auto-build off they can be stale and an empty list proves nothing; build the workspace if the run comes back with total 0."); //$NON-NLS-1$
+						"The UI test application starts a workbench. With workspacePlugins all, every workspace plug-in is on this launch's bundle list, so a workspace copy without compiled classes shadows the installed bundle and the workbench fails to start. That reports as a run with no tests rather than as an error. These are PDE's markers only, so with auto-build off they can be stale and an empty list proves nothing; build the workspace if the run comes back with total 0."); //$NON-NLS-1$
+	}
+
+	/**
+	 * The bundle symbolic name of a plug-in project, read from its manifest. The
+	 * project name is not it: a project may be named anything, and the launch
+	 * selection is by symbolic name.
+	 */
+	private static String symbolicName(IProject project) {
+		try (java.io.InputStream in = project.getFile("META-INF/MANIFEST.MF").getContents()) { //$NON-NLS-1$
+			String header = new java.util.jar.Manifest(in).getMainAttributes().getValue("Bundle-SymbolicName"); //$NON-NLS-1$
+			if (header == null) {
+				return null;
+			}
+			int semicolon = header.indexOf(';');
+			return (semicolon < 0 ? header : header.substring(0, semicolon)).trim();
+		} catch (CoreException | java.io.IOException | RuntimeException e) {
+			return null;
+		}
 	}
 
 	/** How the run would be launched, which a dry run has to report as well. */

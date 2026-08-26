@@ -18,6 +18,13 @@ public final class LaunchAttributes {
 	 */
 	public static final String STARTED_BY_MCP = "com.vogella.eclipse.mcp.startedByMcp"; //$NON-NLS-1$
 
+	/**
+	 * {@code IDebugUIConstants.ATTR_PRIVATE}. Launching a working copy saves it, so
+	 * without this every launch this server makes appears in the person's Run
+	 * Configurations dialog and accumulates there.
+	 */
+	public static final String PRIVATE = "org.eclipse.debug.ui.private"; //$NON-NLS-1$
+
 	/** {@code IDebugUIConstants.ATTR_TARGET_DEBUG_PERSPECTIVE}. */
 	public static final String TARGET_DEBUG_PERSPECTIVE = "org.eclipse.debug.ui.target_debug_perspective"; //$NON-NLS-1$
 

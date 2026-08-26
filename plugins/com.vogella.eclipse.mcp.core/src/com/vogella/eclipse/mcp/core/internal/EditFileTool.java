@@ -121,6 +121,7 @@ public final class EditFileTool implements IMcpTool {
 				: replaceFirst(content, oldText, newText);
 		int line = lineOf(content, content.indexOf(oldText));
 		result.put("replacements", Integer.valueOf(replaceAll ? matches : 1)) //$NON-NLS-1$
+				.put("changedLines", changedLines(content, oldText)) //$NON-NLS-1$
 				.put("firstChangedLine", Integer.valueOf(line)) //$NON-NLS-1$
 				.put("charset", charset.name()) //$NON-NLS-1$
 				.put("context", context(edited, line)); //$NON-NLS-1$
@@ -135,9 +136,25 @@ public final class EditFileTool implements IMcpTool {
 			return McpToolResult.error("Could not write '%s': %s".formatted(path, e.getMessage())); //$NON-NLS-1$
 		}
 		return McpToolResult.of(result.put("edited", Boolean.TRUE) //$NON-NLS-1$
-				.put("note", //$NON-NLS-1$
-						"The previous content is in the local history. Run eclipse_build to see what the change did, and eclipse_format for Java.") //$NON-NLS-1$
+				.put("note", buildNote()) //$NON-NLS-1$
 				.toString());
+	}
+
+	/** Every line an occurrence starts on, since one number cannot describe a replaceAll. */
+	private static com.vogella.eclipse.mcp.core.json.JsonArray changedLines(String content, String oldText) {
+		var lines = new com.vogella.eclipse.mcp.core.json.JsonArray();
+		for (int at = content.indexOf(oldText); at >= 0; at = content.indexOf(oldText, at + oldText.length())) {
+			lines.add(Integer.valueOf(lineOf(content, at)));
+		}
+		return lines;
+	}
+
+	/** Auto-build decides whether the caller still has to ask for one. */
+	private static String buildNote() {
+		if (ResourcesPlugin.getWorkspace().isAutoBuilding()) {
+			return "The previous content is in the local history. Auto-build is on, so the change is being compiled already; eclipse_get_problems reports what it found, and eclipse_format tidies Java."; //$NON-NLS-1$
+		}
+		return "The previous content is in the local history. Auto-build is OFF in this workspace, so nothing has compiled the change yet: run eclipse_build before believing any problem report. eclipse_format tidies Java."; //$NON-NLS-1$
 	}
 
 	static int count(String content, String text) {

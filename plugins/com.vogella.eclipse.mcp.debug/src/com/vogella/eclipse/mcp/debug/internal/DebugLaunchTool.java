@@ -44,6 +44,7 @@ public final class DebugLaunchTool implements IMcpTool {
 		configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.TARGET_RUN_PERSPECTIVE,
 				com.vogella.eclipse.mcp.core.LaunchAttributes.PERSPECTIVE_NONE);
 		configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.STARTED_BY_MCP, true);
+		configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.PRIVATE, true);
 	}
 
 	@Override

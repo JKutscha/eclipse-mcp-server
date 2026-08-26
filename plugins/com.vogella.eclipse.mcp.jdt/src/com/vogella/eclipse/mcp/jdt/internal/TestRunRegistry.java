@@ -123,6 +123,7 @@ public final class TestRunRegistry {
 		if (listening) {
 			return;
 		}
+		deleteLeftoverConfigurations();
 		JUnitCore.addTestRunListener(new TestRunListener() {
 			@Override
 			public void sessionStarted(ITestRunSession session) {
@@ -174,10 +175,44 @@ public final class TestRunRegistry {
 		return null;
 	}
 
+	/**
+	 * Removes launch configurations this server left behind in earlier sessions.
+	 * <p>
+	 * Launching a working copy saves it, so every run of every generation left a
+	 * file in the user's .launches directory. Only configurations carrying this
+	 * server's own marker are removed, never one a person made.
+	 */
+	private static void deleteLeftoverConfigurations() {
+		try {
+			var manager = org.eclipse.debug.core.DebugPlugin.getDefault().getLaunchManager();
+			for (var configuration : manager.getLaunchConfigurations()) {
+				if (!configuration.getAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.STARTED_BY_MCP,
+						false)) {
+					continue;
+				}
+				boolean running = false;
+				for (var launch : manager.getLaunches()) {
+					running |= configuration.equals(launch.getLaunchConfiguration()) && !launch.isTerminated();
+				}
+				if (!running) {
+					configuration.delete();
+				}
+			}
+		} catch (org.eclipse.core.runtime.CoreException | RuntimeException e) {
+			// tidying is a courtesy; failing at it must not stop a test run
+		}
+	}
+
+	/** Distinguishes launch names across server generations, since the ids restart. */
+	private static final long GENERATION = System.currentTimeMillis();
+
 	public synchronized Run create(String scope) {
 		listen();
 		String id = "testrun-" + ids.incrementAndGet(); //$NON-NLS-1$
-		Run run = new Run(id, NAME_PREFIX + id, scope);
+		// the id restarts at 1 with the server, so the launch name must not be derived
+		// from it alone: two generations would otherwise write the same .launch file and
+		// anyone reading it back to reconstruct a run would get the wrong one
+		Run run = new Run(id, NAME_PREFIX + id + " " + GENERATION, scope); //$NON-NLS-1$
 		runs.put(id, run);
 		lastId = id;
 		return run;
