@@ -33,7 +33,8 @@ public final class SetPreferenceTool implements IMcpTool {
 			"org.eclipse.jdt.ui", //$NON-NLS-1$
 			"org.eclipse.core.runtime", //$NON-NLS-1$
 			// the theme qualifier, so that keys like disableOSDarkThemeInherit stay
-			// writable; themeid itself is refused below because the engine overwrites it
+			// writable; themeid itself is refused below, because a startup that cannot
+			// resolve it replaces the written value with a fallback
 			"org.eclipse.e4.ui.css.swt.theme"); //$NON-NLS-1$
 
 	private static final String AUTOBUILD_QUALIFIER = "org.eclipse.core.resources"; //$NON-NLS-1$
@@ -51,7 +52,7 @@ public final class SetPreferenceTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Writes a single preference in the instance or project scope and returns the previous value, so the change can be undone. MODIFIES THE IDE CONFIGURATION. Only the qualifiers org.eclipse.core.resources, org.eclipse.jdt.core, org.eclipse.jdt.ui and org.eclipse.core.runtime may be written. Auto-build (org.eclipse.core.resources, description.autobuilding) is applied through the workspace description rather than as a raw preference write, because writing the raw key does not take effect properly. The key themeid under org.eclipse.e4.ui.css.swt.theme is refused: the theme engine overwrites it on shutdown, so use eclipse_set_theme."; //$NON-NLS-1$
+		return "Writes a single preference in the instance or project scope and returns the previous value, so the change can be undone. MODIFIES THE IDE CONFIGURATION. Only the qualifiers org.eclipse.core.resources, org.eclipse.jdt.core, org.eclipse.jdt.ui and org.eclipse.core.runtime may be written. Auto-build (org.eclipse.core.resources, description.autobuilding) is applied through the workspace description rather than as a raw preference write, because writing the raw key does not take effect properly. The key themeid under org.eclipse.e4.ui.css.swt.theme is refused: the write reaches disk, but at the next startup the engine resolves the persisted id against the registered themes and an id that does not resolve is replaced by a fallback that is persisted over it, so it is not a way to switch themes. Use eclipse_set_theme."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -86,7 +87,7 @@ public final class SetPreferenceTool implements IMcpTool {
 		}
 		if (THEME_QUALIFIER.equals(qualifier) && THEMEID_KEY.equals(key)) {
 			return McpToolResult.error(
-					"Writing %s/%s is refused: the theme engine persists the id of the theme that is active when the IDE shuts down, so it overwrites this key and the write is silently lost. Switch the theme with eclipse_set_theme instead."
+					"Writing %s/%s is refused: the write reaches disk, but at the next startup the theme engine resolves the persisted id against the registered themes, and an id that does not resolve is replaced by a fallback that is persisted over it. Writing it is not a way to switch themes; use eclipse_set_theme instead."
 							.formatted(THEME_QUALIFIER, THEMEID_KEY)); //$NON-NLS-1$
 		}
 		String scope = args.getString("scope", "instance"); //$NON-NLS-1$ //$NON-NLS-2$
