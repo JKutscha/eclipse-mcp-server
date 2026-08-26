@@ -16,6 +16,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -24,6 +25,8 @@ import java.util.jar.JarFile;
 import java.util.jar.Manifest;
 
 import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.IExtension;
+import org.eclipse.core.runtime.IExtensionRegistry;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Platform;
@@ -61,10 +64,18 @@ public final class InstallBundleTool implements IMcpTool {
 	private static final String LOADED_CLASSES_NOTE =
 			"Classes already loaded keep running: code that was on the old version, a view that is open among them, keeps the old behaviour until it is closed and reopened or its bundle is restarted."; //$NON-NLS-1$
 
+	private static final String REGISTRY_CAVEAT =
+			"A contribution in the extension registry does not mean the component that consumes it noticed: some readers take the registry once at startup and keep their own list, and the e4 theme engine is believed to be one of those, so what was newly contributed can be in the registry and still invisible until the IDE restarts."; //$NON-NLS-1$
+
 	/** Long enough for the HTTP response to be on the wire before the refresh stops the server. */
 	private static final int DEFERRED_REFRESH_DELAY_MILLIS = 2000;
 
 	private static final int REFRESH_WAIT_SECONDS = 25;
+
+	/** The registry can lag a refresh's bundle events; an expected attribution is polled this long before it is believed. */
+	private static final int CONTRIBUTION_POLL_ATTEMPTS = 10;
+
+	private static final long CONTRIBUTION_POLL_MILLIS = 100;
 
 	@Override
 	public String getName() {
@@ -73,7 +84,7 @@ public final class InstallBundleTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Installs one OSGi bundle jar into the running IDE without a p2 repository, a build or a restart. CHANGES THE RUNNING IDE: mode hot installs or updates the bundle in the live framework, and the refresh that follows restarts every bundle wired to it, which for a low level bundle is a large part of the IDE, so the dependency closure is reported up front and dryRun defaults to true. A HOT INSTALL DOES NOT SURVIVE A RESTART: it is invisible to p2 and simpleconfigurator puts the original bundle back at the next start, so it is a throwaway test; mode dropins copies the jar into the installation's dropins directory instead, which survives a restart and needs one, and which p2's reconciler picks up. Replacing a bundle whose refresh would stop this server's own bundles is refused, because the answer could not be delivered through a server the refresh is about to stop; pass allowSelf to have the install happen at once, the answer come back first, and the refresh follow a couple of seconds later, after which reconnecting is the caller's job. This tool installs, updates and copies only; it never uninstalls anything."; //$NON-NLS-1$
+		return "Installs one OSGi bundle jar into the running IDE without a p2 repository, a build or a restart. CHANGES THE RUNNING IDE: mode hot installs or updates the bundle in the live framework, and the refresh that follows restarts every bundle wired to it, which for a low level bundle is a large part of the IDE, so the dependency closure is reported up front and dryRun defaults to true. A HOT INSTALL DOES NOT SURVIVE A RESTART: it is invisible to p2 and simpleconfigurator puts the original bundle back at the next start, so it is a throwaway test; mode dropins copies the jar into the installation's dropins directory instead, which survives a restart and needs one, and which p2's reconciler picks up. After a hot install it reports what the extension registry attributes to the bundle per extension point; a jar whose plugin.xml ends up with nothing attributed needs a restart for its contribution, and even an attributed contribution can go unseen by components that read the registry only at startup, the e4 theme engine among them. Replacing a bundle whose refresh would stop this server's own bundles is refused, because the answer could not be delivered through a server the refresh is about to stop; pass allowSelf to have the install happen at once, the answer come back first, and the refresh follow a couple of seconds later, after which reconnecting is the caller's job. This tool installs, updates and copies only; it never uninstalls anything."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -87,7 +98,7 @@ public final class InstallBundleTool implements IMcpTool {
 				    "dryRun":    {"type":"boolean","default":true,"description":"Report what would happen, including the dependency closure a refresh would take along, and change nothing."},
 				    "start":     {"type":"boolean","default":true,"description":"hot only. Start the bundle after installing. A fragment cannot be started and is reported instead."},
 				    "allowSelf": {"type":"boolean","default":false,"description":"Permit an operation whose refresh would take this server's own com.vogella.eclipse.mcp bundles with it. The answer is sent first and the refresh follows a couple of seconds later; reconnecting afterwards is the caller's job."},
-				    "maxResults":{"type":"integer","default":200,"minimum":1,"maximum":2000,"description":"Cap on the refreshed list."}
+				    "maxResults":{"type":"integer","default":200,"minimum":1,"maximum":2000,"description":"Cap on the refreshed and extension point lists."}
 				  },
 				  "required": ["jar"],
 				  "additionalProperties": false
@@ -212,10 +223,11 @@ public final class InstallBundleTool implements IMcpTool {
 		closure = wiring == null ? List.of(bundle) : sorted(wiring.getDependencyClosure(Set.of(bundle)));
 
 		boolean deferred = !selfHits.isEmpty();
+		boolean refreshTimedOut = false;
 		if (deferred) {
 			scheduleRefresh(context, bundle, closure, start);
 		} else {
-			waitForRefresh(monitor, wiring, closure);
+			refreshTimedOut = !waitForRefresh(monitor, wiring, closure);
 		}
 
 		boolean fragment = isFragment(bundle);
@@ -258,6 +270,11 @@ public final class InstallBundleTool implements IMcpTool {
 				deferred, P2_NOTE);
 		if (deferred) {
 			notes.add("The refresh is deferred so this answer could be delivered. IMPORTANT: the connection will drop when it runs, because the server's own bundles are stopped by it. Reconnecting is your job; the effect of the refresh cannot be reported, because nothing will be there to report it."); //$NON-NLS-1$
+			notes.add("The extension registry report is left out, because the refresh that delivers new contributions has not run yet."); //$NON-NLS-1$
+		} else if (refreshTimedOut) {
+			notes.add("The extension registry report is left out, because the refresh that delivers new contributions had not finished within its bounded wait when this answer was written."); //$NON-NLS-1$
+		} else {
+			json.put("extensions", extensionReport(bundle, jar, maxResults, notes)); //$NON-NLS-1$
 		}
 		json.put("notes", notes); //$NON-NLS-1$
 		return McpToolResult.of(json.toString());
@@ -354,6 +371,89 @@ public final class InstallBundleTool implements IMcpTool {
 		json.put("truncated", Boolean.valueOf(closure.size() > items.size())); //$NON-NLS-1$
 	}
 
+	/**
+	 * What the extension registry attributes to the bundle right now, per extension
+	 * point. The registry can lag the bundle events a refresh fires behind the call,
+	 * so an expected attribution that has not appeared yet is polled briefly before it
+	 * is believed.
+	 */
+	private static JsonObject extensionReport(Bundle bundle, Path jar, int maxResults, List<String> notes) {
+		String symbolicName = bundle.getSymbolicName();
+		boolean pluginXmlInJar = jarHasPluginXml(jar);
+		IExtensionRegistry registry = Platform.getExtensionRegistry();
+		Map<String, Integer> counts = new TreeMap<>();
+		if (registry != null) {
+			for (IExtension extension : attributions(registry, symbolicName, pluginXmlInJar)) {
+				counts.merge(extension.getExtensionPointUniqueIdentifier(), 1, Integer::sum);
+			}
+		}
+		JsonArray points = new JsonArray();
+		int shown = 0;
+		for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+			if (shown >= maxResults) {
+				break;
+			}
+			points.add(new JsonObject().put("extensionPoint", entry.getKey()) //$NON-NLS-1$
+					.put("count", entry.getValue())); //$NON-NLS-1$
+			shown++;
+		}
+		if (pluginXmlInJar && counts.isEmpty() && registry != null) {
+			if (!isSingleton(bundle)) {
+				notes.add("The jar carries a plugin.xml whose contributions the registry will never read: %s is not a singleton, and the extension registry ignores every non-singleton bundle's contributions. Add 'singleton:=true' to its Bundle-SymbolicName and install again." //$NON-NLS-1$
+						.formatted(symbolicName));
+			} else {
+				notes.add("The jar carries a plugin.xml, but the extension registry attributes no extension to %s: the contribution did not take while the IDE runs, and a restart is needed." //$NON-NLS-1$
+						.formatted(symbolicName));
+			}
+		}
+		notes.add(REGISTRY_CAVEAT);
+		return new JsonObject().put("pluginXmlInJar", Boolean.valueOf(pluginXmlInJar)) //$NON-NLS-1$
+				.put("points", points) //$NON-NLS-1$
+				.put("total", Integer.valueOf(counts.size())) //$NON-NLS-1$
+				.put("truncated", Boolean.valueOf(counts.size() > shown)); //$NON-NLS-1$
+	}
+
+	private static boolean isSingleton(Bundle bundle) {
+		try {
+			String header = bundle.getHeaders().get(Constants.BUNDLE_SYMBOLICNAME);
+			if (header == null) {
+				return false;
+			}
+			for (String clause : header.split(";")) { //$NON-NLS-1$
+				if ("singleton:=true".equals(clause.trim())) { //$NON-NLS-1$
+					return true;
+				}
+			}
+			return false;
+		} catch (IllegalStateException e) {
+			return false;
+		}
+	}
+
+	private static List<IExtension> attributions(IExtensionRegistry registry, String symbolicName,
+			boolean expectContributions) {
+		for (int attempt = 0;; attempt++) {
+			IExtension[] found = registry.getExtensions(symbolicName);
+			if (found.length > 0 || !expectContributions || attempt >= CONTRIBUTION_POLL_ATTEMPTS) {
+				return List.of(found);
+			}
+			try {
+				Thread.sleep(CONTRIBUTION_POLL_MILLIS);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return List.of(found);
+			}
+		}
+	}
+
+	private static boolean jarHasPluginXml(Path jar) {
+		try (JarFile opened = new JarFile(jar.toFile())) {
+			return opened.getEntry("plugin.xml") != null; //$NON-NLS-1$
+		} catch (IOException e) {
+			return false;
+		}
+	}
+
 	private static List<String> notes(boolean update, boolean sameVersion, boolean deferred, String p2Note) {
 		List<String> notes = new ArrayList<>();
 		notes.add(p2Note);
@@ -395,19 +495,23 @@ public final class InstallBundleTool implements IMcpTool {
 		job.schedule(DEFERRED_REFRESH_DELAY_MILLIS);
 	}
 
-	private static void waitForRefresh(IProgressMonitor monitor, FrameworkWiring wiring, List<Bundle> closure) {
+	/** Returns whether the refresh callback arrived within the bounded wait. */
+	private static boolean waitForRefresh(IProgressMonitor monitor, FrameworkWiring wiring, List<Bundle> closure) {
 		if (wiring == null) {
-			return;
+			return false;
 		}
 		CountDownLatch done = new CountDownLatch(1);
 		wiring.refreshBundles(new HashSet<>(closure), event -> done.countDown());
 		try {
-			if (!done.await(CallBudget.boundedWaitSeconds(REFRESH_WAIT_SECONDS), TimeUnit.SECONDS)) {
+			boolean finished = done.await(CallBudget.boundedWaitSeconds(REFRESH_WAIT_SECONDS), TimeUnit.SECONDS);
+			if (!finished) {
 				ILog.get().warn("The refresh after eclipse_install_bundle did not finish within %d seconds" //$NON-NLS-1$
 						.formatted(Integer.valueOf(CallBudget.boundedWaitSeconds(REFRESH_WAIT_SECONDS))));
 			}
+			return finished;
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
+			return false;
 		}
 	}
 

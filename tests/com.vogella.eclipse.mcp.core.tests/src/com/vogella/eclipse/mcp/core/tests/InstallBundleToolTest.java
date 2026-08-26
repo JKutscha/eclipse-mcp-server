@@ -6,10 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.jar.Attributes;
+import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 
@@ -34,6 +37,21 @@ class InstallBundleToolTest {
 	private static final String SYMBOL = "org.mcp.tests.installable";
 
 	private static final String OWN = "com.vogella.eclipse.mcp.core";
+
+	/** A real extension point of the test runtime, so the contribution has somewhere to land. */
+	private static final String POINT = "org.eclipse.core.runtime.products";
+
+	private static final String PLUGIN_XML = """
+			<?xml version="1.0" encoding="UTF-8"?>
+			<plugin>
+			   <extension point="%s">
+			      <product name="mcp install test one" application="org.mcp.tests.no.application"/>
+			   </extension>
+			   <extension point="%s">
+			      <product name="mcp install test two" application="org.mcp.tests.no.application"/>
+			   </extension>
+			</plugin>
+			""".formatted(POINT, POINT);
 
 	@TempDir
 	Path temp;
@@ -78,6 +96,31 @@ class InstallBundleToolTest {
 		assertEquals("ACTIVE", updated.get("state"));
 		assertEquals(1, countInstalled(), "an update replaces the bundle rather than adding a second copy");
 		assertEquals("2.0.0", findInstalled().getVersion().toString());
+
+		Map<String, Object> extensions = extensionsOf(updated);
+		assertNotNull(extensions, "a hot answer reports what the registry attributes");
+		assertEquals(Boolean.FALSE, extensions.get("pluginXmlInJar"), extensions.toString());
+		assertEquals(Integer.valueOf(0), extensions.get("total"));
+	}
+
+	@Test
+	void reportsWhatTheRegistryMadeOfAPluginXmlContribution() throws Exception {
+		Path themed = jar(SYMBOL, "1.0.0", PLUGIN_XML);
+
+		Map<String, Object> result = TestFixture.callAndParse(TOOL,
+				Map.of("jar", themed.toString(), "dryRun", Boolean.FALSE));
+
+		assertEquals(Boolean.TRUE, result.get("resolved"), result.toString());
+		Map<String, Object> extensions = extensionsOf(result);
+		assertEquals(Boolean.TRUE, extensions.get("pluginXmlInJar"), extensions.toString());
+		assertEquals(Integer.valueOf(1), extensions.get("total"), extensions.toString());
+		assertEquals(Boolean.FALSE, extensions.get("truncated"));
+		@SuppressWarnings("unchecked")
+		List<Map<String, Object>> points = (List<Map<String, Object>>) extensions.get("points");
+		assertEquals(1, points.size(), extensions.toString());
+		assertEquals(POINT, points.get(0).get("extensionPoint"));
+		assertEquals(Integer.valueOf(2), points.get(0).get("count"),
+				"two extension elements under one point count as two extensions");
 	}
 
 	@Test
@@ -179,18 +222,34 @@ class InstallBundleToolTest {
 
 	/** Builds a minimal bundle jar whose manifest carries only what the argument names need. */
 	private Path jar(String symbol, String version) throws IOException {
+		return jar(symbol, version, null);
+	}
+
+	/** Builds a bundle jar that optionally embeds a plugin.xml, in one stream so the zip stays valid. */
+	private Path jar(String symbol, String version, String pluginXml) throws IOException {
 		Manifest manifest = new Manifest();
 		Attributes main = manifest.getMainAttributes();
 		main.putValue("Manifest-Version", "1.0");
 		main.putValue("Bundle-ManifestVersion", "2");
 		if (symbol != null) {
-			main.putValue("Bundle-SymbolicName", symbol);
+			// the extension registry reads plugin.xml from singleton bundles only
+			main.putValue("Bundle-SymbolicName", symbol + ";singleton:=true");
 		}
 		main.putValue("Bundle-Version", version);
 		Path path = temp.resolve(("bundle-" + version).replaceAll("[^A-Za-z0-9.-]", "_") + ".jar");
 		try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(path), manifest)) {
+			if (pluginXml != null) {
+				out.putNextEntry(new JarEntry("plugin.xml"));
+				out.write(pluginXml.getBytes(StandardCharsets.UTF_8));
+				out.closeEntry();
+			}
 			out.flush();
 		}
 		return path;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> extensionsOf(Map<String, Object> result) {
+		return (Map<String, Object>) result.get("extensions");
 	}
 }

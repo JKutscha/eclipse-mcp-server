@@ -1630,12 +1630,14 @@ The p2 path (`eclipse_add_repository`, then `eclipse_install`, confirmed by `ecl
 | `dryRun` | boolean | `true` | Reports what would happen and changes nothing. |
 | `start` | boolean | `true` | `hot` only. Start the bundle after installing; fragments are reported instead of started. |
 | `allowSelf` | boolean | `false` | Allow an operation whose refresh would take this server's own bundles with it. |
-| `maxResults` | integer, 1 to 2000 | 200 | Cap on the `refreshed` list. |
+| `maxResults` | integer, 1 to 2000 | 200 | Cap on the `refreshed` and extension point lists. |
 
 ```json
 {"symbolicName":"com.example.ui","previousVersion":"1.0.0","version":"1.0.1","mode":"hot",
  "outcome":"updated","state":"ACTIVE","resolved":true,"fragment":false,"started":true,
  "refreshed":[{"symbolicName":"com.example.core","version":"1.0.0"}],"total":9,"truncated":false,
+ "extensions":{"pluginXmlInJar":true,"points":[{"extensionPoint":"org.eclipse.e4.ui.css.swt.theme","count":1}],
+               "total":1,"truncated":false},
  "notes":["A hot install is invisible to p2: ..."]}
 ```
 
@@ -1644,6 +1646,13 @@ The refresh restarts every bundle wired to the one being replaced, which for a l
 Updating to the same version is allowed when the file content differs, which is what iterating on a patched bundle looks like, and the answer then says explicitly that the version did not change.
 Identical content under an identical version is refused, because the framework would reject it as a duplicate anyway.
 A bundle that installs but does not resolve comes back with its state, a `resolutionError` where one was reachable, and `resolved: false`; that is the common failure mode and a bare state number would say nothing.
+
+After a successful hot install the answer carries an `extensions` object: what the extension registry attributes to the bundle right now, one entry per extension point with the count of extensions it carries, capped like every other list here.
+For a bundle that is CSS and a `plugin.xml` and no Java at all, this is the part that says whether the hot install was worth anything.
+A jar that carries a `plugin.xml` but ends up with nothing attributed has that said plainly in its notes, because it means the contribution did not take while the IDE runs and a restart is needed.
+One cause is knowable in advance: the registry reads contributions from singleton bundles only, so a jar whose `Bundle-SymbolicName` lacks `singleton:=true` has its `plugin.xml` ignored outright, and the note names that instead of sending anyone hunting for a restart that will not help.
+The report comes with its limit, next to it and in the tool description: reaching the registry is not the same as being usable.
+Some consumers read the registry once at startup and keep their own list, and the e4 theme engine is believed to be one of those, so a newly contributed theme can be in the registry and still invisible to the thing that is supposed to offer it.
 
 **A hot install is a throwaway test that a restart undoes.**
 It is invisible to p2: `eclipse_get_installation` does not show it, and Eclipse's simpleconfigurator reconciles the framework against `bundles.info` at every start, so the original bundle comes back.
