@@ -35,7 +35,13 @@ public final class SetPreferenceTool implements IMcpTool {
 			// the theme qualifier, so that keys like disableOSDarkThemeInherit stay
 			// writable; themeid itself is refused below, because a startup that cannot
 			// resolve it replaces the written value with a fallback
-			"org.eclipse.e4.ui.css.swt.theme"); //$NON-NLS-1$
+			"org.eclipse.e4.ui.css.swt.theme", //$NON-NLS-1$
+			// declarative services descriptor generation, off by platform default. A
+			// plug-in test launch runs workspace bundles in dev mode and reads the
+			// descriptors under OSGI-INF off disk, so a bundle that never generated
+			// them registers components with the wrong services and breaks the launched
+			// platform in a way that looks nothing like a descriptor problem
+			"org.eclipse.pde.ds.annotations"); //$NON-NLS-1$
 
 	private static final String AUTOBUILD_QUALIFIER = "org.eclipse.core.resources"; //$NON-NLS-1$
 

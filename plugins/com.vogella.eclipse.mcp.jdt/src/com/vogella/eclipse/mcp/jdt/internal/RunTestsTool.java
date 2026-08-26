@@ -88,6 +88,7 @@ public final class RunTestsTool implements IMcpTool {
 				    "testClass":      {"type":"string","description":"Fully qualified test class. Omit to run every test in the project."},
 				    "testMethod":     {"type":"string","description":"Single method of testClass."},
  				    "pluginTest":     {"type":"string","enum":["auto","true","false"],"default":"auto","description":"Run as a JUnit Plug-in Test, which launches a second Eclipse with a running platform. 'auto' uses it when the project is a plug-in project. Tests that need OSGi fail as plain JUnit with errors that look like broken tests rather than real results."},
+				    "buildFirst":     {"type":"string","enum":["auto","full","never"],"default":"auto","description":"Build the launch's projects before launching. auto builds incrementally when auto-build is off, which is when nothing else would. full rebuilds them completely, which is the only thing that regenerates the OSGI-INF declarative services descriptors for sources that have not changed: those are written by a compilation participant, so they appear only for units that are actually recompiled. Use full once after turning descriptor generation on, not on every run: in a large workspace it costs minutes."},
 				    "workspacePlugins": {"type":"string","enum":["required","all"],"default":"required","description":"Which workspace plug-ins the launched platform gets. required is the test bundle and what it needs; all adds every plug-in in the workspace, which is the PDE launch tab's own default and which breaks a UI test launch in a workspace holding unbuilt copies of platform bundles."},
 				    "ui":             {"type":"boolean","default":false,"description":"Use the UI test application, which opens a workbench window on the user's screen. Off by default: a launched IDE should never be a surprise. KNOWN LIMITATION: in a workspace that holds the platform's own bundles as projects, the UI test application fails to start and the run reports no tests. That is a platform limitation, not a fault of the test bundle, and it happens equally from the IDE's own launch dialog; see docs/platform-bugs.md. The headless default is unaffected."},
 				    "debug":          {"type":"boolean","default":false,"description":"Launch in debug mode instead of plain run. The session appears in eclipse_debug_status and its state at a failure is readable through eclipse_debug_get_frames and eclipse_debug_evaluate."},
@@ -184,6 +185,9 @@ public final class RunTestsTool implements IMcpTool {
 					configuration.setAttribute(ATTR_TEST_NAME, testMethod);
 				}
 			}
+			String buildFirst = args.getString("buildFirst", "auto"); //$NON-NLS-1$ //$NON-NLS-2$
+			boolean autoBuilding = ResourcesPlugin.getWorkspace().isAutoBuilding();
+			JsonObject built = asPlugin ? buildForLaunch(project, buildFirst, autoBuilding, monitor) : null;
 			boolean allWorkspacePlugins = "all".equals(args.getString("workspacePlugins", "required")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 			String testBundle = symbolicName(project);
 			if (asPlugin) {
@@ -261,6 +265,12 @@ public final class RunTestsTool implements IMcpTool {
 			}
 			if (preflight != null) {
 				result.put("workspacePluginErrors", preflight); //$NON-NLS-1$
+			}
+			if (built != null) {
+				result.put("buildBeforeLaunch", built); //$NON-NLS-1$
+			}
+			if (asPlugin) {
+				result.put("descriptorGeneration", descriptorGeneration(project)); //$NON-NLS-1$
 			}
 			JsonArray broken = projectsWithErrors(project);
 			if (broken.size() > 0) {
@@ -442,6 +452,106 @@ public final class RunTestsTool implements IMcpTool {
 		} catch (CoreException | java.io.IOException | RuntimeException e) {
 			return null;
 		}
+	}
+
+	/**
+	 * Builds the projects going into the launch, when anything else would not.
+	 * <p>
+	 * A plug-in launch runs workspace bundles in dev mode and reads generated
+	 * artefacts off disk. The declarative services descriptors under OSGI-INF are
+	 * written by org.eclipse.pde.ds.core.builder rather than by the Java builder,
+	 * so a workspace whose class files are current can still hand the launch stale
+	 * descriptors, and a component then registers with the wrong services.
+	 */
+	private static JsonObject buildForLaunch(IProject project, String buildFirst, boolean autoBuilding,
+			IProgressMonitor monitor) {
+		boolean full = "full".equals(buildFirst); //$NON-NLS-1$
+		boolean wanted = full || ("auto".equals(buildFirst) && !autoBuilding); //$NON-NLS-1$
+		JsonObject result = new JsonObject().put("requested", buildFirst) //$NON-NLS-1$
+				.put("autoBuilding", Boolean.valueOf(autoBuilding)); //$NON-NLS-1$
+		if (!wanted) {
+			return result.put("built", Boolean.FALSE) //$NON-NLS-1$
+					.put("note", autoBuilding //$NON-NLS-1$
+							? "Auto-build is on, so the workspace is already current." //$NON-NLS-1$
+							: "Auto-build is OFF and no build was run, so this launch may be using stale generated artefacts. Pass buildFirst auto or full to build first."); //$NON-NLS-1$
+		}
+		JsonArray builtProjects = new JsonArray();
+		long started = System.nanoTime();
+		try {
+			for (IProject each : launchProjects(project)) {
+				// full, not incremental, when asked: the descriptors come from a
+				// compilation participant, so an incremental build that finds nothing to
+				// recompile writes none of them
+				each.build(full ? org.eclipse.core.resources.IncrementalProjectBuilder.FULL_BUILD
+						: org.eclipse.core.resources.IncrementalProjectBuilder.INCREMENTAL_BUILD, monitor);
+				builtProjects.add(each.getName());
+			}
+		} catch (CoreException | RuntimeException e) {
+			return result.put("built", Boolean.FALSE).put("projects", builtProjects) //$NON-NLS-1$ //$NON-NLS-2$
+					.put("reason", String.valueOf(e.getMessage())); //$NON-NLS-1$
+		}
+		return result.put("built", Boolean.TRUE).put("kind", full ? "full" : "incremental") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+				.put("projects", builtProjects) //$NON-NLS-1$
+				.put("elapsedMillis", Long.valueOf((System.nanoTime() - started) / 1_000_000L)); //$NON-NLS-1$
+	}
+
+	/** The test project and what it references, which is what the launch runs. */
+	private static java.util.List<IProject> launchProjects(IProject project) throws CoreException {
+		java.util.LinkedHashMap<String, IProject> found = new java.util.LinkedHashMap<>();
+		java.util.ArrayDeque<IProject> queue = new java.util.ArrayDeque<>(java.util.List.of(project));
+		while (!queue.isEmpty() && found.size() < 200) {
+			IProject current = queue.removeFirst();
+			if (!current.isAccessible() || found.putIfAbsent(current.getName(), current) != null) {
+				continue;
+			}
+			queue.addAll(java.util.List.of(current.getReferencedProjects()));
+		}
+		return java.util.List.copyOf(found.values());
+	}
+
+	/**
+	 * Whether the test project generates its declarative services descriptors.
+	 * <p>
+	 * Off by platform default, and a project that turns it on does so in its own
+	 * .settings, so two projects side by side can differ. Reported always rather
+	 * than only on failure: nothing else tells a caller, and it stays invisible
+	 * until it is catastrophic.
+	 */
+	private static JsonObject descriptorGeneration(IProject project) {
+		String qualifier = "org.eclipse.pde.ds.annotations"; //$NON-NLS-1$
+		var lookup = org.eclipse.core.runtime.Platform.getPreferencesService();
+		var scopes = new org.eclipse.core.runtime.preferences.IScopeContext[] {
+				new org.eclipse.core.resources.ProjectScope(project),
+				org.eclipse.core.runtime.preferences.InstanceScope.INSTANCE };
+		boolean enabled = lookup.getBoolean(qualifier, "enabled", false, scopes); //$NON-NLS-1$
+		String path = lookup.getString(qualifier, "path", "OSGI-INF", scopes); //$NON-NLS-1$ //$NON-NLS-2$
+		int descriptors = 0;
+		try {
+			var folder = project.getFolder(path);
+			if (folder.exists()) {
+				for (var member : folder.members()) {
+					if (member.getName().endsWith(".xml")) { //$NON-NLS-1$
+						descriptors++;
+					}
+				}
+			}
+		} catch (CoreException e) {
+			descriptors = -1;
+		}
+		JsonObject result = new JsonObject().put("enabled", Boolean.valueOf(enabled)) //$NON-NLS-1$
+				.put("project", project.getName()).put("path", path) //$NON-NLS-1$ //$NON-NLS-2$
+				.put("descriptorsOnDisk", Integer.valueOf(descriptors)); //$NON-NLS-1$
+		if (!enabled) {
+			return result.put("note", //$NON-NLS-1$
+					"This project does NOT generate its OSGi declarative services descriptors: org.eclipse.pde.ds.annotations/enabled is false for it, which is the platform default, and a project that wants them turns it on in its own .settings. A plug-in launch reads those files off disk, so a component whose descriptor is missing registers with the wrong services and the launched platform misbehaves in ways that look nothing like a descriptor problem. Turning the preference on changes nothing by itself: the descriptors are written by a compilation participant, so only sources that are actually recompiled produce them. Set the preference, then run once with buildFirst full."); //$NON-NLS-1$
+		}
+		if (descriptors == 0) {
+			return result.put("note", //$NON-NLS-1$
+					"Descriptor generation is on for this project but nothing is under %s, which is what a project looks like when the preference was turned on and nothing has been recompiled since. The descriptors come from a compilation participant, so run once with buildFirst full." //$NON-NLS-1$
+							.formatted(path));
+		}
+		return result.put("note", //$NON-NLS-1$
+				"Descriptor generation is on and descriptors are present, so an incremental build keeps them current. Whether they MATCH the current source cannot be checked from here: a descriptor generated against older source is a file like any other, and that failure is invisible until the launched platform misbehaves."); //$NON-NLS-1$
 	}
 
 	/** How the run would be launched, which a dry run has to report as well. */

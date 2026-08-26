@@ -234,11 +234,19 @@ with 756 projects:
   from `eclipse_run_tests` and from the IDE's own Run Configurations dialog.
 - Not the bundle set. It fails with 632 bundles and with 133; narrowing removed
   the `org.eclipse.ui.tests` contributions entirely and changed nothing.
-- Not missing or unbuilt bundles. `org.eclipse.core.commands`,
+- Not missing bundles. `org.eclipse.core.commands`,
   `org.eclipse.e4.core.commands`, `org.eclipse.e4.core.contexts`,
   `org.eclipse.e4.ui.bindings` and `org.eclipse.e4.ui.workbench` are all present,
   and `org.eclipse.ui.workbench` carries 1870 compiled classes including
-  `BindingToModelProcessor` and `BindingService`.
+  `BindingToModelProcessor` and `BindingService`. Note what that does NOT
+  exclude: the class files are written by the Java builder, while the OSGi
+  declarative services descriptors under `OSGI-INF` are written by
+  `org.eclipse.pde.ds.core.builder`, a different builder. A fully compiled
+  workspace can still carry descriptors that do not match the source, and the
+  descriptor for `BindingToModelProcessor` in this workspace carries no
+  `<reference>` elements at all. Those files are generated rather than
+  committed, by Tycho during a Maven build and by that builder in the IDE, which
+  is why CI never sees this and a headless run never does either.
 - Not the missing pre-launch build. A dialog launch that built the workspace
   first failed the same way.
 - Not the JDK. Identical failure on 25.0.3 and on 21.0.8.
