@@ -199,7 +199,7 @@ public final class ScreenshotTools {
 
 		@Override
 		public String getDescription() {
-			return "Captures the IDE as a PNG and writes it to a file, returning the path. Targets are a workbench part by id, a shell by title, or the whole display; passing part or shellTitle selects the target on its own. The answer reports which method worked: rootCapture reads the real screen pixels, widgetPrint paints the widget hierarchy instead, which is the fallback on a compositing window manager where reading the X11 root yields nothing. Use it for UI work such as layout, theming and dialog rendering; for anything textual the other tools answer better and shorter. The display target captures whatever else is on the screen, so it is not the default. A part that is not visible is refused rather than captured blank, unless activate is set. On a HiDPI monitor widgetPrint captures at the monitor's zoom, so the image is larger than the widget's size in points: capturedArea is the pixels returned, areaInPoints is the widget, and zoom is the percentage between them. Set includeToolbar to capture a part together with its surrounding stack, but note that the stack's topRight children, the view toolbar among them, are not painted by any widget print rooted inside the window; capture the shell and crop to the bounds from eclipse_get_widget_tree for those."; //$NON-NLS-1$
+			return "Captures the IDE as a PNG and writes it to a file, returning the path. Targets are a workbench part by id, a shell by title, or the whole display; passing part or shellTitle selects the target on its own. Omitting both shellTitle and part captures the active workbench window's shell, which is also what a target of shell without a title does; the display target must be asked for explicitly. The answer reports which method worked: rootCapture reads the real screen pixels, widgetPrint paints the widget hierarchy instead, which is the fallback on a compositing window manager where reading the X11 root yields nothing. Use it for UI work such as layout, theming and dialog rendering; for anything textual the other tools answer better and shorter. A part that is not visible is refused rather than captured blank, unless activate is set. On a HiDPI monitor widgetPrint captures at the monitor's zoom, so the image is larger than the widget's size in points: capturedArea is the pixels returned, areaInPoints is the widget, and zoom is the percentage between them. Set includeToolbar to capture a part together with its surrounding stack, but note that the stack's topRight children, the view toolbar among them, are not painted by any widget print rooted inside the window; capture the shell and crop to the bounds from eclipse_get_widget_tree for those."; //$NON-NLS-1$
 		}
 
 		@Override
@@ -258,7 +258,8 @@ public final class ScreenshotTools {
 			} else if ("shell".equals(target)) { //$NON-NLS-1$
 				Shell shell = findShell(display, shellTitle);
 				if (shell == null) {
-					return failure("No shell matching '%s'.".formatted(shellTitle)); //$NON-NLS-1$
+					return failure(shellTitle == null ? "This IDE has no window to capture." //$NON-NLS-1$
+							: "No shell matching '%s'.".formatted(shellTitle)); //$NON-NLS-1$
 				}
 				area = shell.getBounds();
 				printable = shell;
@@ -415,7 +416,14 @@ public final class ScreenshotTools {
 						return candidate;
 					}
 				}
-				return display.getActiveShell();
+				Shell active = display.getActiveShell();
+				if (active != null) {
+					return active;
+				}
+				// getActiveShell is null whenever the IDE does not have focus, which is
+				// the normal state when the call arrives over HTTP
+				IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
+				return window == null ? null : window.getShell();
 			}
 			for (Shell shell : display.getShells()) {
 				if (shell.getText() != null && shell.getText().contains(title)) {

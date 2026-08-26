@@ -75,12 +75,6 @@ public final class LayoutTools {
 				Boolean maximized) {
 			Display display = PlatformUI.getWorkbench().getDisplay();
 			Shell shell = ScreenshotTools.Capture.findShell(display, shellTitle);
-			if (shell == null && shellTitle == null) {
-				// getActiveShell is null whenever the IDE does not have focus, which is
-				// the normal state when the call arrives over HTTP
-				IWorkbenchWindow active = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
-				shell = active == null ? null : active.getShell();
-			}
 			if (shell == null) {
 				return new JsonObject().put("changed", Boolean.FALSE) //$NON-NLS-1$
 						.put("reason", shellTitle == null //$NON-NLS-1$
