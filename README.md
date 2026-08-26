@@ -156,7 +156,7 @@ Sessions are carried in the `mcp-session-id` header, a `GET` opens the server-to
 
 Every tool returns a single text block containing pretty-printed JSON.
 Every list-returning tool honours `maxResults` and reports `total` and `truncated`, so the model can tell when it is seeing a partial answer.
-Read-only except the tools marked as changing something: `eclipse_organize_imports` and `eclipse_format` rewrite a file, `eclipse_build` runs builders, `eclipse_set_preference` writes configuration, `eclipse_set_project_state` opens and closes projects, `eclipse_write_file` creates and replaces files, and `eclipse_set_target_platform` replaces what every plug-in project compiles against.
+Read-only except the tools marked as changing something: `eclipse_organize_imports` and `eclipse_format` rewrite a file, `eclipse_build` runs builders, `eclipse_set_preference` writes configuration, `eclipse_set_project_state` opens and closes projects, `eclipse_write_file` creates and replaces files, `eclipse_set_target_platform` replaces what every plug-in project compiles against, and `eclipse_install_bundle` replaces a bundle in the running framework.
 
 ### `eclipse_list_projects`
 
@@ -1615,6 +1615,48 @@ The tool answers first and restarts two seconds later, so a dropped connection i
 It refuses when editors have unsaved changes or a modal dialog is open, listing them, since restarting under an open dialog loses whatever is in it.
 
 The answer names the `workspace` the IDE will return to. If it comes back asking which workspace to use, the relaunch lost its arguments, which is what `IWorkbench.restart()` does; `restart(true)` is what preserves `-data`.
+
+### `eclipse_install_bundle`
+
+**Changes the running IDE.**
+Installs one bundle jar into the live OSGi framework in seconds, with no p2 repository, no build and no restart.
+This is the fast loop for seeing a patched plug-in in a running IDE: build the jar, hand it over, and the extension registry has its contributions a moment later.
+The p2 path (`eclipse_add_repository`, then `eclipse_install`, confirmed by `eclipse_get_installation`) is slower and needs a repository and usually a restart, but it is what survives everything described below.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `jar` | string, required | | Absolute path to an OSGi bundle jar. |
+| `mode` | `hot` \| `dropins` | `hot` | `hot` acts on the live framework, `dropins` copies for the next start. |
+| `dryRun` | boolean | `true` | Reports what would happen and changes nothing. |
+| `start` | boolean | `true` | `hot` only. Start the bundle after installing; fragments are reported instead of started. |
+| `allowSelf` | boolean | `false` | Allow an operation whose refresh would take this server's own bundles with it. |
+| `maxResults` | integer, 1 to 2000 | 200 | Cap on the `refreshed` list. |
+
+```json
+{"symbolicName":"com.example.ui","previousVersion":"1.0.0","version":"1.0.1","mode":"hot",
+ "outcome":"updated","state":"ACTIVE","resolved":true,"fragment":false,"started":true,
+ "refreshed":[{"symbolicName":"com.example.core","version":"1.0.0"}],"total":9,"truncated":false,
+ "notes":["A hot install is invisible to p2: ..."]}
+```
+
+`hot` installs through `BundleContext.installBundle`, or replaces content in place with `Bundle.update` when the symbolic name is already installed, and then runs `FrameworkWiring.refreshBundles`.
+The refresh restarts every bundle wired to the one being replaced, which for a low level bundle is a large part of the IDE, so the dependency closure is reported as `refreshed` before anything happens and `dryRun` defaults to `true`.
+Updating to the same version is allowed when the file content differs, which is what iterating on a patched bundle looks like, and the answer then says explicitly that the version did not change.
+Identical content under an identical version is refused, because the framework would reject it as a duplicate anyway.
+A bundle that installs but does not resolve comes back with its state, a `resolutionError` where one was reachable, and `resolved: false`; that is the common failure mode and a bare state number would say nothing.
+
+**A hot install is a throwaway test that a restart undoes.**
+It is invisible to p2: `eclipse_get_installation` does not show it, and Eclipse's simpleconfigurator reconciles the framework against `bundles.info` at every start, so the original bundle comes back.
+That belongs in the answer of every successful hot install, not only here, because it is exactly the part a caller who has never been bitten cannot know.
+
+`dropins` copies the jar into the installation's `dropins` directory, creating it if needed.
+It is the opposite trade: it needs a restart to take effect and survives one, and p2's reconciler is what picks it up.
+An installation directory that is not writable, normal for shared or packaged installs, is refused up front instead of failing halfway through the copy.
+
+Classes already loaded keep running after an update: a view that is open shows the old code until it is closed and reopened.
+And replacing a bundle whose refresh would stop this server's own bundles is refused by default, because the answer could never be delivered through a server the refresh is about to stop.
+With `allowSelf` the install happens at once, the answer names what is about to happen, and the refresh follows two seconds later in a job, so the response is on the wire before the server goes down; reconnecting afterwards is the caller's job, and the effect of the refresh cannot be reported, because nothing will be left to report it.
+This tool never uninstalls anything.
 
 ## Contributing a tool
 

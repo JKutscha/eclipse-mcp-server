@@ -24,6 +24,7 @@
       <tool class="com.vogella.eclipse.mcp.core.internal.LogStateTools$Clear"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.LogStateTools$Write"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.MarkProblemsTool"/>
+      <tool class="com.vogella.eclipse.mcp.core.internal.InstallBundleTool"/>
    </extension>
 
 </plugin>
