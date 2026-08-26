@@ -67,6 +67,9 @@ The server aborts any call that has not finished within the configured call time
 `McpToolAdapter` reads `McpPreferences.getCallTimeout()` per call, so a changed preference applies without a restart.
 A tool that can outlast that timeout must not block on it; start a job and hand back a handle, the way `eclipse_build` and `eclipse_get_build_status` do.
 
+**Optional JDK and platform packages are isolated in one class.**
+`CssStyling` holds every reference to the e4 CSS engine, `GitContent` every reference to jgit, and `FlightRecording` every reference to `jdk.jfr`, all imported optionally so callers catch `LinkageError`. A JVM or an IDE without them then costs a refusal that names what is missing, rather than a failure somewhere unrelated.
+
 **Every list-returning tool honours `maxResults` and reports `total` and `truncated`.**
 A new tool that returns a list without those fields is incomplete.
 
