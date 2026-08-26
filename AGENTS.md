@@ -85,6 +85,12 @@ Reporting stale markers as if they were current is worse than returning nothing.
 3. Put it in the bundle whose dependencies it needs, so that the layering above survives.
 4. Add a test. `McpToolRegistryTest` already checks that every registered tool has a name, a description and an input schema that parses as JSON.
 
+## A hazard that cost a night, and what it taught
+
+A UI plug-in test run failed for hours with no tests and three log lines about a null command manager. The cause was two deleted `@Reference` fields in an uncommitted local edit to `BindingToModelProcessor`. Those fields are never read in Java; they exist so that declarative services registers two sibling processors first. Deleting them looks like removing dead code and removes an ordering guarantee, and the failure surfaces five layers away as a workbench that will not start.
+
+Two things follow for this repository. Generated build output that carries semantics, `OSGI-INF` descriptors above all, can diverge from source without any compiler saying so, which is why `eclipse_run_tests` reports `descriptorGeneration` and `buildBeforeLaunch` whether or not anything went wrong. And an answer that looks the same whether a launch ran current or stale artefacts is what turns a five minute problem into a night; that is the same reasoning behind reading launch attributes back out of the configuration rather than echoing what was requested.
+
 ## Platform bugs
 
 When a workaround here exists because Eclipse is wrong rather than because we

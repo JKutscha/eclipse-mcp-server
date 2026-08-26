@@ -208,58 +208,6 @@ works because the class and the method are public, and reports what it came to
 rather than assuming it worked. A command id for "clear the Error Log view", or
 a `handleClear` on a published interface, would remove the need.
 
-### PDE: the UI test application cannot start in a workspace of platform bundles
-
-A JUnit Plug-in Test with the UI test application, meaning application
-`org.eclipse.ui.ide.workbench` rather than the headless one, never reaches its
-tests in a workspace that holds the platform's own bundles as projects. The
-workbench start fails with three errors, always these and always in this order:
-
-```
-Command manager was null in org.eclipse.ui.internal.BindingToModelProcessor
-Context manager was null in org.eclipse.ui.internal.BindingToModelProcessor
-InjectionException: Unable to process "BindingService.manager": no actual value
-  was found for the argument "BindingManager"
-```
-
-The last one comes from `Workbench.java:2445`, `ContextInjectionFactory.make` on
-`BindingService`. `CommandManager` and `ContextManager` are put into the
-application context by the workbench's own startup rather than contributed by a
-bundle, which is why nothing about the bundle set moves them.
-
-What has been excluded, each by measurement in `eclipse.platform.releng.aggregator`
-with 756 projects:
-
-- Not the launch configuration or the tool that wrote it. It fails identically
-  from `eclipse_run_tests` and from the IDE's own Run Configurations dialog.
-- Not the bundle set. It fails with 632 bundles and with 133; narrowing removed
-  the `org.eclipse.ui.tests` contributions entirely and changed nothing.
-- Not missing bundles. `org.eclipse.core.commands`,
-  `org.eclipse.e4.core.commands`, `org.eclipse.e4.core.contexts`,
-  `org.eclipse.e4.ui.bindings` and `org.eclipse.e4.ui.workbench` are all present,
-  and `org.eclipse.ui.workbench` carries 1870 compiled classes including
-  `BindingToModelProcessor` and `BindingService`. Note what that does NOT
-  exclude: the class files are written by the Java builder, while the OSGi
-  declarative services descriptors under `OSGI-INF` are written by
-  `org.eclipse.pde.ds.core.builder`, a different builder. A fully compiled
-  workspace can still carry descriptors that do not match the source, and the
-  descriptor for `BindingToModelProcessor` in this workspace carries no
-  `<reference>` elements at all. Those files are generated rather than
-  committed, by Tycho during a Maven build and by that builder in the IDE, which
-  is why CI never sees this and a headless run never does either.
-- Not the missing pre-launch build. A dialog launch that built the workspace
-  first failed the same way.
-- Not the JDK. Identical failure on 25.0.3 and on 21.0.8.
-
-The headless path is unaffected: the same bundle passes 17 of 17 under the core
-test application, and `org.eclipse.jface.tests.AllTests` passes 1281 with 6
-legitimate assumption skips.
-
-Nothing filed yet. The consequence for this project is that `eclipse_run_tests`
-with `ui` true cannot run tests in such a workspace, which its own description
-now says, and that a run reporting no tests reports the launched platform's
-errors so the cause is visible rather than looking like an empty test bundle.
-
 ### e4 CSS: a snippet cannot be applied through `IThemeEngine`
 
 Applying an ad-hoc stylesheet needs `resetCurrentTheme()` and `getCSSEngines()`,
