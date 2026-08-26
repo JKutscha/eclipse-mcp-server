@@ -1,0 +1,301 @@
+package com.vogella.eclipse.mcp.debug.internal;
+
+import java.util.List;
+
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.debug.core.DebugException;
+import org.eclipse.debug.core.DebugPlugin;
+import org.eclipse.debug.core.ILaunch;
+import org.eclipse.debug.core.model.IBreakpoint;
+import org.eclipse.debug.core.model.IDebugTarget;
+import org.eclipse.debug.core.model.ILineBreakpoint;
+import org.eclipse.debug.core.model.IStackFrame;
+import org.eclipse.debug.core.model.IThread;
+import org.eclipse.jdt.debug.core.IJavaBreakpoint;
+import org.eclipse.jdt.debug.core.IJavaExceptionBreakpoint;
+import org.eclipse.jdt.debug.core.IJavaLineBreakpoint;
+import org.eclipse.jdt.debug.core.IJavaStackFrame;
+import org.eclipse.jdt.debug.core.IJavaValue;
+
+import com.vogella.eclipse.mcp.core.json.JsonArray;
+import com.vogella.eclipse.mcp.core.json.JsonObject;
+import com.vogella.eclipse.mcp.debug.internal.DebugSessionRegistry.Session;
+
+/**
+ * Shared lookups and renderings for the debug tools: session resolution, thread
+ * selection and the JSON shape every session tool answers with.
+ */
+final class DebugSupport {
+
+	private DebugSupport() {
+	}
+
+	/** Thrown for an answerable refusal; the tool reports it as an error result. */
+	static final class Refusal extends RuntimeException {
+
+		private static final long serialVersionUID = 1L;
+
+		Refusal(String message) {
+			super(message);
+		}
+	}
+
+
+	/**
+	 * Resolves a session by id, or the single live one when no id is given, and
+	 * refuses with what exists instead of guessing.
+	 */
+	static Session requireSession(String sessionId) {
+		DebugSessionRegistry registry = DebugSessionRegistry.getInstance();
+		if (sessionId != null) {
+			Session session = registry.find(sessionId);
+			if (session == null) {
+				throw new Refusal("No debug session '%s'. Known ids, oldest first: %s".formatted(sessionId, //$NON-NLS-1$
+						String.join(", ", registry.ids()))); //$NON-NLS-1$
+			}
+			return session;
+		}
+		List<Session> all = registry.all();
+		Session single = registry.singleLive();
+		if (single != null) {
+			return single;
+		}
+		if (all.isEmpty()) {
+			throw new Refusal(
+					"No debug session exists. Start one through eclipse_debug_launch, or through eclipse_run_tests with debug true."); //$NON-NLS-1$
+		}
+		if (registry.liveCount() > 1) {
+			throw new Refusal("Several sessions are live: %s. Pass 'sessionId' to name one." //$NON-NLS-1$
+					.formatted(describeSessions(all)));
+		}
+		throw new Refusal("No live debug session; these have ended recently: %s".formatted(describeSessions(all))); //$NON-NLS-1$
+	}
+
+	static IDebugTarget target(Session session) {
+		ILaunch launchValue = session.launch();
+		if (launchValue == null) {
+			throw new Refusal("Session %s has not come up yet.".formatted(session.id())); //$NON-NLS-1$
+		}
+		for (IDebugTarget candidate : launchValue.getDebugTargets()) {
+			if (!candidate.isTerminated() && !candidate.isDisconnected()) {
+				return candidate;
+			}
+		}
+		throw new Refusal("The program of session %s has ended; start a new one to continue." //$NON-NLS-1$
+				.formatted(session.id()));
+	}
+
+	static List<IThread> threads(IDebugTarget targetValue) {
+		try {
+			return List.of(targetValue.getThreads());
+		} catch (DebugException e) {
+			return List.of();
+		}
+	}
+
+	/**
+	 * The named thread, or the only suspended one; an ambiguous or unknown request
+	 * is refused with the candidates rather than guessed.
+	 */
+	static IThread requireThread(IDebugTarget targetValue, String threadArg) {
+		List<IThread> list = threads(targetValue);
+		if (list.isEmpty()) {
+			throw new Refusal("This session exposes no threads."); //$NON-NLS-1$
+		}
+		if (threadArg != null) {
+			for (IThread thread : list) {
+				if (name(thread).equals(threadArg) || String.valueOf(System.identityHashCode(thread)).equals(threadArg)) {
+					return thread;
+				}
+			}
+			throw new Refusal("No thread '%s'. Threads: %s".formatted(threadArg, describeThreads(list))); //$NON-NLS-1$
+		}
+		List<IThread> suspended = list.stream().filter(DebugSupport::isSuspended).toList();
+		if (suspended.isEmpty()) {
+			throw new Refusal("Nothing is suspended here. Pass 'thread' to name one of: %s" //$NON-NLS-1$
+					.formatted(describeThreads(list)));
+		}
+		if (suspended.size() > 1) {
+			throw new Refusal("Several threads are suspended: %s. Pass 'thread' to name one." //$NON-NLS-1$
+					.formatted(describeThreads(suspended)));
+		}
+		return suspended.get(0);
+	}
+
+	static boolean isSuspended(IThread thread) {
+		return thread.isSuspended();
+	}
+
+	static String name(IThread thread) {
+		try {
+			return thread.getName();
+		} catch (DebugException e) {
+			return "thread-" + System.identityHashCode(thread); //$NON-NLS-1$
+		}
+	}
+
+	/** {@code declaringType.method(File.java:123)}, or null when nothing is readable. */
+	static String location(IThread thread) {
+		IStackFrame frame = topFrame(thread);
+		return frame instanceof IJavaStackFrame javaFrame ? location(javaFrame) : null;
+	}
+
+	static String location(IJavaStackFrame frame) {
+		try {
+			String type = frame.getDeclaringTypeName();
+			String method = frame.getMethodName();
+			String source = frame.getSourceName();
+			int line = frame.getLineNumber();
+			if (source == null) {
+				return "%s.%s(Unknown Source)".formatted(type, method); //$NON-NLS-1$
+			}
+			return line >= 0 ? "%s.%s(%s:%d)".formatted(type, method, source, Integer.valueOf(line)) //$NON-NLS-1$
+					: "%s.%s(%s)".formatted(type, method, source); //$NON-NLS-1$
+		} catch (DebugException e) {
+			return null;
+		}
+	}
+
+	private static IStackFrame topFrame(IThread thread) {
+		try {
+			return thread.getTopStackFrame();
+		} catch (DebugException e) {
+			return null;
+		}
+	}
+
+	/** Which breakpoint suspended the thread, read live where JDT reports it. */
+	static String suspendReason(IThread thread, Session session) {
+		try {
+			IBreakpoint[] live = thread.getBreakpoints();
+			if (live.length > 0) {
+				return describe(live[0]);
+			}
+		} catch (RuntimeException e) {
+			// fall through to what the suspend event recorded
+		}
+		if (session.suspendedThread() == thread && session.suspendBreakpoint() != null) {
+			return describe(session.suspendBreakpoint());
+		}
+		return null;
+	}
+
+	static String describe(IBreakpoint breakpoint) {
+		try {
+			String kind = breakpoint instanceof IJavaLineBreakpoint ? "line" //$NON-NLS-1$
+					: breakpoint instanceof IJavaExceptionBreakpoint ? "exception" : "breakpoint"; //$NON-NLS-1$ //$NON-NLS-2$
+			StringBuilder text = new StringBuilder(kind);
+			if (breakpoint instanceof IJavaBreakpoint java && java.getTypeName() != null) {
+				text.append(" at ").append(java.getTypeName()); //$NON-NLS-1$
+			}
+			if (breakpoint instanceof ILineBreakpoint line) {
+				text.append(':').append(line.getLineNumber());
+			}
+			return text.toString();
+		} catch (CoreException e) {
+			return "breakpoint"; //$NON-NLS-1$
+		}
+	}
+
+	/** One entry per session, the shape status, launch and control answers carry. */
+	static JsonObject sessionJson(Session session, int maxThreads) {
+		JsonObject json = new JsonObject().put("sessionId", session.id()) //$NON-NLS-1$
+				.put("startedByMcp", Boolean.valueOf(session.startedByMcp())) //$NON-NLS-1$
+				.put("terminated", Boolean.valueOf(session.terminated())) //$NON-NLS-1$
+				.put("suspended", Boolean.valueOf(session.suspended()));
+		ILaunch launchValue = session.launch();
+		json.put("configuration", launchValue == null ? session.expectedConfigName() : configurationName(launchValue)); //$NON-NLS-1$
+		json.put("registered", Boolean.valueOf(session.registered())); //$NON-NLS-1$
+		if (!session.registered() && session.failure() != null) {
+			json.put("failure", session.failure()); //$NON-NLS-1$
+		}
+		JsonArray reported = new JsonArray();
+		int total = 0;
+		boolean truncated = false;
+		if (launchValue != null && !session.terminated()) {
+			for (IDebugTarget targetValue : launchValue.getDebugTargets()) {
+				for (IThread thread : threads(targetValue)) {
+					total++;
+					if (reported.size() >= maxThreads) {
+						truncated = true;
+						continue;
+					}
+					reported.add(threadJson(thread, session));
+				}
+			}
+		}
+		json.put("threads", reported).put("threadTotal", Integer.valueOf(total)).put("truncated", //$NON-NLS-1$ //$NON-NLS-2$
+				Boolean.valueOf(truncated));
+		return json;
+	}
+
+	private static JsonObject threadJson(IThread thread, Session session) {
+		boolean suspended = isSuspended(thread);
+		JsonObject json = new JsonObject().put("name", name(thread)).put("suspended", Boolean.valueOf(suspended)); //$NON-NLS-1$ //$NON-NLS-2$
+		if (suspended) {
+			json.put("location", location(thread)); //$NON-NLS-1$
+			json.put("breakpoint", suspendReason(thread, session)); //$NON-NLS-1$
+		}
+		return json;
+	}
+
+	private static String configurationName(ILaunch launchValue) {
+		var configuration = launchValue.getLaunchConfiguration();
+		return configuration == null ? null : configuration.getName();
+	}
+
+	static String describeSessions(List<Session> sessions) {
+		StringBuilder text = new StringBuilder();
+		for (Session session : sessions) {
+			if (text.length() > 0) {
+				text.append(", "); //$NON-NLS-1$
+			}
+			text.append(session.id()).append(session.startedByMcp() ? " (ours)" : ""); //$NON-NLS-1$ //$NON-NLS-2$
+			if (session.terminated()) {
+				text.append(" (terminated)"); //$NON-NLS-1$
+			}
+		}
+		return text.toString();
+	}
+
+	private static String describeThreads(List<IThread> list) {
+		StringBuilder text = new StringBuilder();
+		for (IThread thread : list) {
+			if (text.length() > 0) {
+				text.append(", "); //$NON-NLS-1$
+			}
+			text.append(name(thread));
+			if (isSuspended(thread)) {
+				text.append(" (suspended)"); //$NON-NLS-1$
+			}
+		}
+		return text.toString();
+	}
+
+	/** Truncates a rendered value; callers report valueTruncated beside it. */
+	static String truncate(String value, int max) {
+		return value.length() <= max ? value : value.substring(0, max);
+	}
+
+	static String valueString(IJavaValue value, int max) {
+		try {
+			return truncate(value.getValueString(), max);
+		} catch (DebugException | RuntimeException e) {
+			return "<unreadable>"; //$NON-NLS-1$
+		}
+	}
+
+	/** Whether any debug target anywhere is running, which qualifies the installed note. */
+	static boolean anyLiveTarget() {
+		for (ILaunch launchValue : DebugPlugin.getDefault().getLaunchManager().getLaunches()) {
+			if (!launchValue.isTerminated()) {
+				for (IDebugTarget targetValue : launchValue.getDebugTargets()) {
+					if (!targetValue.isTerminated()) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+}
