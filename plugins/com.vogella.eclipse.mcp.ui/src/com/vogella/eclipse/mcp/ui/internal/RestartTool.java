@@ -31,6 +31,11 @@ public final class RestartTool implements IMcpTool {
 	/** Long enough for the HTTP response to be on the wire before the server dies with the IDE. */
 	private static final int RESTART_DELAY_MILLIS = 2000;
 
+	/** Where the workbench reads the arguments it hands the launcher for the next start. */
+	public static final String EXIT_DATA_PROPERTY = "eclipse.exitdata"; //$NON-NLS-1$
+
+	public static final String NO_SPLASH = "-nosplash"; //$NON-NLS-1$
+
 	@Override
 	public String getName() {
 		return "eclipse_restart"; //$NON-NLS-1$
@@ -38,7 +43,7 @@ public final class RestartTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Restarts the Eclipse IDE into the same workspace, which is what makes an installed or updated feature active. The answer names the workspace it will return to. THE CONNECTION WILL DROP BY DESIGN: this tool answers first and restarts a couple of seconds later, so a dropped connection right after a successful result is the expected outcome and not a failure. Reconnect with the same bearer token, which survives restarts and updates. Refuses when editors have unsaved changes or a modal dialog is open, naming which of the two fired, unless save or force is passed. A blocking dialog is better cleared with eclipse_dismiss_dialog than forced past. It works independently of eclipse_update, so a half applied update can still be recovered by restarting."; //$NON-NLS-1$
+		return "Restarts the Eclipse IDE into the same workspace, which is what makes an installed or updated feature active. The answer names the workspace it will return to. THE CONNECTION WILL DROP BY DESIGN: this tool answers first and restarts a couple of seconds later, so a dropped connection right after a successful result is the expected outcome and not a failure. Reconnect with the same bearer token, which survives restarts and updates. Refuses when editors have unsaved changes or a modal dialog is open, naming which of the two fired, unless save or force is passed. A blocking dialog is better cleared with eclipse_dismiss_dialog than forced past. It works independently of eclipse_update, so a half applied update can still be recovered by restarting. Pass splash false to come back without the splash screen: this appends -nosplash to the arguments the workbench hands the launcher, the same channel it uses to pass the workspace, and splashSuppressed reports whether that argument was added, not what the launcher then did with it."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -48,7 +53,8 @@ public final class RestartTool implements IMcpTool {
 				  "type": "object",
 				  "properties": {
 				    "save":  {"type":"boolean","default":false,"description":"Save dirty editors first, then restart."},
-				    "force": {"type":"boolean","default":false,"description":"Restart even with unsaved changes or an open modal dialog. Discards that work."}
+				    "force":  {"type":"boolean","default":false,"description":"Restart even with unsaved changes or an open modal dialog. Discards that work."},
+				    "splash": {"type":"boolean","default":true,"description":"False comes back without the splash screen. The argument is added to the relaunch arguments; whether the launcher honours it is not something this server can observe."}
 				  },
 				  "additionalProperties": false
 				}"""; //$NON-NLS-1$
@@ -62,11 +68,12 @@ public final class RestartTool implements IMcpTool {
 		ToolArguments args = ToolArguments.of(arguments);
 		boolean save = args.getBoolean("save", false); //$NON-NLS-1$
 		boolean force = args.getBoolean("force", false); //$NON-NLS-1$
+		boolean splash = args.getBoolean("splash", true); //$NON-NLS-1$
 
 		CompletableFuture<JsonObject> pending = new CompletableFuture<>();
 		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
 			try {
-				pending.complete(prepare(save, force));
+				pending.complete(prepare(save, force, splash));
 			} catch (RuntimeException e) {
 				pending.completeExceptionally(e);
 			}
@@ -87,7 +94,38 @@ public final class RestartTool implements IMcpTool {
 		}
 	}
 
-	private static JsonObject prepare(boolean save, boolean force) {
+	/**
+	 * Adds {@code -nosplash} to the arguments the workbench hands the launcher.
+	 * <p>
+	 * Reports whether the argument is in place, which is all this side can know:
+	 * the splash is painted by the native launcher before the JVM exists, so
+	 * whether it honours the relaunch arguments cannot be observed from here.
+	 */
+	public static boolean appendNoSplash() {
+		try {
+			String existing = System.getProperty(EXIT_DATA_PROPERTY, ""); //$NON-NLS-1$
+			if (contains(existing, NO_SPLASH)) {
+				return true;
+			}
+			System.setProperty(EXIT_DATA_PROPERTY, existing + NO_SPLASH + "\n"); //$NON-NLS-1$
+			return true;
+		} catch (RuntimeException e) {
+			// a restart that happens with a splash beats one that does not happen
+			return false;
+		}
+	}
+
+	/** The arguments are newline separated, so a substring match would hit -nosplashfoo. */
+	public static boolean contains(String arguments, String argument) {
+		for (String line : arguments.split("\n")) { //$NON-NLS-1$
+			if (argument.equals(line.trim())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static JsonObject prepare(boolean save, boolean force, boolean splash) {
 		IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
 		IWorkbenchPage page = window == null ? null : window.getActivePage();
 		JsonArray dirty = new JsonArray();
@@ -128,6 +166,10 @@ public final class RestartTool implements IMcpTool {
 					.put("openModalDialogs", modal) //$NON-NLS-1$
 					.put("reason", reason.toString()); //$NON-NLS-1$
 		}
+		// before the restart is scheduled: Workbench.buildCommandLine reads this
+		// property and appends the workspace to whatever is already in it, so adding
+		// the argument here is the same channel the platform uses for -data
+		boolean splashSuppressed = splash ? false : appendNoSplash();
 		// answer first, restart after: the server dies with the IDE, so restarting
 		// inside the call gives the caller a dropped connection instead of a result
 		Display display = PlatformUI.getWorkbench().getDisplay();
@@ -136,6 +178,7 @@ public final class RestartTool implements IMcpTool {
 		display.timerExec(RESTART_DELAY_MILLIS, () -> PlatformUI.getWorkbench().restart(true));
 		return new JsonObject().put("restarting", Boolean.TRUE) //$NON-NLS-1$
 				.put("inMillis", RESTART_DELAY_MILLIS) //$NON-NLS-1$
+				.put("splashSuppressed", Boolean.valueOf(splashSuppressed)) //$NON-NLS-1$
 				.put("workspace", workspaceLocation()) //$NON-NLS-1$
 				.put("savedEditors", save) //$NON-NLS-1$
 				.put("verifyRestartWith", //$NON-NLS-1$
