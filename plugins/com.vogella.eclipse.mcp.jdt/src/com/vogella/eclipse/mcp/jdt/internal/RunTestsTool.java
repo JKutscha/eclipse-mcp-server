@@ -3,7 +3,9 @@ package com.vogella.eclipse.mcp.jdt.internal;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.core.resources.IMarker;
 import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -49,6 +51,9 @@ public final class RunTestsTool implements IMcpTool {
 	private static final String UI_TEST_APPLICATION = "org.eclipse.pde.junit.runtime.uitestapplication"; //$NON-NLS-1$
 
 	private static final String PLUGIN_NATURE = "org.eclipse.pde.PluginNature"; //$NON-NLS-1$
+
+	/** Projects named in the pre-flight before it says how many more there are. */
+	private static final int MAX_PREFLIGHT_PROJECTS = 10;
 
 	/**
 	 * The preference the "Errors in Workspace / Always launch without asking" toggle
@@ -179,6 +184,10 @@ public final class RunTestsTool implements IMcpTool {
 			if (asPlugin) {
 				configurePlatform(configuration, args.getString("runtimeWorkspace"), ui); //$NON-NLS-1$
 			}
+			// only for the UI application: it is the one that needs a workbench, and a
+			// workspace plug-in with unbuilt classes shadows the installed bundle and
+			// stops that workbench from starting, which reports as a run with no tests
+			JsonObject preflight = ui && asPlugin ? unbuiltWorkspacePlugins() : null;
 			// launching happens in a job: preLaunchCheck alone can take a while, and
 			// doing it here would defeat wait:false exactly as the p2 refresh once did
 			run.launchedAs(launchedAs);
@@ -226,6 +235,9 @@ public final class RunTestsTool implements IMcpTool {
 								configuration.getAttribute(IPDELauncherConstants.RUN_IN_UI_THREAD, true))
 						.put(IPDELauncherConstants.LOCATION,
 								configuration.getAttribute(IPDELauncherConstants.LOCATION, (String) null)));
+			}
+			if (preflight != null) {
+				result.put("workspacePluginErrors", preflight); //$NON-NLS-1$
 			}
 			JsonArray broken = projectsWithErrors(project);
 			if (broken.size() > 0) {
@@ -352,6 +364,46 @@ public final class RunTestsTool implements IMcpTool {
 		// take the whole target platform plus the workspace plug-ins, which is what
 		// the launch tab does by default and what makes an unconfigured run resolve
 		configuration.setAttribute(IPDELauncherConstants.AUTOMATIC_ADD, true);
+	}
+
+	/**
+	 * Workspace plug-in projects PDE reports errors on, which a UI test launch
+	 * takes with it because every workspace plug-in is on its bundle list.
+	 * <p>
+	 * Markers only, no build: this must not cost seconds before a launch. With
+	 * auto-build off the markers can be stale, so an empty answer proves nothing
+	 * and the note says as much.
+	 */
+	private static JsonObject unbuiltWorkspacePlugins() {
+		JsonArray projects = new JsonArray();
+		int total = 0;
+		try {
+			IMarker[] markers = ResourcesPlugin.getWorkspace().getRoot()
+					.findMarkers("org.eclipse.pde.core.problem", true, IResource.DEPTH_INFINITE); //$NON-NLS-1$
+			java.util.Set<String> named = new java.util.LinkedHashSet<>();
+			for (IMarker marker : markers) {
+				if (marker.getAttribute(IMarker.SEVERITY, IMarker.SEVERITY_INFO) != IMarker.SEVERITY_ERROR) {
+					continue;
+				}
+				total++;
+				if (named.size() < MAX_PREFLIGHT_PROJECTS && marker.getResource().getProject() != null) {
+					named.add(marker.getResource().getProject().getName());
+				}
+			}
+			named.forEach(projects::add);
+		} catch (CoreException e) {
+			return null;
+		}
+		boolean autoBuilding = ResourcesPlugin.getWorkspace().isAutoBuilding();
+		if (total == 0 && autoBuilding) {
+			return null;
+		}
+		return new JsonObject().put("projects", projects) //$NON-NLS-1$
+				.put("total", Integer.valueOf(total)) //$NON-NLS-1$
+				.put("truncated", Boolean.valueOf(projects.size() < total)) //$NON-NLS-1$
+				.put("autoBuilding", Boolean.valueOf(autoBuilding)) //$NON-NLS-1$
+				.put("note", //$NON-NLS-1$
+						"The UI test application starts a workbench, and every workspace plug-in is on this launch's bundle list, so a workspace copy without compiled classes shadows the installed bundle and the workbench fails to start. That reports as a run with no tests rather than as an error. These are PDE's markers only, so with auto-build off they can be stale and an empty list proves nothing; build the workspace if the run comes back with total 0."); //$NON-NLS-1$
 	}
 
 	/** How the run would be launched, which a dry run has to report as well. */

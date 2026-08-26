@@ -218,6 +218,48 @@ public final class TestRunRegistry {
 	 * forever. Combined with the one-run-at-a-time guard that disabled the tool for
 	 * the rest of the session, recoverable only by restarting the IDE.
 	 */
+	/** Errors reported from a launched platform's log. Enough to diagnose, not a dump. */
+	private static final int MAX_LAUNCH_ERRORS = 8;
+
+	/** Error entries from the log of the platform that was launched, newest last. */
+	private static JsonArray launchedPlatformErrors(Run run) {
+		JsonArray errors = new JsonArray();
+		try {
+			org.eclipse.debug.core.ILaunch launch = run.launch;
+			var configuration = launch == null ? null : launch.getLaunchConfiguration();
+			if (configuration == null) {
+				return errors;
+			}
+			String location = configuration
+					.getAttribute("org.eclipse.pde.ui.workspace_location", (String) null); //$NON-NLS-1$
+			if (location == null) {
+				return errors;
+			}
+			location = org.eclipse.core.variables.VariablesPlugin.getDefault().getStringVariableManager()
+					.performStringSubstitution(location);
+			java.nio.file.Path log = java.nio.file.Path.of(location, ".metadata", ".log"); //$NON-NLS-1$ //$NON-NLS-2$
+			if (!java.nio.file.Files.isReadable(log)) {
+				return errors;
+			}
+			java.util.List<String> collected = new java.util.ArrayList<>();
+			String entry = null;
+			for (String line : java.nio.file.Files.readAllLines(log)) {
+				if (line.startsWith("!ENTRY") && line.contains(" 4 ")) { //$NON-NLS-1$ //$NON-NLS-2$
+					entry = line.substring("!ENTRY ".length()); //$NON-NLS-1$
+				} else if (entry != null && line.startsWith("!MESSAGE")) { //$NON-NLS-1$
+					collected.add(entry + ": " + line.substring("!MESSAGE ".length())); //$NON-NLS-1$ //$NON-NLS-2$
+					entry = null;
+				}
+			}
+			// the last ones: a workbench that fails to start says so at the end, after
+			// pages of unrelated bundle resolution noise from a big workspace
+			collected.subList(Math.max(0, collected.size() - MAX_LAUNCH_ERRORS), collected.size()).forEach(errors::add);
+		} catch (org.eclipse.core.runtime.CoreException | java.io.IOException | RuntimeException e) {
+			// the diagnosis is a bonus; failing to read it must not cost the answer
+		}
+		return errors;
+	}
+
 	static void watch(Run run, org.eclipse.debug.core.ILaunch launch, int staleAfterSeconds) {
 		run.launch = launch;
 		Thread watchdog = new Thread(() -> {
@@ -338,6 +380,14 @@ public final class TestRunRegistry {
 		if ("done".equals(run.state) && cases.isEmpty()) { //$NON-NLS-1$
 			counted.put("stateInconsistent", //$NON-NLS-1$
 					"State is done but no test was reported, which cannot both be true. Treat this as a run that did not happen."); //$NON-NLS-1$
+			// the launched platform knows why, and nothing else does: a workbench that
+			// failed to start reports no tests exactly like a project with none
+			JsonArray launchErrors = launchedPlatformErrors(run);
+			if (launchErrors.size() > 0) {
+				counted.put("launchedPlatformErrors", launchErrors) //$NON-NLS-1$
+						.put("launchedPlatformNote", //$NON-NLS-1$
+								"These come from the log of the platform that was launched, not from this IDE. A ClassNotFoundException in a bundle whose version ends in .qualifier is a workspace copy shadowing the installed bundle: it is on the launch's bundle list but has no compiled classes, and under the UI test application that stops the workbench from starting, which reports as no tests."); //$NON-NLS-1$
+			}
 		}
 		// the counters must account for every case, or the summary contradicts the list
 		if (passed + failed + errors + ignored + unclassified != cases.size()) {
