@@ -221,3 +221,26 @@ on which engine is running.
 Not filed; the package is `x-friends` and therefore provisional by convention,
 though it is what every theme in the wild is styled by. `CssStyling.parse` calls
 it reflectively and `CssStyling.rules` handles both shapes.
+
+### e4 CSS: styling a preference block does not say what it wrote
+
+`org.eclipse.e4.ui.css.swt.properties.preference.EclipsePreferencesHandler.overrideProperty`
+writes the value only when the key is unset or when
+`EclipsePreferencesHelper.isThemeChanged()` answers true, and that flag is false
+after any start-up that restored the theme it saved, because then previous and
+current theme id are equal. A block applied with no theme change in between
+therefore overrides only the `DefaultScope` value while an existing instance
+value keeps winning, `applyCSSProperty` still returns true either way, and
+nothing in the return value or the engine distinguishes the two outcomes.
+
+Not filed; refusing to clobber a user preference until a real theme change has
+happened is arguably intended, but the silence is not.
+`CssStyling.stylePreferences` works around it by reading every declared key
+back after the call and reporting the ones that kept their value as unchanged,
+rather than trusting the return.
+
+The selector syntax has the same shape of problem on the way in:
+`ThemeElementDefinitionHelper.escapeId` replaces dots with dashes and there is
+no inverse that survives a qualifier which legitimately contains a dash.
+A wrongly unescaped qualifier matches no rules at all, so the read-back decides
+here too.

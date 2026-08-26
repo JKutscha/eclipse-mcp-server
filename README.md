@@ -156,7 +156,7 @@ Sessions are carried in the `mcp-session-id` header, a `GET` opens the server-to
 
 Every tool returns a single text block containing pretty-printed JSON.
 Every list-returning tool honours `maxResults` and reports `total` and `truncated`, so the model can tell when it is seeing a partial answer.
-Read-only except the tools marked as changing something: `eclipse_organize_imports` and `eclipse_format` rewrite a file, `eclipse_build` runs builders, `eclipse_set_preference` writes configuration, `eclipse_set_project_state` opens and closes projects, `eclipse_write_file` creates and replaces files, and `eclipse_set_target_platform` replaces what every plug-in project compiles against.
+Read-only except the tools marked as changing something: `eclipse_organize_imports` and `eclipse_format` rewrite a file, `eclipse_build` runs builders, `eclipse_set_preference` writes configuration, `eclipse_set_project_state` opens and closes projects, `eclipse_write_file` creates and replaces files, `eclipse_set_target_platform` replaces what every plug-in project compiles against, and `eclipse_set_theme` switches the theme the whole IDE is styled by, remembered across restarts by default.
 
 ### `eclipse_list_projects`
 
@@ -327,6 +327,8 @@ Reading is not restricted: `eclipse_get_preferences` takes any qualifier.
 The asymmetry is deliberate. Preferences span the whole `org.eclipse.*` key space, and a wrongly set compiler or formatter option is invisible in the IDE while producing confusing results for a long time afterwards, so the writable set starts from what is defensible rather than from everything.
 
 Auto-build is special cased. Setting `org.eclipse.core.resources` / `description.autobuilding` goes through `IWorkspaceDescription.setAutoBuilding` rather than writing the raw key, which is the usual way to get this subtly wrong, and the answer says so in `appliedThrough`.
+
+One key inside a writable qualifier is refused all the same: writing `themeid` under `org.eclipse.e4.ui.css.swt.theme` was accepted and did nothing, because the theme engine persists the id of the theme that is active when the IDE shuts down and overwrites the write, which cost one reporter a full restart of a five hundred project workspace before anyone noticed what had happened. Switch themes with `eclipse_set_theme`, which activates one instead of only writing its id down.
 
 ### `eclipse_analyze_dependencies`
 
@@ -703,7 +705,28 @@ Nothing is written to disk. The snippet lives in the engine, and a restart, a th
 
 Every call re-applies the current theme first, so snippets replace each other instead of piling up, and `reset` is that step alone. `rules` says how many rules were parsed, and `errors` carries what the engine's error handler reported, which is where a selector typo surfaces; a snippet that parses to zero rules is the answer to "why did nothing change".
 
+An `IEclipsePreferences` block, which is how a theme sets JDT syntax colours, styles preference nodes rather than widgets and is otherwise applied on the theme activation path only. This tool routes it through the theme engine's own preference path and then reads every key back, because the engine leaves a value it did not set itself alone until the theme has changed this session: a key that kept its value lands in `preferenceRules` under `unchangedKeys`, with the value that is there now, `applied` stays false until every declared key took, and `eclipse_set_theme` is what opens them up. A later theme change takes those overrides back, exactly as it takes the snippet itself away.
+
 This is what turns a theme question into an experiment. Whether a selector matches at all is not something `eclipse_inspect_widget` can answer on its own, and rebuilding a theme plug-in and restarting for every attempt is the alternative: apply a rule with an unmistakable colour, inspect, and read `origin`.
+
+### `eclipse_list_themes` and `eclipse_set_theme`
+
+`eclipse_list_themes` is read only. It lists every theme the running IDE's CSS engine has registered, with `id`, `label` and which one is `active`.
+
+Discovery is the point: a theme id is easy to misremember, and grepping `plugin.xml` files across a workspace for `org.eclipse.e4.ui.css.swt.theme` contributions was previously the only way to learn that `com.vogella.eclipse.themes.githubdark` is not spelled with another dot.
+
+**`eclipse_set_theme` changes what the user sees**, across the whole IDE, and with `persist`, the default, the choice survives restarts.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `theme` | string, required | | Theme id or label, from `eclipse_list_themes`. |
+| `persist` | boolean | `true` | Remember the choice across restarts; false switches this session only. |
+
+The name is resolved by exact id, then exact label, then substring, stopping at the first step that matches anything, and an ambiguous name is refused with the candidates rather than guessed. The answer reports `previousThemeId`, so the old theme can be put back exactly, which is what makes the tool usable on somebody's running workbench.
+
+A switch restyles every shell in the IDE and is not instant, so the tool waits up to 25 seconds. When that runs out the answer says `timedOut` and that the switch may have completed anyway; `eclipse_list_themes` settles which theme is active before retrying.
+
+A theme change drops any snippet `eclipse_apply_css` put on top and takes its `IEclipsePreferences` overrides back with it, and it is also what makes such a block take effect reliably in the first place.
 
 ### `eclipse_get_installation`
 
@@ -1575,7 +1598,11 @@ Screenshots earn their place for UI work: layout, theming, dialog rendering, con
 
 A part behind another tab is not rendered at all, so capturing it would produce an empty image. It is **refused** unless `activate` is passed, because activating visibly rearranges the user's IDE and should not be a silent side effect.
 
+With no `shellTitle`, the active shell is meant, and the active workbench window's shell is what answers: `Display.getActiveShell` is null whenever the IDE does not have focus, which is the normal state for a call arriving over HTTP, so the window is found through the workbench instead. A `shellTitle` that matches nothing is refused with the title in the message.
+
 `method` in the answer says how the image was produced. `rootCapture` reads the real screen pixels for the area and crops. `widgetPrint` paints the widget hierarchy instead, which is the fallback used when the first attempt comes back uniform: under a compositing window manager such as mutter, a redirected window's contents live in an offscreen pixmap, so reading the X11 root drawable yields nothing at all. Printing has known GTK gaps, which is why it is the fallback and not the primary path, but a slightly wrong image beats no image.
+
+For `widgetPrint` the canvas is filled with magenta before printing, because anything the print leaves untouched has to stay detectable and white would be indistinguishable from the unstyled widgets a dark theme bug produces. After that check has judged the image, the still-magenta pixels are replaced with the widget's background colour in the image data, so a whole shell capture no longer arrives with every sash and part margin outlined in filler colour; the answer reports how many there were in `unpaintedPixels`, their share of the image in `unpaintedFraction`, and the colour they were filled with in `unpaintedFilledWith`. A UI that genuinely contains pure magenta shows up as a large count rather than as silence.
 
 There is no fallback for `display`, since there is no single widget to paint, so on such a display only `part` and `shell` can be captured.
 
