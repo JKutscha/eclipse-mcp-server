@@ -8,7 +8,7 @@ An agent with a shell already has files, grep and git.
 What it does not have is the resolved Java model, the incremental builder's problem markers and the user's current editor context.
 Those are the capabilities exposed here.
 
-Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration within an allowlist, `eclipse_set_project_state` opens and closes projects, `eclipse_set_bree` rewrites plug-in manifests, `eclipse_add_repository` and `eclipse_remove_repository` change the configured update sites, and `eclipse_run_command` runs arbitrary commands in directories that same preference page has to name first.
+Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration within an allowlist, `eclipse_set_project_state` opens and closes projects, `eclipse_set_bree` rewrites plug-in manifests, `eclipse_add_repository` and `eclipse_remove_repository` change the configured update sites, `eclipse_run_command` runs arbitrary commands in directories that same preference page has to name first, `eclipse_run_workbench_command` runs whatever workbench command it is given, and `eclipse_manage_window` and `eclipse_log_status` open and close windows and write log entries.
 There is no general file writing, no refactoring and no debugger control, commands run only in directories the user has named, and the only git operation is a branch switch through EGit.
 The server is **disabled by default**, listens on the loopback interface only, and rejects every request that does not carry a bearer token.
 
@@ -265,6 +265,22 @@ This is the same call the view's own delete action makes after it deletes the fi
 The clear itself does not depend on it: a view that refuses to empty is reported, not turned into a failed clear.
 
 After a real clear it writes one entry, reads it back, and reports `stillLogging`. The framework writes the log through a handle of its own, so a delete underneath it could in principle leave later entries going somewhere nothing can read, and that failure would be silent until someone noticed an empty log much later. Equinox reopens the file, so this works, and `LogStateToolsTest.clearingLeavesTheLogWritableAndReadable` holds it that way rather than leaving it as an assumption.
+
+### `eclipse_log_status`
+
+**Writes one entry into the Error Log**, which the Error Log view shows and everything else in the IDE shares.
+It exists for exercising log tooling and for marking that a run happened from the server's side, not for talking to the person at the IDE; say what you have to say in the conversation instead.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `message` | string, required | | Text of the entry. |
+| `severity` | `info` \| `warning` \| `error` | `info` | |
+| `pluginId` | string | this server's bundle id | Bundle symbolic name the entry is attributed to. |
+| `includeStackTrace` | boolean | `false` | Attach a throwable, so the entry carries a stack trace like a real failure. |
+
+The answer reports `verified`, whether the entry was really read back out of the log file.
+Logging through `ILog` returns normally whether or not the framework can still reach its file, so arrival is proven from the consuming end, the same reasoning that put the readback into `eclipse_clear_log`.
+Read what it wrote with `eclipse_get_log_entries`, and take a marker with `eclipse_mark_log` beforehand if a later read should cover only what came after.
 
 ### `eclipse_get_preferences`
 
@@ -1260,6 +1276,53 @@ It is also the only way to answer "which dialog is open right now".
 With `includeAvailableViews` it also lists the views registered in this IDE whether or not they are open, which is where `eclipse_show_view` gets its ids.
 There are several hundred, so `filter` matches a substring of the id or the label and `maxResults` defaults to 100.
 
+### `eclipse_list_commands`
+
+Lists the workbench commands this IDE defines, which is where `eclipse_run_workbench_command` gets its ids.
+Read-only.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `filter` | string | no filter | Substring of id, name or category, case insensitive. |
+| `handledOnly` | boolean | `false` | Only commands whose handler would act right now. |
+| `includeParameters` | boolean | `false` | Each parameter's id, name and optionality. |
+| `maxResults` | integer, 1 to 500 | 100 | |
+
+Each command reports its `id`, `name`, `category`, `description`, whether a handler is active (`handled`) and whether it is currently `enabled`.
+Handled and enabled are evaluated against the workbench at the moment of the call, so they answer about now rather than about the registry in general.
+`keybinding` carries the active binding formatted the way the menus show it, when there is one.
+
+Pass a `filter`: an IDE defines around two thousand commands, so without one the answer is the first page of a very long list.
+Commands that were defined and then undefined at runtime are skipped rather than failing the whole listing.
+
+### `eclipse_run_workbench_command`
+
+**Does whatever the command does.**
+It executes a workbench command through Eclipse's command and handler framework, exactly as its menu entry, toolbar button or keybinding would.
+The effect belongs to the command's handler: unknown to this server, unknowable in advance, and able to be anything the IDE can do.
+This is the single biggest capability here, because most of what an IDE can do exists only as a command with no other API, and running one by id makes all of it reachable at once.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `command` | string, required | | Command id, or the label a person reads in the menu. Resolved by exact id, then exact name, then substring, and refused with the candidates when ambiguous. |
+| `parameters` | object | | Parameter id to string value, for commands that take them. |
+| `dryRun` | boolean | `false` | Resolve the command, report `handled`, `enabled` and its parameters, execute nothing. |
+| `timeoutSeconds` | integer, 1 to 25 | 10 | Cap on waiting for the handler. |
+
+The answer carries `executed`, `id`, `name`, `handled`, `enabled`, `elapsedMillis` and, when the handler returned something, its `returnValue` capped at 500 characters.
+
+**Not handled is an answer, not an error.**
+Most commands are handled only while a particular part is active or a particular selection exists, so `handled: false` usually means the context is missing rather than that the command does not exist.
+Activate the part with `eclipse_set_part_state` and try again.
+`enabled: false` says the same thing one step later: a handler is active but its enablement currently says no.
+
+**The dialog hazard is worth knowing before the first call.**
+Many handlers open a modal dialog, and a dialog holds the UI thread inside the execute call until somebody answers it, which no timeout from outside can interrupt.
+Whether a given handler opens one cannot be known in advance, so the hazard is handled at the timeout instead: the wait is capped by `timeoutSeconds`, running out returns `timedOut: true` with a note rather than an error, and points at `eclipse_list_ui_targets` to see the dialog and `eclipse_dismiss_dialog` to answer it.
+If the command finishes after that answer has gone out, what it did is written to the Error Log rather than lost silently.
+
+Two commands are refused outright, whatever the arguments: `org.eclipse.ui.file.exit`, because ending the IDE ends this server with it and nothing could undo that from the client side, and `org.eclipse.ui.file.restartWorkbench`, which `eclipse_restart` does in an orderly way.
+
 ### `eclipse_set_ide_visibility`
 
 **Changes what the user sees**, in the one way they cannot undo from the IDE.
@@ -1277,6 +1340,23 @@ The IDE keeps running while hidden. Builds, searches, tests and every other tool
 Hiding a window is easy to make unrecoverable, and that is the whole risk here: a hidden window has no menu and no taskbar entry, so the only way back is this tool. Two things make it safe. Calling it with `visible: true` restores it, and the plug-in restores every window it hid when it stops, so disabling or uninstalling the server cannot leave an IDE nobody can see and nothing can bring back.
 
 While hidden, dialogs are still raised and are still invisible. `eclipse_list_ui_targets` and `eclipse_dismiss_dialog` remain the way to see and answer them, and they are worth more than usual in this state.
+
+### `eclipse_manage_window`
+
+**Changes what the user sees**: opens or closes a real workbench window, the way *Window > New Window* and a window's close box do.
+Writes nothing to the workspace.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `action` | `open` \| `close`, required | | |
+| `perspective` | string | the default perspective | For `open`: perspective id or label. |
+| `window` | string | the active window | For `close`: window title or a substring of it. |
+
+Both actions answer with every window that exists afterwards, whether it is the active one and its bounds.
+An ambiguous title is refused with the candidates rather than guessed, the way every other name here is resolved.
+
+**Closing the last window is refused unconditionally**, because closing it shuts the IDE down and takes this server with it, which nothing outside the machine could undo.
+A closing window whose editors have unsaved changes raises a save prompt, which holds the UI thread like any modal dialog, so the wait is capped and running out reports `timedOut` with a pointer to `eclipse_dismiss_dialog`; the window may close once the prompt is answered.
 
 ### `eclipse_show_view` and `eclipse_hide_view`
 
