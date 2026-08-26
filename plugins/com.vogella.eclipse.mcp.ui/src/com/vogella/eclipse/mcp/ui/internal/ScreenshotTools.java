@@ -199,7 +199,7 @@ public final class ScreenshotTools {
 
 		@Override
 		public String getDescription() {
-			return "Captures the IDE as a PNG and writes it to a file, returning the path. Targets are a workbench part by id, a shell by title, or the whole display; passing part or shellTitle selects the target on its own. The answer reports which method worked: rootCapture reads the real screen pixels, widgetPrint paints the widget hierarchy instead, which is the fallback on a compositing window manager where reading the X11 root yields nothing. Use it for UI work such as layout, theming and dialog rendering; for anything textual the other tools answer better and shorter. The display target captures whatever else is on the screen, so it is not the default. A part that is not visible is refused rather than captured blank, unless activate is set. On a HiDPI monitor widgetPrint captures at the monitor's zoom, so the image is larger than the widget's size in points: capturedArea is the pixels returned, areaInPoints is the widget, and zoom is the percentage between them. Set includeToolbar to capture a part together with its surrounding stack, but note that the stack's topRight children, the view toolbar among them, are not painted by any widget print rooted inside the window; capture the shell and crop to the bounds from eclipse_get_widget_tree for those."; //$NON-NLS-1$
+			return "Captures the IDE as a PNG and writes it to a file, returning the path. Targets are a workbench part by id, a shell by title, or the whole display; passing part or shellTitle selects the target on its own. Omitting both shellTitle and part captures the active workbench window's shell, which is also what a target of shell without a title does; the display target must be asked for explicitly. The answer reports which method worked: rootCapture reads the real screen pixels, widgetPrint paints the widget hierarchy instead, which is the fallback on a compositing window manager where reading the X11 root yields nothing. For method widgetPrint the areas between parts that no print paints are replaced with the widget background colour before the image is written, and the answer counts them in unpaintedPixels, so a whole shell capture does not arrive outlined in filler colour. Use it for UI work such as layout, theming and dialog rendering; for anything textual the other tools answer better and shorter. A part that is not visible is refused rather than captured blank, unless activate is set. On a HiDPI monitor widgetPrint captures at the monitor's zoom, so the image is larger than the widget's size in points: capturedArea is the pixels returned, areaInPoints is the widget, and zoom is the percentage between them. Set includeToolbar to capture a part together with its surrounding stack, but note that the stack's topRight children, the view toolbar among them, are not painted by any widget print rooted inside the window; capture the shell and crop to the bounds from eclipse_get_widget_tree for those."; //$NON-NLS-1$
 		}
 
 		@Override
@@ -258,7 +258,8 @@ public final class ScreenshotTools {
 			} else if ("shell".equals(target)) { //$NON-NLS-1$
 				Shell shell = findShell(display, shellTitle);
 				if (shell == null) {
-					return failure("No shell matching '%s'.".formatted(shellTitle)); //$NON-NLS-1$
+					return failure(shellTitle == null ? "This IDE has no window to capture." //$NON-NLS-1$
+							: "No shell matching '%s'.".formatted(shellTitle)); //$NON-NLS-1$
 				}
 				area = shell.getBounds();
 				printable = shell;
@@ -339,9 +340,22 @@ public final class ScreenshotTools {
 							? "The capture came back uniform, so this display cannot be captured through the X11 root drawable. A compositing window manager redirects window contents into an offscreen pixmap, so reading the root yields nothing. There is no fallback for the whole display; capture a part or a shell instead, which can be painted directly." //$NON-NLS-1$
 							: "The capture came back uniform through both the X11 root drawable and by painting the widget, so this display cannot be captured at all. Nothing was written; do not trust screenshots here."); //$NON-NLS-1$
 				}
+				// after the blank check: a fully unpainted capture must still read as
+				// uniform here, and swapping the filler first would hide exactly that
+				Unpainted unpainted = "widgetPrint".equals(method) && printable != null //$NON-NLS-1$
+						? replaceFiller(data, printable)
+						: null;
 				JsonObject written = write(display, image, data, area, maxWidth, outputPath, includeBase64)
 						.put("method", method) //$NON-NLS-1$
 						.put("zoom", Integer.valueOf(zoom)); //$NON-NLS-1$
+				if (unpainted != null) {
+					written.put("unpaintedPixels", Integer.valueOf(unpainted.pixels())) //$NON-NLS-1$
+							.put("unpaintedFraction", Double.valueOf(unpainted.fraction())) //$NON-NLS-1$
+							.put("unpaintedFilledWith", unpainted.fillDescription()); //$NON-NLS-1$
+				}
+				if ("widgetPrint".equals(method)) { //$NON-NLS-1$
+					written.put("printNote", "The widget print does not paint the sash and margin areas between parts; those were filled before printing and replaced with the widget background colour afterwards, which is what unpaintedPixels counts."); //$NON-NLS-1$ //$NON-NLS-2$
+				}
 				// zoom, the pixels and the points have to agree, and when they do not the
 				// paint landed at the wrong scale and part of the image is whatever the
 				// canvas was filled with. Saying so beats returning a picture that is
@@ -406,6 +420,84 @@ public final class ScreenshotTools {
 			return true;
 		}
 
+		/** The pre-print fill and what it was replaced with. */
+		private record Unpainted(int pixels, int width, int height, org.eclipse.swt.graphics.RGB fill) {
+
+			double fraction() {
+				return width * height == 0 ? 0.0 : Math.round(pixels * 1000.0 / (width * height)) / 10.0;
+			}
+
+			String fillDescription() {
+				return "%d,%d,%d (the widget's background colour)".formatted(Integer.valueOf(fill().red), //$NON-NLS-1$
+						Integer.valueOf(fill().green), Integer.valueOf(fill().blue));
+			}
+		}
+
+		private static final org.eclipse.swt.graphics.RGB FILLER = new org.eclipse.swt.graphics.RGB(255, 0, 255);
+
+		/**
+		 * Replaces the pixels the print left untouched with the widget's background
+		 * colour, in the data already fetched at the capture zoom.
+		 * <p>
+		 * The magenta stays in the image while it is being judged: a uniform one means
+		 * nothing painted at all. Only afterwards is it swapped out, so the picture a
+		 * human reads is not screaming pink between the parts while the count still
+		 * says exactly how much of it was never painted.
+		 *
+		 * @return {@code null} when either colour cannot be named in this palette,
+		 *         which leaves the image as printed
+		 */
+		private static Unpainted replaceFiller(ImageData data, Control painted) {
+			org.eclipse.swt.graphics.PaletteData palette = data.palette;
+			int fillerPixel = pixelOf(palette, FILLER);
+			if (fillerPixel < 0) {
+				return null;
+			}
+			org.eclipse.swt.graphics.RGB background = painted.getBackground() == null ? null
+					: painted.getBackground().getRGB();
+			if (background == null) {
+				background = painted.getDisplay().getSystemColor(SWT.COLOR_WIDGET_BACKGROUND).getRGB();
+			}
+			int backgroundPixel = pixelOf(palette, background);
+			if (backgroundPixel < 0 || backgroundPixel == fillerPixel) {
+				return null;
+			}
+			int count = 0;
+			int[] row = new int[data.width];
+			for (int y = 0; y < data.height; y++) {
+				data.getPixels(0, y, data.width, row, 0);
+				boolean touched = false;
+				for (int x = 0; x < data.width; x++) {
+					if (row[x] == fillerPixel) {
+						row[x] = backgroundPixel;
+						count++;
+						touched = true;
+					}
+				}
+				if (touched) {
+					data.setPixels(0, y, data.width, row, 0);
+				}
+			}
+			return new Unpainted(count, data.width, data.height, background);
+		}
+
+		/** The palette value for a colour, or -1 when the palette cannot name it. */
+		private static int pixelOf(org.eclipse.swt.graphics.PaletteData palette, org.eclipse.swt.graphics.RGB rgb) {
+			if (palette.isDirect) {
+				return palette.getPixel(rgb);
+			}
+			org.eclipse.swt.graphics.RGB[] colors = palette.colors;
+			if (colors == null) {
+				return -1;
+			}
+			for (int i = 0; i < colors.length; i++) {
+				if (rgb.equals(colors[i])) {
+					return i;
+				}
+			}
+			return -1;
+		}
+
 		static Shell findShell(Display display, String title) {
 			if (title == null) {
 				// the modal one is what is blocking, otherwise whatever is active
@@ -415,7 +507,14 @@ public final class ScreenshotTools {
 						return candidate;
 					}
 				}
-				return display.getActiveShell();
+				Shell active = display.getActiveShell();
+				if (active != null) {
+					return active;
+				}
+				// getActiveShell is null whenever the IDE does not have focus, which is
+				// the normal state when the call arrives over HTTP
+				IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
+				return window == null ? null : window.getShell();
 			}
 			for (Shell shell : display.getShells()) {
 				if (shell.getText() != null && shell.getText().contains(title)) {

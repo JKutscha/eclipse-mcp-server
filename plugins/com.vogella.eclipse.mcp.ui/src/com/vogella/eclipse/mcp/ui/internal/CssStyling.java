@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.eclipse.e4.core.contexts.IEclipseContext;
@@ -178,17 +179,103 @@ final class CssStyling {
 			// the next reset look like it had something to take back
 			snippet = parsed.ok() ? css : null;
 		}
-		return result.put("applied", Boolean.valueOf(!drop && parsed.ok())) //$NON-NLS-1$
+		List<JsonObject> preferenceRules = new ArrayList<>();
+		List<JsonObject> ignoredRules = new ArrayList<>();
+		boolean preferencesApplied = true;
+		if (!drop && parsed.ok()) {
+			for (PreferenceRules.Rule rule : PreferenceRules.scan(css)) {
+				if (themeEngine == null) {
+					ignoredRules.add(new JsonObject().put("selector", rule.selector()) //$NON-NLS-1$
+							.put("qualifier", rule.qualifier()) //$NON-NLS-1$
+							.put("reason", IGNORED_NOTE)); //$NON-NLS-1$
+					continue;
+				}
+				PreferenceOutcome outcome = stylePreferences(themeEngine, rule);
+				preferenceRules.add(outcome.json());
+				preferencesApplied &= outcome.fullyApplied();
+			}
+		}
+		result.put("applied", Boolean.valueOf(!drop && parsed.ok() && preferencesApplied)) //$NON-NLS-1$
 				.put("previousSnippet", previous) //$NON-NLS-1$
 				.put("theme", activeThemeId(themeEngine)) //$NON-NLS-1$
 				.put("themeReapplied", Boolean.valueOf(themeReset)) //$NON-NLS-1$
 				.put("engines", Integer.valueOf(engines.size())) //$NON-NLS-1$
 				.put("rules", parsed.rules() < 0 ? null : Integer.valueOf(parsed.rules())) //$NON-NLS-1$
 				.put("errors", errors) //$NON-NLS-1$
-				.put("elapsedMillis", Long.valueOf((System.nanoTime() - start) / 1_000_000L)) //$NON-NLS-1$
-				.put("note", themeReset //$NON-NLS-1$
-						? "The snippet lives in memory only. It is gone on the next theme change, on eclipse_restart, and when this plug-in stops."
-						: "The theme engine could not be reached, so the snippet was added without re-applying the theme first and can only be taken back by restarting the IDE.");
+				.put("elapsedMillis", Long.valueOf((System.nanoTime() - start) / 1_000_000L)); //$NON-NLS-1$
+		if (!ignoredRules.isEmpty()) {
+			result.put("ignoredRules", ignoredRules); //$NON-NLS-1$
+		}
+		if (!preferenceRules.isEmpty()) {
+			result.put("preferenceRules", preferenceRules); //$NON-NLS-1$
+		}
+		result.put("note", preferenceRules.isEmpty() ? note(themeReset) : PREFERENCE_NOTE + " " + note(themeReset)); //$NON-NLS-1$ //$NON-NLS-2$
+		return result;
+	}
+
+	private static String note(boolean themeReset) {
+		return themeReset ? LIFETIME_NOTE
+				: "The theme engine could not be reached, so the snippet was added without re-applying the theme first and can only be taken back by restarting the IDE."; //$NON-NLS-1$
+	}
+
+	private static final String LIFETIME_NOTE = "The snippet lives in memory only. It is gone on the next theme change, on eclipse_restart, and when this plug-in stops."; //$NON-NLS-1$
+
+	private static final String PREFERENCE_NOTE = "IEclipsePreferences blocks were styled through the theme engine's own preference path; preferenceRules says what took effect, and a theme change takes their overrides back like any other."; //$NON-NLS-1$
+
+	/** What styling one preference block came to: the report and whether every key took. */
+	private record PreferenceOutcome(JsonObject json, boolean fullyApplied) {
+	}
+
+	private static final String IGNORED_NOTE = "Preference rules take effect when a theme is activated, which is the one thing this tool cannot do, and the theme engine could not be reached here either, so this block was not styled. eclipse_set_theme activates a theme and applies such blocks outright."; //$NON-NLS-1$
+
+	/**
+	 * Styles one {@code IEclipsePreferences} block through the same call the
+	 * workbench makes when a theme changes, then reads the keys back.
+	 * <p>
+	 * The engine leaves a value it did not set itself alone until the theme has
+	 * changed once this session, so verification is what makes the answer honest:
+	 * an unchanged key is reported as unchanged, with the value that is there now.
+	 */
+	private static PreferenceOutcome stylePreferences(Object themeEngine, PreferenceRules.Rule rule) {
+		JsonObject outcome = new JsonObject().put("selector", rule.selector()) //$NON-NLS-1$
+				.put("qualifier", rule.qualifier()); //$NON-NLS-1$
+		JsonArray applied = new JsonArray();
+		JsonArray unchanged = new JsonArray();
+		boolean recognised = true;
+		try {
+			org.eclipse.core.runtime.preferences.IEclipsePreferences node = org.eclipse.core.runtime.preferences.InstanceScope.INSTANCE
+					.getNode(rule.qualifier());
+			// the same entry point StylingPreferencesHandler drives on every theme change,
+			// which keeps the backup bookkeeping for overridden values in platform code
+			// rather than here
+			themeEngine.getClass().getMethod("applyStyles", Object.class, boolean.class).invoke(themeEngine, node, //$NON-NLS-1$
+					Boolean.FALSE);
+			if (rule.values().isEmpty()) {
+				recognised = false;
+				outcome.put("reason", "No 'key=value' pair was recognised in the block."); //$NON-NLS-1$ //$NON-NLS-2$
+			}
+			for (Map.Entry<String, String> pair : rule.values().entrySet()) {
+				String actual = node.get(pair.getKey(), null);
+				if (pair.getValue().equals(actual)) {
+					applied.add(pair.getKey());
+				} else {
+					unchanged.add(new JsonObject().put("key", pair.getKey()) //$NON-NLS-1$
+							.put("requested", pair.getValue()) //$NON-NLS-1$
+							.put("current", actual)); //$NON-NLS-1$
+				}
+			}
+		} catch (java.lang.reflect.InvocationTargetException e) {
+			return new PreferenceOutcome(
+					outcome.put("error", "Styling the preferences failed: " + e.getCause()), false); //$NON-NLS-1$ //$NON-NLS-2$
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return new PreferenceOutcome(outcome.put("error", "Styling the preferences failed: " + e), false); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		outcome.put("appliedKeys", applied).put("unchangedKeys", unchanged); //$NON-NLS-1$ //$NON-NLS-2$
+		if (unchanged.size() > 0) {
+			outcome.put("note", "These keys kept their value: the theme engine overwrites a value it did not set itself only once the theme has changed this session. Activating another theme with eclipse_set_theme opens them up."); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		return new PreferenceOutcome(outcome,
+				recognised && unchanged.size() == 0 && applied.size() == rule.values().size());
 	}
 
 	/** Whether a snippet parsed, and how many rules it produced where that can be counted. */
@@ -286,6 +373,189 @@ final class CssStyling {
 		} catch (ReflectiveOperationException | RuntimeException e) {
 			return null;
 		}
+	}
+
+	/** One registered theme, read off the engine without compiling against it. */
+	record ThemeRef(String id, String label) {
+
+		JsonObject describe() {
+			return new JsonObject().put("id", id).put("label", label); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+	}
+
+	/** Every theme the engine has registered, empty when it cannot be reached. */
+	static List<ThemeRef> registeredThemes(Object themeEngine) {
+		if (themeEngine == null) {
+			return List.of();
+		}
+		try {
+			Object result = themeEngine.getClass().getMethod("getThemes").invoke(themeEngine); //$NON-NLS-1$
+			List<ThemeRef> themes = new ArrayList<>();
+			if (result instanceof Collection<?> known) {
+				for (Object theme : known) {
+					String id = stringOf(theme, "getId"); //$NON-NLS-1$
+					if (id != null) {
+						themes.add(new ThemeRef(id, stringOf(theme, "getLabel"))); //$NON-NLS-1$
+					}
+				}
+			}
+			return themes;
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return List.of();
+		}
+	}
+
+	private static String stringOf(Object target, String method) {
+		if (target == null) {
+			return null;
+		}
+		try {
+			Object value = target.getClass().getMethod(method).invoke(target);
+			return value == null ? null : String.valueOf(value);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return null;
+		}
+	}
+
+	/**
+	 * Narrows from exact id, to exact label, to substring over both, and stops at
+	 * the first step that finds anything. The same ordering {@code ViewTools.match}
+	 * uses for views.
+	 */
+	static List<ThemeRef> matchingThemes(List<ThemeRef> all, String wanted) {
+		for (ThemeRef theme : all) {
+			if (theme.id().equals(wanted)) {
+				return List.of(theme);
+			}
+		}
+		List<ThemeRef> byLabel = new ArrayList<>();
+		for (ThemeRef theme : all) {
+			if (wanted.equalsIgnoreCase(theme.label())) {
+				byLabel.add(theme);
+			}
+		}
+		if (!byLabel.isEmpty()) {
+			return byLabel;
+		}
+		String needle = wanted.toLowerCase(Locale.ROOT);
+		List<ThemeRef> partial = new ArrayList<>();
+		for (ThemeRef theme : all) {
+			if (theme.label() != null && theme.label().toLowerCase(Locale.ROOT).contains(needle)
+					|| theme.id().toLowerCase(Locale.ROOT).contains(needle)) {
+				partial.add(theme);
+			}
+		}
+		return partial;
+	}
+
+	/** Every registered theme with which one is active, capped at {@code maxResults}. */
+	static JsonObject listThemes(int maxResults) {
+		Object engine = themeEngine();
+		JsonArray themes = new JsonArray();
+		List<ThemeRef> all = registeredThemes(engine);
+		String active = activeThemeId(engine);
+		for (ThemeRef theme : all.subList(0, Math.min(maxResults, all.size()))) {
+			themes.add(theme.describe().put("active", Boolean.valueOf(theme.id().equals(active)))); //$NON-NLS-1$
+		}
+		JsonObject result = new JsonObject().put("themes", themes) //$NON-NLS-1$
+				.put("total", Integer.valueOf(all.size())) //$NON-NLS-1$
+				.put("truncated", Boolean.valueOf(all.size() > maxResults)); //$NON-NLS-1$
+		if (engine == null || all.isEmpty()) {
+			result.put("reason", "The e4 CSS theme engine could not be reached, so no theme can be listed or switched."); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		return result;
+	}
+
+	/**
+	 * Activates a theme by id or label, optionally remembered across restarts.
+	 * <p>
+	 * The switch goes through the engine's own {@code setTheme(String, boolean)},
+	 * which is also what makes an {@code IEclipsePreferences} block take effect:
+	 * only the activation path styles the preference nodes.
+	 */
+	static JsonObject switchTheme(String wanted, boolean persist) {
+		Object engine = themeEngine();
+		if (engine == null) {
+			return new JsonObject().put("switched", Boolean.FALSE) //$NON-NLS-1$
+					.put("reason", "The e4 CSS theme engine could not be reached."); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		List<ThemeRef> all = registeredThemes(engine);
+		List<ThemeRef> matches = matchingThemes(all, wanted);
+		if (matches.size() > 1) {
+			return new JsonObject().put("switched", Boolean.FALSE) //$NON-NLS-1$
+					.put("reason", "'%s' matches %d themes; name one of them exactly." //$NON-NLS-1$
+							.formatted(wanted, Integer.valueOf(matches.size())))
+					.put("candidates", candidates(matches));
+		}
+		if (matches.isEmpty()) {
+			return new JsonObject().put("switched", Boolean.FALSE) //$NON-NLS-1$
+					.put("reason", "No registered theme matches '%s', so nothing was switched; handed an unregistered id the engine leaves the current theme up and logs a warning this answer would never show. Registered are:" //$NON-NLS-1$ //$NON-NLS-2$
+							.formatted(wanted))
+					.put("candidates", candidates(all));
+		}
+		ThemeRef target = matches.get(0);
+		String previous = activeThemeId(engine);
+		try {
+			engine.getClass().getMethod("setTheme", String.class, boolean.class).invoke(engine, target.id(), //$NON-NLS-1$
+					Boolean.valueOf(persist));
+		} catch (InvocationTargetException e) {
+			return new JsonObject().put("switched", Boolean.FALSE).put("theme", target.id()) //$NON-NLS-1$ //$NON-NLS-2$
+					.put("reason", "Switching the theme failed: " + e.getCause()); //$NON-NLS-1$ //$NON-NLS-2$
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return new JsonObject().put("switched", Boolean.FALSE).put("theme", target.id()) //$NON-NLS-1$ //$NON-NLS-2$
+					.put("reason", "Switching the theme failed: " + e); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		return new JsonObject().put("switched", Boolean.TRUE) //$NON-NLS-1$
+				.put("theme", target.id()) //$NON-NLS-1$
+				.put("label", target.label()) //$NON-NLS-1$
+				.put("previousThemeId", previous) //$NON-NLS-1$
+				.put("persist", Boolean.valueOf(persist)) //$NON-NLS-1$
+				.put("note", "Pass previousThemeId back to put the old theme as it was." //$NON-NLS-1$
+						+ (persist ? "" : " Without persist the switch lasts until the IDE restarts.")
+						+ " A theme change drops any snippet eclipse_apply_css put on top and takes its IEclipsePreferences overrides back with it.");
+	}
+
+	private static JsonArray candidates(List<ThemeRef> themes) {
+		JsonArray candidates = new JsonArray();
+		for (ThemeRef theme : themes.subList(0, Math.min(20, themes.size()))) {
+			candidates.add(theme.describe());
+		}
+		return candidates;
+	}
+
+	/**
+	 * Registers a theme for the rest of this session, from a stylesheet location.
+	 * <p>
+	 * Reached through {@code registerTheme(String, String, String)}, which the
+	 * public interface declares; the four argument overload with the os version
+	 * match exists only on the internal class and is not used.
+	 */
+	static JsonObject registerTheme(String id, String label, String stylesheetUri) {
+		Object engine = themeEngine();
+		if (engine == null) {
+			return new JsonObject().put("registered", Boolean.FALSE) //$NON-NLS-1$
+					.put("reason", "The e4 CSS theme engine could not be reached."); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		if (registeredThemes(engine).stream().anyMatch(theme -> theme.id().equals(id))) {
+			return new JsonObject().put("registered", Boolean.FALSE).put("id", id) //$NON-NLS-1$ //$NON-NLS-2$
+					.put("reason", "A theme with the id '%s' is already registered; switch to it with eclipse_set_theme." //$NON-NLS-1$ //$NON-NLS-2$
+							.formatted(id));
+		}
+		try {
+			engine.getClass().getMethod("registerTheme", String.class, String.class, String.class).invoke(engine, id, //$NON-NLS-1$
+					label, stylesheetUri);
+		} catch (java.lang.reflect.InvocationTargetException e) {
+			return new JsonObject().put("registered", Boolean.FALSE).put("id", id) //$NON-NLS-1$ //$NON-NLS-2$
+					.put("reason", "Registering the theme failed: " + e.getCause()); //$NON-NLS-1$ //$NON-NLS-2$
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return new JsonObject().put("registered", Boolean.FALSE).put("id", id) //$NON-NLS-1$ //$NON-NLS-2$
+					.put("reason", "Registering the theme failed: " + e); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		return new JsonObject().put("registered", Boolean.TRUE) //$NON-NLS-1$
+				.put("id", id) //$NON-NLS-1$
+				.put("label", label) //$NON-NLS-1$
+				.put("stylesheet", stylesheetUri) //$NON-NLS-1$
+				.put("note", "The registration lives for this session only and is gone when the IDE restarts. Nothing was installed: the stylesheet is read from where it is every time the theme activates, so the file has to stay where it is for as long as the theme is used. Switch to it with eclipse_set_theme."); //$NON-NLS-1$
 	}
 
 	/**

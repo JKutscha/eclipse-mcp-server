@@ -32,13 +32,18 @@ public final class SetPreferenceTool implements IMcpTool {
 			"org.eclipse.jdt.core", //$NON-NLS-1$
 			"org.eclipse.jdt.ui", //$NON-NLS-1$
 			"org.eclipse.core.runtime", //$NON-NLS-1$
-			// the theme id, so that installing a theme feature and activating it is
-			// one workflow rather than an install that a human has to finish by hand
+			// the theme qualifier, so that keys like disableOSDarkThemeInherit stay
+			// writable; themeid itself is refused below, because a startup that cannot
+			// resolve it replaces the written value with a fallback
 			"org.eclipse.e4.ui.css.swt.theme"); //$NON-NLS-1$
 
 	private static final String AUTOBUILD_QUALIFIER = "org.eclipse.core.resources"; //$NON-NLS-1$
 
 	private static final String AUTOBUILD_KEY = "description.autobuilding"; //$NON-NLS-1$
+
+	private static final String THEME_QUALIFIER = "org.eclipse.e4.ui.css.swt.theme"; //$NON-NLS-1$
+
+	private static final String THEMEID_KEY = "themeid"; //$NON-NLS-1$
 
 	@Override
 	public String getName() {
@@ -47,7 +52,7 @@ public final class SetPreferenceTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Writes a single preference in the instance or project scope and returns the previous value, so the change can be undone. MODIFIES THE IDE CONFIGURATION. Only the qualifiers org.eclipse.core.resources, org.eclipse.jdt.core, org.eclipse.jdt.ui and org.eclipse.core.runtime may be written. Auto-build (org.eclipse.core.resources, description.autobuilding) is applied through the workspace description rather than as a raw preference write, because writing the raw key does not take effect properly."; //$NON-NLS-1$
+		return "Writes a single preference in the instance or project scope and returns the previous value, so the change can be undone. MODIFIES THE IDE CONFIGURATION. Only the qualifiers org.eclipse.core.resources, org.eclipse.jdt.core, org.eclipse.jdt.ui and org.eclipse.core.runtime may be written. Auto-build (org.eclipse.core.resources, description.autobuilding) is applied through the workspace description rather than as a raw preference write, because writing the raw key does not take effect properly. The key themeid under org.eclipse.e4.ui.css.swt.theme is refused: the write reaches disk, but at the next startup the engine resolves the persisted id against the registered themes and an id that does not resolve is replaced by a fallback that is persisted over it, so it is not a way to switch themes. Use eclipse_set_theme."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -79,6 +84,11 @@ public final class SetPreferenceTool implements IMcpTool {
 			return McpToolResult.error(
 					"Writing '%s' is not allowed. Writable qualifiers are %s. Reading is not restricted; use eclipse_get_preferences." //$NON-NLS-1$
 							.formatted(qualifier, String.join(", ", ALLOWED_QUALIFIERS.stream().sorted().toList()))); //$NON-NLS-1$
+		}
+		if (THEME_QUALIFIER.equals(qualifier) && THEMEID_KEY.equals(key)) {
+			return McpToolResult.error(
+					"Writing %s/%s is refused: the write reaches disk, but at the next startup the theme engine resolves the persisted id against the registered themes, and an id that does not resolve is replaced by a fallback that is persisted over it. Writing it is not a way to switch themes; use eclipse_set_theme instead."
+							.formatted(THEME_QUALIFIER, THEMEID_KEY)); //$NON-NLS-1$
 		}
 		String scope = args.getString("scope", "instance"); //$NON-NLS-1$ //$NON-NLS-2$
 		String projectName = args.getString("project"); //$NON-NLS-1$
