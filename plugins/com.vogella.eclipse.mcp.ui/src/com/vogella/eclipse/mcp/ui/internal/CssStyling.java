@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.eclipse.e4.core.contexts.IEclipseContext;
@@ -286,6 +287,153 @@ final class CssStyling {
 		} catch (ReflectiveOperationException | RuntimeException e) {
 			return null;
 		}
+	}
+
+	/** One registered theme, read off the engine without compiling against it. */
+	record ThemeRef(String id, String label) {
+
+		JsonObject describe() {
+			return new JsonObject().put("id", id).put("label", label); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+	}
+
+	/** Every theme the engine has registered, empty when it cannot be reached. */
+	static List<ThemeRef> registeredThemes(Object themeEngine) {
+		if (themeEngine == null) {
+			return List.of();
+		}
+		try {
+			Object result = themeEngine.getClass().getMethod("getThemes").invoke(themeEngine); //$NON-NLS-1$
+			List<ThemeRef> themes = new ArrayList<>();
+			if (result instanceof Collection<?> known) {
+				for (Object theme : known) {
+					String id = stringOf(theme, "getId"); //$NON-NLS-1$
+					if (id != null) {
+						themes.add(new ThemeRef(id, stringOf(theme, "getLabel"))); //$NON-NLS-1$
+					}
+				}
+			}
+			return themes;
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return List.of();
+		}
+	}
+
+	private static String stringOf(Object target, String method) {
+		if (target == null) {
+			return null;
+		}
+		try {
+			Object value = target.getClass().getMethod(method).invoke(target);
+			return value == null ? null : String.valueOf(value);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return null;
+		}
+	}
+
+	/**
+	 * Narrows from exact id, to exact label, to substring over both, and stops at
+	 * the first step that finds anything. The same ordering {@code ViewTools.match}
+	 * uses for views.
+	 */
+	static List<ThemeRef> matchingThemes(List<ThemeRef> all, String wanted) {
+		for (ThemeRef theme : all) {
+			if (theme.id().equals(wanted)) {
+				return List.of(theme);
+			}
+		}
+		List<ThemeRef> byLabel = new ArrayList<>();
+		for (ThemeRef theme : all) {
+			if (wanted.equalsIgnoreCase(theme.label())) {
+				byLabel.add(theme);
+			}
+		}
+		if (!byLabel.isEmpty()) {
+			return byLabel;
+		}
+		String needle = wanted.toLowerCase(Locale.ROOT);
+		List<ThemeRef> partial = new ArrayList<>();
+		for (ThemeRef theme : all) {
+			if (theme.label() != null && theme.label().toLowerCase(Locale.ROOT).contains(needle)
+					|| theme.id().toLowerCase(Locale.ROOT).contains(needle)) {
+				partial.add(theme);
+			}
+		}
+		return partial;
+	}
+
+	/** Every registered theme with which one is active, capped at {@code maxResults}. */
+	static JsonObject listThemes(int maxResults) {
+		Object engine = themeEngine();
+		JsonArray themes = new JsonArray();
+		List<ThemeRef> all = registeredThemes(engine);
+		String active = activeThemeId(engine);
+		for (ThemeRef theme : all.subList(0, Math.min(maxResults, all.size()))) {
+			themes.add(theme.describe().put("active", Boolean.valueOf(theme.id().equals(active)))); //$NON-NLS-1$
+		}
+		JsonObject result = new JsonObject().put("themes", themes) //$NON-NLS-1$
+				.put("total", Integer.valueOf(all.size())) //$NON-NLS-1$
+				.put("truncated", Boolean.valueOf(all.size() > maxResults)); //$NON-NLS-1$
+		if (engine == null || all.isEmpty()) {
+			result.put("reason", "The e4 CSS theme engine could not be reached, so no theme can be listed or switched."); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		return result;
+	}
+
+	/**
+	 * Activates a theme by id or label, optionally remembered across restarts.
+	 * <p>
+	 * The switch goes through the engine's own {@code setTheme(String, boolean)},
+	 * which is also what makes an {@code IEclipsePreferences} block take effect:
+	 * only the activation path styles the preference nodes.
+	 */
+	static JsonObject switchTheme(String wanted, boolean persist) {
+		Object engine = themeEngine();
+		if (engine == null) {
+			return new JsonObject().put("switched", Boolean.FALSE) //$NON-NLS-1$
+					.put("reason", "The e4 CSS theme engine could not be reached."); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		List<ThemeRef> all = registeredThemes(engine);
+		List<ThemeRef> matches = matchingThemes(all, wanted);
+		if (matches.size() > 1) {
+			return new JsonObject().put("switched", Boolean.FALSE) //$NON-NLS-1$
+					.put("reason", "'%s' matches %d themes; name one of them exactly." //$NON-NLS-1$
+							.formatted(wanted, Integer.valueOf(matches.size())))
+					.put("candidates", candidates(matches));
+		}
+		if (matches.isEmpty()) {
+			return new JsonObject().put("switched", Boolean.FALSE) //$NON-NLS-1$
+					.put("reason", "No registered theme matches '%s'. Registered are:".formatted(wanted)) //$NON-NLS-1$ //$NON-NLS-2$
+					.put("candidates", candidates(all));
+		}
+		ThemeRef target = matches.get(0);
+		String previous = activeThemeId(engine);
+		try {
+			engine.getClass().getMethod("setTheme", String.class, boolean.class).invoke(engine, target.id(), //$NON-NLS-1$
+					Boolean.valueOf(persist));
+		} catch (InvocationTargetException e) {
+			return new JsonObject().put("switched", Boolean.FALSE).put("theme", target.id()) //$NON-NLS-1$ //$NON-NLS-2$
+					.put("reason", "Switching the theme failed: " + e.getCause()); //$NON-NLS-1$ //$NON-NLS-2$
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return new JsonObject().put("switched", Boolean.FALSE).put("theme", target.id()) //$NON-NLS-1$ //$NON-NLS-2$
+					.put("reason", "Switching the theme failed: " + e); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		return new JsonObject().put("switched", Boolean.TRUE) //$NON-NLS-1$
+				.put("theme", target.id()) //$NON-NLS-1$
+				.put("label", target.label()) //$NON-NLS-1$
+				.put("previousThemeId", previous) //$NON-NLS-1$
+				.put("persist", Boolean.valueOf(persist)) //$NON-NLS-1$
+				.put("note", "Pass previousThemeId back to put the old theme as it was." //$NON-NLS-1$
+						+ (persist ? "" : " Without persist the switch lasts until the IDE restarts.")
+						+ " A theme change drops any snippet eclipse_apply_css put on top and takes its IEclipsePreferences overrides back with it.");
+	}
+
+	private static JsonArray candidates(List<ThemeRef> themes) {
+		JsonArray candidates = new JsonArray();
+		for (ThemeRef theme : themes.subList(0, Math.min(20, themes.size()))) {
+			candidates.add(theme.describe());
+		}
+		return candidates;
 	}
 
 	/**
