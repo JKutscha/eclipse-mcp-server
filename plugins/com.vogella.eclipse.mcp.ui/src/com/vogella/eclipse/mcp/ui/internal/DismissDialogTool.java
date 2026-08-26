@@ -121,15 +121,17 @@ public final class DismissDialogTool implements IMcpTool {
 	}
 
 	private static Shell find(Display display, String title) {
-		Shell active = display.getActiveShell();
 		if (title == null) {
-			// prefer a modal shell: that is the one actually blocking the IDE
+			// only a modal shell qualifies: that is the one blocking the IDE, and it is
+			// what the schema promises. The fallback that used to return the active
+			// shell when it was not getShells()[0] depended on an ordering SWT does not
+			// guarantee, and handed back the user's main window as a thing to close.
 			for (Shell shell : display.getShells()) {
 				if (shell.isVisible() && isModal(shell)) {
 					return shell;
 				}
 			}
-			return active != null && active != display.getShells()[0] ? active : null;
+			return null;
 		}
 		for (Shell shell : display.getShells()) {
 			if (shell.getText() != null && shell.getText().contains(title)) {
