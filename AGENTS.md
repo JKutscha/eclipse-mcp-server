@@ -31,6 +31,7 @@ plugins/com.vogella.eclipse.mcp.server   MCP protocol, embedded Jetty, bearer to
 plugins/com.vogella.eclipse.mcp.jdt      Java model tools, declaration sweep and registry index
 plugins/com.vogella.eclipse.mcp.ui       editor, view, perspective and layout tools, compare, screenshots, preference page, startup hook
 plugins/com.vogella.eclipse.mcp.pde      PDE tools
+plugins/com.vogella.eclipse.mcp.debug    breakpoint tools, debug session tools, session registry
 features/com.vogella.eclipse.mcp.feature
 tests/com.vogella.eclipse.mcp.core.tests    the tools, headless
 tests/com.vogella.eclipse.mcp.server.tests  the HTTP endpoint, driven by a real MCP client
@@ -49,6 +50,7 @@ When a core tool needs something to happen in the UI, it goes through a hook the
 
 **Most tools are read-only, and the exceptions are deliberate.**
 `eclipse_organize_imports` and `eclipse_format` modify the file they are given, `eclipse_write_file` creates and replaces files, `eclipse_set_target_platform` replaces what the workspace compiles against, `eclipse_build` runs builders, and `eclipse_get_problems` triggers a build when auto-build is off.
+The debugger tools change things without touching the workspace: `eclipse_set_breakpoint` edits the breakpoint list, `eclipse_debug_launch` starts a process, `eclipse_debug_evaluate` runs an expression inside the debugged program, and `eclipse_debug_control` steps and terminates it.
 Everything else must not write, and no tool may open a dialog or perform a refactoring.
 A new tool that writes has to say so in its own description, because that is the only place the model sees it.
 

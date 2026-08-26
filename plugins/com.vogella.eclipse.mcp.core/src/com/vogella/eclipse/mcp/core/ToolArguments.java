@@ -17,6 +17,11 @@ public final class ToolArguments {
 		return new ToolArguments(arguments);
 	}
 
+	/** Whether the client sent the argument at all. */
+	public boolean has(String name) {
+		return arguments.get(name) != null;
+	}
+
 	/** Returns the trimmed value, or {@code null} when absent or blank. */
 	public String getString(String name) {
 		Object value = arguments.get(name);

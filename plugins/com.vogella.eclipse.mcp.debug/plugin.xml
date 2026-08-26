@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+
+   <extension point="com.vogella.eclipse.mcp.core.tools">
+      <tool class="com.vogella.eclipse.mcp.debug.internal.ListBreakpointsTool"/>
+      <tool class="com.vogella.eclipse.mcp.debug.internal.SetBreakpointTool"/>
+      <tool class="com.vogella.eclipse.mcp.debug.internal.DebugLaunchTool"/>
+      <tool class="com.vogella.eclipse.mcp.debug.internal.DebugStatusTool"/>
+      <tool class="com.vogella.eclipse.mcp.debug.internal.GetFramesTool"/>
+      <tool class="com.vogella.eclipse.mcp.debug.internal.EvaluateTool"/>
+      <tool class="com.vogella.eclipse.mcp.debug.internal.ControlTool"/>
+   </extension>
+
+</plugin>

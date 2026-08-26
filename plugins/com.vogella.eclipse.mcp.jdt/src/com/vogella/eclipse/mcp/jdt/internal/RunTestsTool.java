@@ -67,7 +67,7 @@ public final class RunTestsTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Runs JUnit tests through the IDE's own test runner and reports the failures with their stack traces, expected and actual values. RUNS PROJECT CODE. The JUnit version is detected from the project's own build path and the runtime classpath is the one Run As > JUnit Test would use, so nothing has to be configured. Runs as a launched JVM and returns a runId to poll through eclipse_get_test_results. A plug-in project is run as a JUnit Plug-in Test by default, which launches a second Eclipse with a running platform in its own cleared workspace, because tests needing OSGi produce meaningless errors under a plain JUnit launch. That is slower. The UI test application, which opens a workbench window, is opt-in. launchedAs in the answer says which was used."; //$NON-NLS-1$
+		return "Runs JUnit tests through the IDE's own test runner and reports the failures with their stack traces, expected and actual values. RUNS PROJECT CODE. The JUnit version is detected from the project's own build path and the runtime classpath is the one Run As > JUnit Test would use, so nothing has to be configured. Runs as a launched JVM and returns a runId to poll through eclipse_get_test_results. A plug-in project is run as a JUnit Plug-in Test by default, which launches a second Eclipse with a running platform in its own cleared workspace, because tests needing OSGi produce meaningless errors under a plain JUnit launch. That is slower. The UI test application, which opens a workbench window, is opt-in. launchedAs in the answer says which was used. With 'debug' the tests launch under the debugger instead, which is how a failing run is inspected at the moment of failure; the debug tools address that session."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -80,8 +80,9 @@ public final class RunTestsTool implements IMcpTool {
 				    "project":        {"type":"string","description":"Project holding the tests."},
 				    "testClass":      {"type":"string","description":"Fully qualified test class. Omit to run every test in the project."},
 				    "testMethod":     {"type":"string","description":"Single method of testClass."},
-				    "pluginTest":     {"type":"string","enum":["auto","true","false"],"default":"auto","description":"Run as a JUnit Plug-in Test, which launches a second Eclipse with a running platform. 'auto' uses it when the project is a plug-in project. Tests that need OSGi fail as plain JUnit with errors that look like broken tests rather than real results."},
+ 				    "pluginTest":     {"type":"string","enum":["auto","true","false"],"default":"auto","description":"Run as a JUnit Plug-in Test, which launches a second Eclipse with a running platform. 'auto' uses it when the project is a plug-in project. Tests that need OSGi fail as plain JUnit with errors that look like broken tests rather than real results."},
 				    "ui":             {"type":"boolean","default":false,"description":"Use the UI test application, which opens a workbench window on the user's screen. Off by default: a launched IDE should never be a surprise."},
+				    "debug":          {"type":"boolean","default":false,"description":"Launch in debug mode instead of plain run. The session appears in eclipse_debug_status and its state at a failure is readable through eclipse_debug_get_frames and eclipse_debug_evaluate."},
 				    "runtimeWorkspace": {"type":"string","description":"Workspace directory for the launched platform. Defaults to a sibling junit-workspace, and it is cleared on every run."},
 				    "maxResults":     {"type":"integer","default":50,"minimum":1,"maximum":2000,"description":"Reported cases. A suite of several hundred truncates; omitted says how many were dropped and eclipse_get_test_results returns the rest."},
 				    "dryRun":         {"type":"boolean","default":false,"description":"List the test types that would run, without running anything."},
@@ -166,10 +167,12 @@ public final class RunTestsTool implements IMcpTool {
 			// launching happens in a job: preLaunchCheck alone can take a while, and
 			// doing it here would defeat wait:false exactly as the p2 refresh once did
 			run.launchedAs(launchedAs);
+			boolean debug = args.getBoolean("debug", false); //$NON-NLS-1$
 			org.eclipse.core.runtime.jobs.Job.create("MCP test launch " + run.id(), progress -> { //$NON-NLS-1$
 				Object previous = suppressCompileErrorPrompt();
 				try {
-					org.eclipse.debug.core.ILaunch launch = configuration.launch(ILaunchManager.RUN_MODE, null);
+					org.eclipse.debug.core.ILaunch launch = configuration.launch(
+							debug ? ILaunchManager.DEBUG_MODE : ILaunchManager.RUN_MODE, null);
 					TestRunRegistry.watch(run, launch, asPlugin ? 300 : 120);
 				} catch (CoreException | RuntimeException e) {
 					// the runner bundles ship with the SDK, and JDT reports a missing one
@@ -218,6 +221,10 @@ public final class RunTestsTool implements IMcpTool {
 			if (asPlugin && !ui) {
 				result.put("headless", //$NON-NLS-1$
 						"Running the core test application, which has no workbench. Tests that need a Display fail here; pass ui true to run them in a real workbench window."); //$NON-NLS-1$
+			}
+			if (debug) {
+				result.put("debug", Boolean.TRUE).put("debugNote", //$NON-NLS-1$ //$NON-NLS-2$
+						"The tests are being debugged: the launch is a debug session, visible through eclipse_debug_status and addressable by its sessionId. Set a breakpoint first and the run suspends there; eclipse_debug_get_frames and eclipse_debug_evaluate read the state at it.");
 			}
 			if (!asPlugin && project.hasNature(PLUGIN_NATURE)) {
 				result.put("caveat", //$NON-NLS-1$

@@ -9,7 +9,9 @@ What it does not have is the resolved Java model, the incremental builder's prob
 Those are the capabilities exposed here.
 
 Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration within an allowlist, `eclipse_set_project_state` opens and closes projects, `eclipse_set_bree` rewrites plug-in manifests, `eclipse_add_repository` and `eclipse_remove_repository` change the configured update sites, and `eclipse_run_command` runs arbitrary commands in directories that same preference page has to name first.
-There is no general file writing, no refactoring and no debugger control, commands run only in directories the user has named, and the only git operation is a branch switch through EGit.
+The debugger tools change things too, in narrower ways that each description states: `eclipse_set_breakpoint` edits the breakpoint list, `eclipse_debug_launch` starts a process under the debugger, `eclipse_debug_evaluate` runs an expression inside the debugged program, and `eclipse_debug_control` steps and terminates it.
+There is no general file writing and no refactoring.
+Commands run only in directories the user has named, and the only git operation is a branch switch through EGit.
 The server is **disabled by default**, listens on the loopback interface only, and rejects every request that does not carry a bearer token.
 
 ## Building
@@ -786,6 +788,142 @@ The **UI test application is opt-in**. It opens a workbench window on the user's
 
 Results are collected through `JUnitCore.addTestRunListener`, which is global and fires for every run in the IDE. Runs are matched by a launch configuration name generated per run, so a test run someone starts at the keyboard is never reported as one of ours.
 
+With `debug` set, the tests launch in debug mode instead of plain run.
+That is the highest value combination these tools have: set an exception breakpoint, run the failing test under the debugger, and read the state at the moment of failure through `eclipse_debug_status`, `eclipse_debug_get_frames` and `eclipse_debug_evaluate`.
+The launch appears as a debug session with its own `sessionId`; nothing else about the run changes.
+
+### `eclipse_list_breakpoints` and `eclipse_set_breakpoint`
+
+The breakpoint list of the workspace, read on one side and edited on the other. Nothing here touches a running program or a file; breakpoints live beside the IDE, and Eclipse keeps them across restarts.
+
+`eclipse_list_breakpoints` takes `filter` (substring of the type name) and `maxResults`.
+
+```json
+{"total":1,"truncated":false,"breakpoints":[
+  {"id":"bp-42","kind":"line","typeName":"sample.Main","line":4,
+   "enabled":true,"installed":false,"hitCount":-1,"condition":null,
+   "suspendPolicy":"thread","resource":"/app/src/sample/Main.java"}]}
+```
+
+Exception breakpoints report `caught` and `uncaught` as well.
+`id` is derived from the marker id of the breakpoint's marker, so it is stable within a session and never an index into a list that changes when a breakpoint is added; it is what `eclipse_set_breakpoint` addresses one by.
+
+**`eclipse_set_breakpoint` changes the breakpoint list.**
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `type` | string | | Fully qualified type name for a line breakpoint. Required unless `id` is given. |
+| `line` | integer, 1 based | | Present means a line breakpoint. |
+| `exception` | string | | Fully qualified exception type. Mutually exclusive with `line`. Goes into `type` when creating. |
+| `caught` / `uncaught` | boolean | `false` / `true` | Exception breakpoints only. An uncaught exception is what a caller almost always wants; catching every caught one stops the world constantly. |
+| `condition` | string | | Java expression that has to be true to suspend. |
+| `hitCount` | integer | | Suspend only on the nth hit. |
+| `suspendPolicy` | `thread` \| `vm` | `thread` | Suspend the hitting thread or the whole VM. |
+| `enabled` | boolean | `true` | On create. On update an absent `enabled` leaves the current state. |
+| `remove` | boolean | `false` | Removes the named or matched breakpoint and ignores every other argument. |
+| `id` | string | | Address an existing breakpoint instead of matching by type and line. |
+
+Setting an existing breakpoint again updates it rather than duplicating it, and `created` versus `updated` says which happened.
+Moving an existing line breakpoint to another line is refused with the old position named, because updating would silently leave two armed positions behind where the caller asked for one.
+
+Two honesty rules shape the answer:
+
+**A breakpoint that is not installed will never be hit.**
+JDT accepts a line breakpoint on a line with no executable code without complaint and then never installs it.
+So the answer reports `installed` from the breakpoint itself, and whenever that comes back `false` a note says plainly what it means: with no session running it cannot install yet, which is expected, but if it is still not installed once a session runs, the chosen line carries no executable code and the breakpoint is decoration.
+When a session *is* already running and the breakpoint still did not install, the note says that outright.
+
+The breakpoint attaches to the file the workspace actually has the type in, found through the Java model, so it shows up at the right place in the editor's marker bar.
+For a type that lives in a jar there is no such file, and the breakpoint attaches to the workspace root, which is what JDT expects.
+
+### `eclipse_debug_launch`
+
+**Starts a process**: this runs project code under the IDE's debugger, and anything `main` does, the debugged program does.
+It answers with a `sessionId` and the state at the moment of answering.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `configuration` | string | | Name of an existing launch configuration to start in debug mode. Unknown names are refused with the list. |
+| `project` + `mainType` | string | | Build a Java Application launch on the fly instead of naming a saved one. |
+| `arguments` / `vmArguments` | string | | Program arguments and VM arguments. |
+| `stopInMain` | boolean | `false` | Suspend at the first executable line of `main`. |
+| `autoTerminateAfterSeconds` | integer | 900 | Terminate the program after this long, finished or not. Only sessions this server started are ever terminated. |
+| `waitForSuspendSeconds` | integer, 0 to 25 | 20 | Wait for the first suspend before answering. |
+
+A launch built from `project` and `mainType` is transient: it never appears in the user's saved configurations or launch history.
+Launching happens in a job, because creating the JVM takes seconds; the answer waits for the launch to register first and reports a failure as what failed.
+
+Sessions started by hand in the IDE, and launches made by `eclipse_run_tests`, get ids too: the registry listens to the launch manager, not to this one tool.
+"The user is stopped at a breakpoint right now, what is going on" is one of the questions this exists for, and it does not require that the session came from here.
+Terminated sessions stay listed briefly with `terminated: true`, so a caller polling sees what happened.
+
+Sessions this server started are terminated again when the plug-in stops, or after `autoTerminateAfterSeconds`, whichever comes first.
+A suspended JVM nobody can see is exactly the kind of mess a hidden IDE can produce otherwise.
+Sessions the user started are never terminated, at any point.
+
+### `eclipse_debug_status`
+
+Read only. Lists the debug sessions this IDE knows and their threads: per session whether it was started by MCP, whether it has terminated and whether anything is suspended, and per suspended thread the breakpoint that stopped it and the top frame as `declaringType.method(File.java:123)`.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `sessionId` | string | all sessions | Narrow to one session. |
+| `waitForSuspendSeconds` | integer, 0 to 25 | 0 | Block until the next suspend event, or report `timedOut`. |
+| `maxResults` | integer | 20 | Sessions reported, and threads reported per session. |
+
+`waitForSuspendSeconds` is what makes a debugger usable through a request-response protocol.
+Without it a caller has to poll and usually misses the moment; with it, "sleep until something stops" is one call that answers the moment a breakpoint is hit.
+
+### `eclipse_debug_get_frames`
+
+Read only. The stack of one suspended thread and the variables of one frame: index, declaring type, method with its argument types, line, source file, native flag, and per variable the name, declared type, value, `hasChildren` and the runtime type when it differs from the declared one.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `sessionId` | string | the only live session | Refused with the list when several are live. |
+| `thread` | string | the single suspended thread | Refused with the suspended threads when several are stopped and none is named. |
+| `frame` | integer | 0 | Stack frame index, top first. |
+| `variablePath` | string | | Dotted path into the object graph, e.g. `this.buffer.count`. Numeric segments address array elements. |
+| `maxResults` | integer | 100 | Frames reported, and variables reported for the selected frame. |
+| `maxValueLength` | integer | 500 | Cut every rendered value at this length; `valueTruncated` says so. |
+
+**One level per call.**
+`variablePath` descends exactly as far as it is asked to and returns the children of the variable it reached, never further.
+An unbounded walk over an object graph, a hundred element array or a live IDE object is how a client gets drowned, so it does not happen: go deeper with another call.
+
+### `eclipse_debug_evaluate`
+
+**Runs code inside the debugged program**, with every side effect that implies: field writes, method calls, IO.
+Evaluates a Java expression against one stack frame of a suspended thread, through the same AST evaluation engine the Display view uses.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `expression` | string, required | | The expression to evaluate. |
+| `sessionId` | string | the only live session | |
+| `thread` | string | the single suspended thread | |
+| `frame` | integer | 0 | Frame the expression sees as its context. |
+| `timeoutSeconds` | integer, 1 to 20 | 10 | Reports `timedOut` rather than blocking past the call timeout; the evaluation may continue regardless. |
+| `maxValueLength` | integer | 500 | |
+
+Evaluation is asynchronous underneath, so the tool waits on a latch and answers with whatever arrived.
+Compilation problems come back in `problems` rather than as a tool error: a mistyped expression is the caller's next question, not a broken server.
+A runtime exception thrown by the evaluation is reported as `exception`.
+
+### `eclipse_debug_control`
+
+**Changes the state of the debugged program**, and `terminate` kills the process.
+Takes `action`: `resume`, `stepOver`, `stepInto`, `stepReturn`, `suspend`, `terminate` or `disconnect`.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `action` | string, required | | One of the seven above. An unknown action is refused with the list. |
+| `sessionId` | string | the only live session | |
+| `thread` | string | the single suspended thread | The stepping actions need one; ambiguous is refused with the candidates. |
+| `waitForSuspendSeconds` | integer, 0 to 25 | 20 for resume and steps, 0 otherwise | How long to wait for the next suspend before answering. |
+
+After a step or a resume the tool waits for the next suspend and reports the new location in the same answer, so stepping costs one call rather than two.
+`timedOut` after a resume normally just means the program kept running, and the answer says that.
+
 ### `eclipse_list_declarations`
 
 Enumerates the types, methods or fields a project declares in its own source, and cross-checks each against the places an Eclipse runtime instantiates a class by name.
@@ -1420,9 +1558,10 @@ The contract for an implementation:
 | `com.vogella.eclipse.mcp.server` | The MCP protocol handling, the embedded Jetty and the bearer token filter | MCP SDK, Jetty, core |
 | `com.vogella.eclipse.mcp.jdt` | The two Java model tools | `org.eclipse.jdt.core`, core |
 | `com.vogella.eclipse.mcp.ui` | The editor context tool, the preference page and the startup hook | `org.eclipse.ui`, core, server |
+| `com.vogella.eclipse.mcp.debug` | The breakpoint tools, the debug session tools and the session registry | `org.eclipse.jdt.debug`, `org.eclipse.debug.core`, `org.eclipse.jdt.core`, core |
 
 `com.vogella.eclipse.mcp.core` deliberately has no reference to the MCP SDK, to Jetty or to any UI bundle, so that the tool API stays a candidate for the Eclipse Platform.
 
 ## Not in this iteration
 
-Debugger inspection; MCP resources and prompts; a stdio transport.
+MCP resources and prompts; a stdio transport.
