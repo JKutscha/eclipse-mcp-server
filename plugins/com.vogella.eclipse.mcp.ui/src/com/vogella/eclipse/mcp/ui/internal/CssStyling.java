@@ -179,17 +179,95 @@ final class CssStyling {
 			// the next reset look like it had something to take back
 			snippet = parsed.ok() ? css : null;
 		}
-		return result.put("applied", Boolean.valueOf(!drop && parsed.ok())) //$NON-NLS-1$
+		List<JsonObject> preferenceRules = new ArrayList<>();
+		boolean preferencesApplied = true;
+		if (!drop && parsed.ok()) {
+			for (PreferenceRules.Rule rule : PreferenceRules.scan(css)) {
+				PreferenceOutcome outcome = stylePreferences(themeEngine, rule);
+				preferenceRules.add(outcome.json());
+				preferencesApplied &= outcome.fullyApplied();
+			}
+		}
+		result.put("applied", Boolean.valueOf(!drop && parsed.ok() && preferencesApplied)) //$NON-NLS-1$
 				.put("previousSnippet", previous) //$NON-NLS-1$
 				.put("theme", activeThemeId(themeEngine)) //$NON-NLS-1$
 				.put("themeReapplied", Boolean.valueOf(themeReset)) //$NON-NLS-1$
 				.put("engines", Integer.valueOf(engines.size())) //$NON-NLS-1$
 				.put("rules", parsed.rules() < 0 ? null : Integer.valueOf(parsed.rules())) //$NON-NLS-1$
 				.put("errors", errors) //$NON-NLS-1$
-				.put("elapsedMillis", Long.valueOf((System.nanoTime() - start) / 1_000_000L)) //$NON-NLS-1$
-				.put("note", themeReset //$NON-NLS-1$
-						? "The snippet lives in memory only. It is gone on the next theme change, on eclipse_restart, and when this plug-in stops."
-						: "The theme engine could not be reached, so the snippet was added without re-applying the theme first and can only be taken back by restarting the IDE.");
+				.put("elapsedMillis", Long.valueOf((System.nanoTime() - start) / 1_000_000L)); //$NON-NLS-1$
+		if (!preferenceRules.isEmpty()) {
+			result.put("preferenceRules", preferenceRules); //$NON-NLS-1$
+		}
+		result.put("note", preferenceRules.isEmpty() ? note(themeReset) : PREFERENCE_NOTE + " " + note(themeReset)); //$NON-NLS-1$ //$NON-NLS-2$
+		return result;
+	}
+
+	private static String note(boolean themeReset) {
+		return themeReset ? LIFETIME_NOTE
+				: "The theme engine could not be reached, so the snippet was added without re-applying the theme first and can only be taken back by restarting the IDE."; //$NON-NLS-1$
+	}
+
+	private static final String LIFETIME_NOTE = "The snippet lives in memory only. It is gone on the next theme change, on eclipse_restart, and when this plug-in stops."; //$NON-NLS-1$
+
+	private static final String PREFERENCE_NOTE = "IEclipsePreferences blocks were styled through the theme engine's own preference path; preferenceRules says what took effect, and a theme change takes their overrides back like any other."; //$NON-NLS-1$
+
+	/**
+	 * Styles one {@code IEclipsePreferences} block through the same call the
+	 * workbench makes when a theme changes, then reads the keys back.
+	 * <p>
+	 * The engine leaves a value it did not set itself alone until the theme has
+	 * changed once this session, so verification is what makes the answer honest:
+	 * an unchanged key is reported as unchanged, with the value that is there now.
+	 */
+	/** What styling one preference block came to: the report and whether every key took. */
+	private record PreferenceOutcome(JsonObject json, boolean fullyApplied) {
+	}
+
+	private static PreferenceOutcome stylePreferences(Object themeEngine, PreferenceRules.Rule rule) {
+		JsonObject outcome = new JsonObject().put("selector", rule.selector()) //$NON-NLS-1$
+				.put("qualifier", rule.qualifier()); //$NON-NLS-1$
+		if (themeEngine == null) {
+			return new PreferenceOutcome(outcome.put("reason", //$NON-NLS-1$
+					"The theme engine could not be reached, so the block was not styled."), false);
+		}
+		JsonArray applied = new JsonArray();
+		JsonArray unchanged = new JsonArray();
+		boolean recognised = true;
+		try {
+			org.eclipse.core.runtime.preferences.IEclipsePreferences node = org.eclipse.core.runtime.preferences.InstanceScope.INSTANCE
+					.getNode(rule.qualifier());
+			// the same entry point StylingPreferencesHandler drives on every theme change,
+			// which keeps the backup bookkeeping for overridden values in platform code
+			// rather than here
+			themeEngine.getClass().getMethod("applyStyles", Object.class, boolean.class).invoke(themeEngine, node, //$NON-NLS-1$
+					Boolean.FALSE);
+			if (rule.values().isEmpty()) {
+				recognised = false;
+				outcome.put("reason", "No 'key=value' pair was recognised in the block."); //$NON-NLS-1$ //$NON-NLS-2$
+			}
+			for (Map.Entry<String, String> pair : rule.values().entrySet()) {
+				String actual = node.get(pair.getKey(), null);
+				if (pair.getValue().equals(actual)) {
+					applied.add(pair.getKey());
+				} else {
+					unchanged.add(new JsonObject().put("key", pair.getKey()) //$NON-NLS-1$
+							.put("requested", pair.getValue()) //$NON-NLS-1$
+							.put("current", actual)); //$NON-NLS-1$
+				}
+			}
+		} catch (java.lang.reflect.InvocationTargetException e) {
+			return new PreferenceOutcome(
+					outcome.put("error", "Styling the preferences failed: " + e.getCause()), false); //$NON-NLS-1$ //$NON-NLS-2$
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return new PreferenceOutcome(outcome.put("error", "Styling the preferences failed: " + e), false); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		outcome.put("appliedKeys", applied).put("unchangedKeys", unchanged); //$NON-NLS-1$ //$NON-NLS-2$
+		if (unchanged.size() > 0) {
+			outcome.put("note", "These keys kept their value: the theme engine overwrites a value it did not set itself only once the theme has changed this session. Activating another theme with eclipse_set_theme opens them up."); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		return new PreferenceOutcome(outcome,
+				recognised && unchanged.size() == 0 && applied.size() == rule.values().size());
 	}
 
 	/** Whether a snippet parsed, and how many rules it produced where that can be counted. */
