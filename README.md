@@ -1674,6 +1674,11 @@ The tool answers first and restarts two seconds later, so a dropped connection i
 |---|---|---|---|
 | `save` | boolean | `false` | Save dirty editors first. |
 | `force` | boolean | `false` | Restart anyway, discarding unsaved work. |
+| `splash` | boolean | `true` | `false` comes back without the splash screen. |
+
+`splash: false` appends `-nosplash` to the arguments the workbench hands the launcher for the next start, which is the same channel `Workbench.buildCommandLine` uses to pass `-data`.
+`splashSuppressed` in the answer reports whether the argument was added, and deliberately not whether the splash then stayed away: the splash is painted by the native launcher before the JVM exists, so nothing inside the IDE can observe the result.
+When the argument cannot be added the restart still happens, with `splashSuppressed` false, because a restart with a splash beats no restart at all.
 
 It refuses when editors have unsaved changes or a modal dialog is open, listing them, since restarting under an open dialog loses whatever is in it.
 
