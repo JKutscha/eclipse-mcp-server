@@ -77,10 +77,10 @@ public final class EvaluateTool implements IMcpTool {
 			}
 			IJavaStackFrame frame = (IJavaStackFrame) javaThread.getStackFrames()[Math
 					.min(args.getInt("frame", 0, 0, 500), Math.max(0, javaThread.getStackFrames().length - 1))]; //$NON-NLS-1$
-			IJavaProject project = projectOf(frame);
+			IJavaProject project = projectOf(frame, session);
 			if (project == null) {
 				throw new DebugSupport.Refusal(
-						"No workspace project can supply the types for this frame's class, so there is nothing to compile the expression against."); //$NON-NLS-1$
+						"No workspace project can supply the types for this frame's class, so there is nothing to compile the expression against. The launch configuration names no project and no open Java project on the workspace resolves the declaring type; open the project that contains it, or evaluate in a frame whose class is in the workspace."); //$NON-NLS-1$
 			}
 
 			IAstEvaluationEngine engine = EvaluationManager.newAstEvaluationEngine(project,
@@ -151,21 +151,64 @@ public final class EvaluateTool implements IMcpTool {
 		}
 	}
 
-	private IJavaProject projectOf(IJavaStackFrame frame) {
+	/**
+	 * The project whose classpath can compile an expression against this frame.
+	 * <p>
+	 * The launch configuration is asked first, because it names the project the
+	 * caller launched and answers without touching the workspace. The scan is the
+	 * fallback for a session this server did not start.
+	 */
+	private IJavaProject projectOf(IJavaStackFrame frame, DebugSessionRegistry.Session session) {
+		IJavaProject fromLaunch = launchProject(session);
+		if (fromLaunch != null) {
+			return fromLaunch;
+		}
+		String typeName;
 		try {
-			String typeName = frame.getDeclaringTypeName();
-			for (var project : org.eclipse.core.resources.ResourcesPlugin.getWorkspace().getRoot().getProjects()) {
-				if (!project.isAccessible()) {
+			typeName = frame.getDeclaringTypeName();
+		} catch (org.eclipse.debug.core.DebugException e) {
+			return null;
+		}
+		for (var project : org.eclipse.core.resources.ResourcesPlugin.getWorkspace().getRoot().getProjects()) {
+			// one project that cannot answer must not end the scan: JavaCore.create
+			// returns a handle for a project without the Java nature too, and findType
+			// then throws. With the catch outside this loop, the first such project in
+			// a large workspace made every evaluation fail.
+			try {
+				if (!project.isAccessible() || !project.hasNature(org.eclipse.jdt.core.JavaCore.NATURE_ID)) {
 					continue;
 				}
 				IJavaProject javaProject = org.eclipse.jdt.core.JavaCore.create(project);
 				if (javaProject != null && javaProject.findType(typeName) != null) {
 					return javaProject;
 				}
+			} catch (org.eclipse.core.runtime.CoreException e) {
+				continue;
 			}
-		} catch (org.eclipse.core.runtime.CoreException e) {
-			// no project means no compilation context, which the tool refuses on
 		}
 		return null;
+	}
+
+	/** The project the launch configuration names, when it names one that exists. */
+	private static IJavaProject launchProject(DebugSessionRegistry.Session session) {
+		try {
+			var launch = session.launch();
+			var configuration = launch == null ? null : launch.getLaunchConfiguration();
+			if (configuration == null) {
+				return null;
+			}
+			String name = configuration.getAttribute(
+					org.eclipse.jdt.launching.IJavaLaunchConfigurationConstants.ATTR_PROJECT_NAME, (String) null);
+			if (name == null || name.isBlank()) {
+				return null;
+			}
+			var project = org.eclipse.core.resources.ResourcesPlugin.getWorkspace().getRoot().getProject(name);
+			if (!project.isAccessible() || !project.hasNature(org.eclipse.jdt.core.JavaCore.NATURE_ID)) {
+				return null;
+			}
+			return org.eclipse.jdt.core.JavaCore.create(project);
+		} catch (org.eclipse.core.runtime.CoreException | RuntimeException e) {
+			return null;
+		}
 	}
 }

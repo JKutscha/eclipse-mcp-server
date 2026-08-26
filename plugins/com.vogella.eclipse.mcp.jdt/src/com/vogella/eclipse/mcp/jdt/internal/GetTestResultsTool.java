@@ -58,6 +58,11 @@ public final class GetTestResultsTool implements IMcpTool {
 		JsonObject result = TestRunRegistry.toJson(run, args.getInt("maxResults", 50, 1, 2000), //$NON-NLS-1$
 				args.getBoolean("includePassed", false)); //$NON-NLS-1$
 		if (args.getBoolean("abandon", false)) { //$NON-NLS-1$
+			// asking for the abandon makes zero reported tests the expected outcome, so
+			// the inconsistency warning would be a false alarm on the caller's own request
+			result.remove("stateInconsistent"); //$NON-NLS-1$
+			result.remove("launchedPlatformErrors"); //$NON-NLS-1$
+			result.remove("launchedPlatformNote"); //$NON-NLS-1$
 			result.put("abandoned", abandoned) //$NON-NLS-1$
 					.put("abandonNote", abandoned ? "The run was abandoned and its launch terminated." //$NON-NLS-1$ //$NON-NLS-2$
 							: "Nothing to abandon; the run had already finished."); //$NON-NLS-1$

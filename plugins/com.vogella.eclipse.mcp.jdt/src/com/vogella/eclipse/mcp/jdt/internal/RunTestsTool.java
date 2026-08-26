@@ -3,7 +3,9 @@ package com.vogella.eclipse.mcp.jdt.internal;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.core.resources.IMarker;
 import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -11,7 +13,14 @@ import org.eclipse.debug.core.DebugPlugin;
 import org.eclipse.debug.core.ILaunchConfigurationType;
 import org.eclipse.debug.core.ILaunchConfigurationWorkingCopy;
 import org.eclipse.debug.core.ILaunchManager;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaProject;
+import org.eclipse.jdt.core.IPackageFragment;
+import org.eclipse.jdt.core.IPackageFragmentRoot;
+import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.junit.JUnitCore;
@@ -42,6 +51,9 @@ public final class RunTestsTool implements IMcpTool {
 	private static final String UI_TEST_APPLICATION = "org.eclipse.pde.junit.runtime.uitestapplication"; //$NON-NLS-1$
 
 	private static final String PLUGIN_NATURE = "org.eclipse.pde.PluginNature"; //$NON-NLS-1$
+
+	/** Projects named in the pre-flight before it says how many more there are. */
+	private static final int MAX_PREFLIGHT_PROJECTS = 10;
 
 	/**
 	 * The preference the "Errors in Workspace / Always launch without asking" toggle
@@ -123,7 +135,8 @@ public final class RunTestsTool implements IMcpTool {
 				}
 			}
 			if (args.getBoolean("dryRun", false)) { //$NON-NLS-1$
-				return McpToolResult.of(dryRun(javaProject, type, monitor).toString());
+				return McpToolResult.of(dryRun(javaProject, type, monitor, args.getInt("maxResults", 50, 1, 2000), //$NON-NLS-1$
+						launchedAs(project, args)).toString());
 			}
 
 			TestRunRegistry.Run active = TestRunRegistry.getInstance().findRunning();
@@ -137,7 +150,7 @@ public final class RunTestsTool implements IMcpTool {
 			boolean asPlugin = "true".equals(pluginTest) //$NON-NLS-1$
 					|| ("auto".equals(pluginTest) && project.hasNature(PLUGIN_NATURE)); //$NON-NLS-1$
 			boolean ui = args.getBoolean("ui", false); //$NON-NLS-1$
-			String launchedAs = asPlugin ? (ui ? "pluginTest-ui" : "pluginTest") : "junit"; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+			String launchedAs = launchedAs(project, args);
 			TestRunRegistry.Run run = TestRunRegistry.getInstance()
 					.create(testClass == null ? projectName : testClass + (testMethod == null ? "" : "#" + testMethod)); //$NON-NLS-1$ //$NON-NLS-2$
 
@@ -152,6 +165,13 @@ public final class RunTestsTool implements IMcpTool {
 			ILaunchConfigurationWorkingCopy configuration = launchType.newInstance(null, run.launchName());
 			configuration.setAttribute(IJavaLaunchConfigurationConstants.ATTR_PROJECT_NAME, projectName);
 			configuration.setAttribute(ATTR_TEST_KIND, kind);
+			// a run nobody is watching must not ask anything: a debugged test that
+			// suspends otherwise raises the modal perspective switch prompt
+			configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.TARGET_DEBUG_PERSPECTIVE,
+					com.vogella.eclipse.mcp.core.LaunchAttributes.PERSPECTIVE_NONE);
+			configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.TARGET_RUN_PERSPECTIVE,
+					com.vogella.eclipse.mcp.core.LaunchAttributes.PERSPECTIVE_NONE);
+			configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.STARTED_BY_MCP, true);
 			if (type == null) {
 				// a container runs everything under it, which is how Run As on a project works
 				configuration.setAttribute(ATTR_CONTAINER, javaProject.getHandleIdentifier());
@@ -164,6 +184,10 @@ public final class RunTestsTool implements IMcpTool {
 			if (asPlugin) {
 				configurePlatform(configuration, args.getString("runtimeWorkspace"), ui); //$NON-NLS-1$
 			}
+			// only for the UI application: it is the one that needs a workbench, and a
+			// workspace plug-in with unbuilt classes shadows the installed bundle and
+			// stops that workbench from starting, which reports as a run with no tests
+			JsonObject preflight = ui && asPlugin ? unbuiltWorkspacePlugins() : null;
 			// launching happens in a job: preLaunchCheck alone can take a while, and
 			// doing it here would defeat wait:false exactly as the p2 refresh once did
 			run.launchedAs(launchedAs);
@@ -211,6 +235,9 @@ public final class RunTestsTool implements IMcpTool {
 								configuration.getAttribute(IPDELauncherConstants.RUN_IN_UI_THREAD, true))
 						.put(IPDELauncherConstants.LOCATION,
 								configuration.getAttribute(IPDELauncherConstants.LOCATION, (String) null)));
+			}
+			if (preflight != null) {
+				result.put("workspacePluginErrors", preflight); //$NON-NLS-1$
 			}
 			JsonArray broken = projectsWithErrors(project);
 			if (broken.size() > 0) {
@@ -339,17 +366,111 @@ public final class RunTestsTool implements IMcpTool {
 		configuration.setAttribute(IPDELauncherConstants.AUTOMATIC_ADD, true);
 	}
 
-	private static JsonObject dryRun(IJavaProject javaProject, IType type, IProgressMonitor monitor)
-			throws CoreException {
-		IType[] found = JUnitCore.findTestTypes(type == null ? javaProject : type, monitor);
-		JsonArray types = new JsonArray();
-		for (IType candidate : found) {
-			types.add(candidate.getFullyQualifiedName());
+	/**
+	 * Workspace plug-in projects PDE reports errors on, which a UI test launch
+	 * takes with it because every workspace plug-in is on its bundle list.
+	 * <p>
+	 * Markers only, no build: this must not cost seconds before a launch. With
+	 * auto-build off the markers can be stale, so an empty answer proves nothing
+	 * and the note says as much.
+	 */
+	private static JsonObject unbuiltWorkspacePlugins() {
+		JsonArray projects = new JsonArray();
+		int total = 0;
+		try {
+			IMarker[] markers = ResourcesPlugin.getWorkspace().getRoot()
+					.findMarkers("org.eclipse.pde.core.problem", true, IResource.DEPTH_INFINITE); //$NON-NLS-1$
+			java.util.Set<String> named = new java.util.LinkedHashSet<>();
+			for (IMarker marker : markers) {
+				if (marker.getAttribute(IMarker.SEVERITY, IMarker.SEVERITY_INFO) != IMarker.SEVERITY_ERROR) {
+					continue;
+				}
+				total++;
+				if (named.size() < MAX_PREFLIGHT_PROJECTS && marker.getResource().getProject() != null) {
+					named.add(marker.getResource().getProject().getName());
+				}
+			}
+			named.forEach(projects::add);
+		} catch (CoreException e) {
+			return null;
 		}
-		return new JsonObject().put("dryRun", Boolean.TRUE) //$NON-NLS-1$
+		boolean autoBuilding = ResourcesPlugin.getWorkspace().isAutoBuilding();
+		if (total == 0 && autoBuilding) {
+			return null;
+		}
+		return new JsonObject().put("projects", projects) //$NON-NLS-1$
+				.put("total", Integer.valueOf(total)) //$NON-NLS-1$
+				.put("truncated", Boolean.valueOf(projects.size() < total)) //$NON-NLS-1$
+				.put("autoBuilding", Boolean.valueOf(autoBuilding)) //$NON-NLS-1$
+				.put("note", //$NON-NLS-1$
+						"The UI test application starts a workbench, and every workspace plug-in is on this launch's bundle list, so a workspace copy without compiled classes shadows the installed bundle and the workbench fails to start. That reports as a run with no tests rather than as an error. These are PDE's markers only, so with auto-build off they can be stale and an empty list proves nothing; build the workspace if the run comes back with total 0."); //$NON-NLS-1$
+	}
+
+	/** How the run would be launched, which a dry run has to report as well. */
+	private static String launchedAs(org.eclipse.core.resources.IProject project, ToolArguments args)
+			throws CoreException {
+		String pluginTest = args.getString("pluginTest", "auto"); //$NON-NLS-1$ //$NON-NLS-2$
+		boolean asPlugin = "true".equals(pluginTest) //$NON-NLS-1$
+				|| ("auto".equals(pluginTest) && project.hasNature(PLUGIN_NATURE)); //$NON-NLS-1$
+		boolean ui = args.getBoolean("ui", false); //$NON-NLS-1$
+		return asPlugin ? (ui ? "pluginTest-ui" : "pluginTest") : "junit"; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+	}
+
+	private static JsonObject dryRun(IJavaProject javaProject, IType type, IProgressMonitor monitor, int maxResults,
+			String launchedAs) throws CoreException {
+		List<String> names = new ArrayList<>();
+		JsonObject result = new JsonObject().put("dryRun", Boolean.TRUE) //$NON-NLS-1$
 				.put("testKind", testKind(javaProject)) //$NON-NLS-1$
-				.put("total", found.length) //$NON-NLS-1$
+				.put("launchedAs", launchedAs); //$NON-NLS-1$
+		try {
+			for (IType candidate : JUnitCore.findTestTypes(type == null ? javaProject : type, monitor)) {
+				names.add(candidate.getFullyQualifiedName());
+			}
+		} catch (JavaModelException | RuntimeException e) {
+			// JDT's own scan descends into an anonymous type declared inside a lambda
+			// and builds a handle that does not resolve, and the failure takes the whole
+			// project with it. Scanning type by type costs one type instead.
+			int skipped = perTypeScan(javaProject, monitor, names);
+			result.put("scan", "perType") //$NON-NLS-1$ //$NON-NLS-2$
+					.put("skippedTypes", Integer.valueOf(skipped)) //$NON-NLS-1$
+					.put("scanNote", //$NON-NLS-1$
+							"The project-wide scan of JDT failed with '%s', so the types were collected one at a time and %d of them were skipped. The list may therefore be incomplete." //$NON-NLS-1$
+									.formatted(String.valueOf(e.getMessage()), Integer.valueOf(skipped)));
+		}
+		names.sort(String::compareTo);
+		JsonArray types = new JsonArray();
+		names.stream().limit(maxResults).forEach(types::add);
+		return result.put("total", Integer.valueOf(names.size())) //$NON-NLS-1$
+				.put("truncated", Boolean.valueOf(names.size() > maxResults)) //$NON-NLS-1$
 				.put("testTypes", types); //$NON-NLS-1$
+	}
+
+	/**
+	 * Asks JDT per top level type instead of per project, so that one type it
+	 * cannot resolve costs that type rather than the answer. Returns how many were
+	 * skipped, because a scan that quietly returns fewer tests is worse than one
+	 * that says it was incomplete.
+	 */
+	private static int perTypeScan(IJavaProject javaProject, IProgressMonitor monitor, List<String> into)
+			throws JavaModelException {
+		int skipped = 0;
+		for (IPackageFragment fragment : javaProject.getPackageFragments()) {
+			if (fragment.getKind() != IPackageFragmentRoot.K_SOURCE) {
+				continue;
+			}
+			for (ICompilationUnit unit : fragment.getCompilationUnits()) {
+				for (IType candidate : unit.getTypes()) {
+					try {
+						for (IType test : JUnitCore.findTestTypes(candidate, monitor)) {
+							into.add(test.getFullyQualifiedName());
+						}
+					} catch (CoreException | RuntimeException e) {
+						skipped++;
+					}
+				}
+			}
+		}
+		return skipped;
 	}
 
 	/**

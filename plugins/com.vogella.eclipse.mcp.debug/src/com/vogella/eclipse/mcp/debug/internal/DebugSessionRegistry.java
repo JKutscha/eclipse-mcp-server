@@ -380,11 +380,24 @@ public final class DebugSessionRegistry {
 			session = name == null ? null : pending.remove(name);
 			if (session == null) {
 				String id = "debug-" + ids.incrementAndGet(); //$NON-NLS-1$
-				session = new Session(id, false, name);
+				// a test run launched with debug true is ours as well, and it reaches
+				// the registry through the launch manager rather than through prepare
+				session = new Session(id, startedByMcp(launchValue), name);
 				sessions.put(id, session);
 			}
 		}
 		session.attach(launchValue);
+	}
+
+	/** Whether the configuration carries this server's marker. */
+	private static boolean startedByMcp(ILaunch launchValue) {
+		try {
+			var configuration = launchValue.getLaunchConfiguration();
+			return configuration != null && configuration
+					.getAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.STARTED_BY_MCP, false);
+		} catch (org.eclipse.core.runtime.CoreException | RuntimeException e) {
+			return false;
+		}
 	}
 
 	private void markTerminated(ILaunch launchValue) {
