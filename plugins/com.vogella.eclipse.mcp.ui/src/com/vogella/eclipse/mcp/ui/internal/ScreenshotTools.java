@@ -199,7 +199,7 @@ public final class ScreenshotTools {
 
 		@Override
 		public String getDescription() {
-			return "Captures the IDE as a PNG and writes it to a file, returning the path. Targets are a workbench part by id, a shell by title, or the whole display; passing part or shellTitle selects the target on its own. Omitting both shellTitle and part captures the active workbench window's shell, which is also what a target of shell without a title does; the display target must be asked for explicitly. The answer reports which method worked: rootCapture reads the real screen pixels, widgetPrint paints the widget hierarchy instead, which is the fallback on a compositing window manager where reading the X11 root yields nothing. For method widgetPrint the areas between parts that no print paints are replaced with the widget background colour before the image is written, and the answer counts them in unpaintedPixels, so a whole shell capture does not arrive outlined in filler colour. Use it for UI work such as layout, theming and dialog rendering; for anything textual the other tools answer better and shorter. A part that is not visible is refused rather than captured blank, unless activate is set. On a HiDPI monitor widgetPrint captures at the monitor's zoom, so the image is larger than the widget's size in points: capturedArea is the pixels returned, areaInPoints is the widget, and zoom is the percentage between them. Set includeToolbar to capture a part together with its surrounding stack, but note that the stack's topRight children, the view toolbar among them, are not painted by any widget print rooted inside the window; capture the shell and crop to the bounds from eclipse_get_widget_tree for those."; //$NON-NLS-1$
+			return "Captures the IDE as a PNG and writes it to a file, returning the path. Targets are a workbench part by id, a shell by title, or the whole display; passing part or shellTitle selects the target on its own. Omitting both shellTitle and part captures the active workbench window's shell, which is also what a target of shell without a title does; the display target must be asked for explicitly. The answer reports which method worked: rootCapture reads the real screen pixels, widgetPrint paints the widget hierarchy instead, which is the fallback on a compositing window manager where reading the X11 root yields nothing. A shell capture is sized to the shell's client area and composes every visible child of the shell into one image, so the trim bars are in it; the window decorations, meaning the title bar and the frame, are drawn by the window manager and are present only when rootCapture succeeded. requestedArea names the bounds of what was asked for, and when the capture covers less than that, requestedAreaNote says what was excluded and why. For method widgetPrint the areas between parts that no print paints are replaced with the widget background colour before the image is written, and the answer counts them in unpaintedPixels, so a whole shell capture does not arrive outlined in filler colour. Use it for UI work such as layout, theming and dialog rendering; for anything textual the other tools answer better and shorter. A part that is not visible is refused rather than captured blank, unless activate is set. On a HiDPI monitor widgetPrint captures at the monitor's zoom, so the image is larger than the widget's size in points: capturedArea is the pixels returned, areaInPoints is the widget, and zoom is the percentage between them. Set includeToolbar to capture a part together with its surrounding stack, but note that the stack's topRight children, the view toolbar among them, are not painted by any widget print rooted inside the window; capture the shell and crop to the bounds from eclipse_get_widget_tree for those."; //$NON-NLS-1$
 		}
 
 		@Override
@@ -251,10 +251,18 @@ public final class ScreenshotTools {
 				int maxWidth, String outputPath, boolean includeBase64, boolean includeToolbar) {
 			Display display = PlatformUI.getWorkbench().getDisplay();
 			Rectangle area;
+			// the bounds of what the caller named, which the answer reports even when
+			// the capture covers less
+			Rectangle requested;
+			// what is outside the capture although the caller named it, if anything
+			String exclusion = null;
+			Rectangle clientArea = null;
+			List<Paintable> pieces = null;
 			// the control to paint if reading the root drawable comes back empty
 			Control printable = null;
 			if ("display".equals(target)) { //$NON-NLS-1$
 				area = display.getBounds();
+				requested = new Rectangle(area.x, area.y, area.width, area.height);
 			} else if ("shell".equals(target)) { //$NON-NLS-1$
 				Shell shell = findShell(display, shellTitle);
 				if (shell == null) {
@@ -262,6 +270,8 @@ public final class ScreenshotTools {
 							: "No shell matching '%s'.".formatted(shellTitle)); //$NON-NLS-1$
 				}
 				area = shell.getBounds();
+				requested = new Rectangle(area.x, area.y, area.width, area.height);
+				exclusion = DECORATIONS_EXCLUDED;
 				printable = shell;
 			} else {
 				Control control = findPart(partId, activate);
@@ -276,6 +286,7 @@ public final class ScreenshotTools {
 				// map to display coordinates and capture the real pixels, rather than
 				// Control.print(), which has GTK gaps the widget on screen does not
 				area = display.map(control.getParent(), null, control.getBounds());
+				requested = new Rectangle(area.x, area.y, area.width, area.height);
 				printable = control;
 			}
 			if (area.width <= 0 || area.height <= 0) {
@@ -295,26 +306,24 @@ public final class ScreenshotTools {
 				if (isBlank(image.getImageData()) && printable instanceof Shell shell
 						&& shell.getChildren().length > 0) {
 					// Shell.print returns blank under a compositing window manager while
-					// Composite.print does not, so paint the shell's content instead.
-					// Trim and decorations are lost, which does not matter for reading a
-					// dialog, and it is the only path that produces pixels here.
-					printable = shell.getChildren()[0];
-					Rectangle inner = printable.getBounds();
-					if (inner.width > 0 && inner.height > 0) {
-						area = new Rectangle(area.x, area.y, inner.width, inner.height);
-					}
+					// Composite.print does not, so paint the shell's content instead:
+					// every visible child at its own bounds, trim bars included, rather
+					// than one of them alone. The window decorations are no child of
+					// anything SWT can print; requestedArea and its note tell the caller.
+					clientArea = shell.getClientArea();
+					pieces = paintablesOf(shell);
 				}
 				if (isBlank(image.getImageData()) && printable != null) {
-					Control painted = printable;
+					final Control painted = printable;
+					final List<Paintable> composed = pieces;
 					// A compositing window manager redirects window contents into an
 					// offscreen pixmap, so reading the X11 root drawable yields nothing.
 					// Painting the widget hierarchy ourselves does work there. It has
 					// known GTK gaps, which is why it is the fallback and not the
 					// primary path, but a slightly wrong image beats no image at all.
 					image.dispose();
-					Rectangle own = printable.getBounds();
-					int width = Math.max(1, own.width);
-					int height = Math.max(1, own.height);
+					Rectangle own = clientArea != null ? clientArea : painted.getBounds();
+					Size canvas = compositionSize(own.width, own.height);
 					// print paints at the monitor's device scale, so drawing into an
 					// image sized in points wrote a 2x picture into a 1x canvas and kept
 					// the top left quarter, silently. An ImageGcDrawer is given a GC that
@@ -329,9 +338,15 @@ public final class ScreenshotTools {
 						// produces, which is most of what these captures are used for
 						drawer.setBackground(display.getSystemColor(SWT.COLOR_MAGENTA));
 						drawer.fillRectangle(0, 0, drawnWidth, drawnHeight);
-						painted.print(drawer);
-					}, width, height);
-					area = new Rectangle(area.x, area.y, width, height);
+						if (composed == null) {
+							painted.print(drawer);
+						} else {
+							for (Paintable piece : composed) {
+								piece.print(drawer);
+							}
+						}
+					}, canvas.width(), canvas.height());
+					area = new Rectangle(area.x, area.y, canvas.width(), canvas.height());
 					method = "widgetPrint"; //$NON-NLS-1$
 				}
 				ImageData data = image.getImageData(zoom);
@@ -343,11 +358,18 @@ public final class ScreenshotTools {
 				// after the blank check: a fully unpainted capture must still read as
 				// uniform here, and swapping the filler first would hide exactly that
 				Unpainted unpainted = "widgetPrint".equals(method) && printable != null //$NON-NLS-1$
-						? replaceFiller(data, printable)
+						? replaceFiller(data, backgroundSource(printable, pieces))
 						: null;
 				JsonObject written = write(display, image, data, area, maxWidth, outputPath, includeBase64)
 						.put("method", method) //$NON-NLS-1$
-						.put("zoom", Integer.valueOf(zoom)); //$NON-NLS-1$
+						.put("zoom", Integer.valueOf(zoom)) //$NON-NLS-1$
+						.put("requestedArea", describe(requested)); //$NON-NLS-1$
+				if (!requested.equals(area)) {
+					written.put("requestedAreaNote", exclusion != null ? exclusion //$NON-NLS-1$
+							: "The capture covers %dx%d points while requestedArea names %dx%d." //$NON-NLS-1$
+									.formatted(Integer.valueOf(area.width), Integer.valueOf(area.height),
+											Integer.valueOf(requested.width), Integer.valueOf(requested.height)));
+				}
 				if (unpainted != null) {
 					written.put("unpaintedPixels", Integer.valueOf(unpainted.pixels())) //$NON-NLS-1$
 							.put("unpaintedFraction", Double.valueOf(unpainted.fraction())) //$NON-NLS-1$
@@ -371,6 +393,79 @@ public final class ScreenshotTools {
 			} finally {
 				image.dispose();
 			}
+		}
+
+		/** What a shell capture leaves out, and why nothing can paint it. */
+		private static final String DECORATIONS_EXCLUDED = "The window decorations, meaning the title bar and the frame around the shell, are drawn by the window manager and are not part of the client area this capture paints, so they are not in the image."; //$NON-NLS-1$
+
+		/** The size of a composed shell capture's canvas, as plain values. */
+		public record Size(int width, int height) {
+		}
+
+		/**
+		 * The canvas a composed shell capture paints into: the shell's client area,
+		 * never empty, so that a degenerate shell still yields an image the
+		 * uniform-pixel check can judge.
+		 */
+		public static Size compositionSize(int clientWidth, int clientHeight) {
+			return new Size(Math.max(1, clientWidth), Math.max(1, clientHeight));
+		}
+
+		/** Where a child goes in a composed shell capture, as plain values. */
+		public record Placement(int x, int y, int width, int height) {
+		}
+
+		/**
+		 * Where a child is painted in a composed shell capture, or {@code null} when
+		 * it is left out because it is invisible or has an empty bounds.
+		 */
+		public static Placement placementOf(int x, int y, int width, int height, boolean visible) {
+			if (!visible || width <= 0 || height <= 0) {
+				return null;
+			}
+			return new Placement(x, y, width, height);
+		}
+
+		/** One control of a composed shell capture, with its placement. */
+		private record Paintable(Control control, Rectangle at) {
+
+			/**
+			 * Prints the control into an image of its own and draws that image at its
+			 * place, so every piece goes through the same print a single child would.
+			 */
+			void print(GC target) {
+				Image piece = new Image(target.getDevice(), (gc, w, h) -> control.print(gc), at.width, at.height);
+				try {
+					target.drawImage(piece, at.x, at.y);
+				} finally {
+					piece.dispose();
+				}
+			}
+		}
+
+		private static List<Paintable> paintablesOf(Shell shell) {
+			List<Paintable> paintables = new ArrayList<>();
+			for (Control child : shell.getChildren()) {
+				Rectangle bounds = child.getBounds();
+				Placement at = placementOf(bounds.x, bounds.y, bounds.width, bounds.height, child.isVisible());
+				if (at != null) {
+					paintables.add(new Paintable(child, new Rectangle(at.x(), at.y(), at.width(), at.height())));
+				}
+			}
+			return paintables;
+		}
+
+		/**
+		 * The widget whose background replaces unpainted pixels: the first child for a
+		 * composed shell, which is what the one-child path used before composing.
+		 */
+		private static Control backgroundSource(Control printable, List<Paintable> pieces) {
+			return pieces != null && !pieces.isEmpty() ? pieces.get(0).control() : printable;
+		}
+
+		/** Bounds in the {@code x,y widthxheight} form the other tools report. */
+		private static String describe(Rectangle rectangle) {
+			return rectangle.x + "," + rectangle.y + " " + rectangle.width + "x" + rectangle.height; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 		}
 
 		private static JsonObject write(Display display, Image image, ImageData data, Rectangle area, int maxWidth,
