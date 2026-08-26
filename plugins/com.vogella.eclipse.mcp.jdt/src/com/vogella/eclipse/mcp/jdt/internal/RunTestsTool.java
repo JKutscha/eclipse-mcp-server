@@ -89,6 +89,7 @@ public final class RunTestsTool implements IMcpTool {
 				    "testMethod":     {"type":"string","description":"Single method of testClass."},
  				    "pluginTest":     {"type":"string","enum":["auto","true","false"],"default":"auto","description":"Run as a JUnit Plug-in Test, which launches a second Eclipse with a running platform. 'auto' uses it when the project is a plug-in project. Tests that need OSGi fail as plain JUnit with errors that look like broken tests rather than real results."},
 				    "buildFirst":     {"type":"string","enum":["auto","full","never"],"default":"auto","description":"Build the launch's projects before launching. auto builds incrementally when auto-build is off, which is when nothing else would. full rebuilds them completely, which is the only thing that regenerates the OSGI-INF declarative services descriptors for sources that have not changed: those are written by a compilation participant, so they appear only for units that are actually recompiled. Use full once after turning descriptor generation on, not on every run: in a large workspace it costs minutes."},
+				    "display":        {"type":"string","description":"X display for a UI run, e.g. :1 for a VNC server or :99 for Xvfb, so the workbench opens there instead of on the user's screen. GDK_BACKEND=x11 is set with it, without which GTK takes the Wayland compositor and ignores the display. X11 only, so GTK platforms; on Windows and macOS SWT does not draw through X11 and the answer says the display was not applied rather than pretending it was. Start the server yourself: a display this tool started would be a process nobody owns."},
 				    "workspacePlugins": {"type":"string","enum":["required","all"],"default":"required","description":"Which workspace plug-ins the launched platform gets. required is the test bundle and what it needs; all adds every plug-in in the workspace, which is the PDE launch tab's own default and which breaks a UI test launch in a workspace holding unbuilt copies of platform bundles."},
 				    "ui":             {"type":"boolean","default":false,"description":"Use the UI test application, which opens a workbench window on the user's screen. Off by default: a launched IDE should never be a surprise. A UI launch depends on generated artefacts being current in a way the headless one does not: the OSGI-INF declarative services descriptors carry the wiring between components, they are build output rather than committed source, and no compilation error flags a mismatch. A run that comes back with zero tests is usually that, so read descriptorGeneration and buildBeforeLaunch in the answer before suspecting the test bundle."},
 				    "debug":          {"type":"boolean","default":false,"description":"Launch in debug mode instead of plain run. The session appears in eclipse_debug_status and its state at a failure is readable through eclipse_debug_get_frames and eclipse_debug_evaluate."},
@@ -188,6 +189,7 @@ public final class RunTestsTool implements IMcpTool {
 			String buildFirst = args.getString("buildFirst", "auto"); //$NON-NLS-1$ //$NON-NLS-2$
 			boolean autoBuilding = ResourcesPlugin.getWorkspace().isAutoBuilding();
 			JsonObject built = asPlugin ? buildForLaunch(project, buildFirst, autoBuilding, monitor) : null;
+			JsonObject displayed = ui && asPlugin ? applyDisplay(configuration, args.getString("display")) : null; //$NON-NLS-1$
 			boolean allWorkspacePlugins = "all".equals(args.getString("workspacePlugins", "required")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 			String testBundle = symbolicName(project);
 			if (asPlugin) {
@@ -268,6 +270,9 @@ public final class RunTestsTool implements IMcpTool {
 			}
 			if (built != null) {
 				result.put("buildBeforeLaunch", built); //$NON-NLS-1$
+			}
+			if (displayed != null) {
+				result.put("display", displayed); //$NON-NLS-1$
 			}
 			if (asPlugin) {
 				result.put("descriptorGeneration", descriptorGeneration(project)); //$NON-NLS-1$
@@ -552,6 +557,37 @@ public final class RunTestsTool implements IMcpTool {
 		}
 		return result.put("note", //$NON-NLS-1$
 				"Descriptor generation is on and descriptors are present, so an incremental build keeps them current. Whether they MATCH the current source cannot be checked from here: a descriptor generated against older source is a file like any other, and that failure is invisible until the launched platform misbehaves."); //$NON-NLS-1$
+	}
+
+	/**
+	 * Sends a UI run to another X display, so the workbench does not open over
+	 * whatever the person at the machine is doing.
+	 * <p>
+	 * The environment is appended rather than replaced: a launch needs the rest of
+	 * it. GDK_BACKEND goes with the display because GTK otherwise takes the Wayland
+	 * compositor and the display is silently ignored, which is the failure this
+	 * whole feature exists to avoid.
+	 */
+	private static JsonObject applyDisplay(ILaunchConfigurationWorkingCopy configuration, String display) {
+		if (display == null) {
+			return null;
+		}
+		String windowSystem = org.eclipse.core.runtime.Platform.getWS();
+		JsonObject result = new JsonObject().put("requested", display) //$NON-NLS-1$
+				.put("windowSystem", windowSystem); //$NON-NLS-1$
+		if (!"gtk".equals(windowSystem)) { //$NON-NLS-1$
+			return result.put("applied", Boolean.FALSE) //$NON-NLS-1$
+					.put("reason", //$NON-NLS-1$
+							"DISPLAY only redirects an X11 toolkit, and this IDE runs on the %s window system, where SWT does not draw through X11. The run will open on the usual screen." //$NON-NLS-1$
+									.formatted(windowSystem));
+		}
+		configuration.setAttribute(ILaunchManager.ATTR_ENVIRONMENT_VARIABLES,
+				java.util.Map.of("DISPLAY", display, "GDK_BACKEND", "x11")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		configuration.setAttribute(ILaunchManager.ATTR_APPEND_ENVIRONMENT_VARIABLES, true);
+		return result.put("applied", Boolean.TRUE) //$NON-NLS-1$
+				.put("variables", "DISPLAY=%s, GDK_BACKEND=x11".formatted(display)) //$NON-NLS-1$ //$NON-NLS-2$
+				.put("note", //$NON-NLS-1$
+						"The workbench opens on that display rather than on this screen. Nothing here starts or checks it: a launch against a display that is not running fails in the launched process, not in this answer."); //$NON-NLS-1$
 	}
 
 	/** How the run would be launched, which a dry run has to report as well. */

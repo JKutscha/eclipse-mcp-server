@@ -1817,6 +1817,12 @@ The contract for an implementation:
 
 `com.vogella.eclipse.mcp.core` deliberately has no reference to the MCP SDK, to Jetty or to any UI bundle, so that the tool API stays a candidate for the Eclipse Platform.
 
+## Commercial support
+
+[vogella GmbH](https://vogella.com/services/) builds and maintains this server and offers training and consulting around Eclipse, the Eclipse platform and its tooling, and AI based Java cleanup.
+
+If you use this server in earnest and something is missing, saying so is welcome either way: the issues and pull requests here are open, and the commercial route exists for work that wants a schedule attached.
+
 ## Not in this iteration
 
 MCP resources and prompts; a stdio transport.
