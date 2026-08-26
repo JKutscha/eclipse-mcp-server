@@ -26,6 +26,9 @@
       <tool class="com.vogella.eclipse.mcp.ui.internal.VisibilityTool"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.EditorTools$ListEditors"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.EditorTools$CloseEditor"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.CommandTools$ListCommands"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.CommandTools$Run"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.WindowTools"/>
    </extension>
 
    <extension point="org.eclipse.ui.preferencePages">

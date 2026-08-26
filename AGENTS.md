@@ -49,10 +49,15 @@ It also has no JSON library, which is why it carries the small writer in `com.vo
 When a core tool needs something to happen in the UI, it goes through a hook the UI side registers, the way `eclipse_clear_log` empties the Error Log view through `LogClearedHandlers`: core declares the interface, `McpUiPlugin.start` registers the implementation, and the handler's answer is folded into the tool's result. A failing handler must never turn a completed operation into a failed call.
 
 **Most tools are read-only, and the exceptions are deliberate.**
-`eclipse_organize_imports` and `eclipse_format` modify the file they are given, `eclipse_write_file` creates and replaces files, `eclipse_set_target_platform` replaces what the workspace compiles against, `eclipse_build` runs builders, and `eclipse_get_problems` triggers a build when auto-build is off.
+`eclipse_organize_imports` and `eclipse_format` modify the file they are given, `eclipse_write_file` creates and replaces files, `eclipse_set_target_platform` replaces what the workspace compiles against, `eclipse_build` runs builders, `eclipse_get_problems` triggers a build when auto-build is off, `eclipse_run_workbench_command` does whatever the named command's handler does, `eclipse_manage_window` opens and closes windows, and `eclipse_log_status` writes into the Error Log.
 The debugger tools change things without touching the workspace: `eclipse_set_breakpoint` edits the breakpoint list, `eclipse_debug_launch` starts a process, `eclipse_debug_evaluate` runs an expression inside the debugged program, and `eclipse_debug_control` steps and terminates it.
 Everything else must not write, and no tool may open a dialog or perform a refactoring.
 A new tool that writes has to say so in its own description, because that is the only place the model sees it.
+
+**A command's dialog hazard is handled at the timeout, not by inspection.**
+Whether a command handler opens a modal dialog is not knowable in advance, and a modal one holds the UI thread inside the execute call forever, which no timeout from outside can interrupt.
+`eclipse_run_workbench_command` therefore caps its wait, answers `timedOut` with pointers to `eclipse_list_ui_targets` and `eclipse_dismiss_dialog`, leaves the future uncancelled so nothing is dropped, and logs what the command went on to do.
+An `IExecutionListener` on the resolved command records which verdict fired, so the timeout answer can tell a dialog still holding the handler from one that already reached success or failure; that listener is what makes `handlerFinished` trustworthy rather than an inference from the return.
 
 **Threading.**
 Tool calls arrive on Jetty worker threads.

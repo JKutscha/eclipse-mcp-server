@@ -278,6 +278,8 @@ class McpServerServiceTest {
 		case "eclipse_find_references" -> Map.of("typeName", "example.Sample", "project", PROJECT);
 		case "eclipse_search_types" -> Map.of("pattern", "java.lang.Object");
 		case "eclipse_get_preferences" -> Map.of("qualifier", "org.eclipse.core.resources");
+		// writes one entry into the test IDE's own log, which is what the tool is for
+		case "eclipse_log_status" -> Map.of("message", "written by the smoke test");
 		case "eclipse_refresh", "eclipse_get_classpath" -> Map.of("project", PROJECT);
 		// dry run: the smoke test must not launch a JVM
 		case "eclipse_run_tests" -> Map.of("project", PROJECT, "dryRun", Boolean.TRUE);

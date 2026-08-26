@@ -28,6 +28,44 @@ final class UiThread {
 	record Outcome(JsonObject value, String error) {
 	}
 
+	/**
+	 * What a capped wait came to when a timeout is part of the answer rather than
+	 * an error. {@code value} and {@code error} are mutually exclusive, and both are
+	 * unset when {@code timedOut} is set.
+	 */
+	record TimedOutcome(JsonObject value, boolean timedOut, String error) {
+	}
+
+	/**
+	 * The same, for a tool whose timeout is an answer rather than a failure. The
+	 * future is left uncancelled, because the work keeps running and cancelling
+	 * would only drop the record of what it went on to do.
+	 */
+	static TimedOutcome timed(long timeoutSeconds, Supplier<JsonObject> work) {
+		if (!PlatformUI.isWorkbenchRunning()) {
+			return new TimedOutcome(null, false, "There is no running workbench."); //$NON-NLS-1$
+		}
+		CompletableFuture<JsonObject> pending = new CompletableFuture<>();
+		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
+			try {
+				pending.complete(work.get());
+			} catch (RuntimeException e) {
+				pending.completeExceptionally(e);
+			}
+		});
+		try {
+			return new TimedOutcome(pending.get(timeoutSeconds, TimeUnit.SECONDS), false, null);
+		} catch (TimeoutException e) {
+			return new TimedOutcome(null, true, null);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return new TimedOutcome(null, false, "The request was interrupted."); //$NON-NLS-1$
+		} catch (ExecutionException e) {
+			Throwable cause = e.getCause() == null ? e : e.getCause();
+			return new TimedOutcome(null, false, "The request failed: " + cause); //$NON-NLS-1$
+		}
+	}
+
 	static McpToolResult call(long timeoutSeconds, Supplier<JsonObject> work) {
 		Outcome outcome = run(timeoutSeconds, work);
 		return outcome.error() == null ? McpToolResult.of(outcome.value().toString())

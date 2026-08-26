@@ -3,11 +3,16 @@ package com.vogella.eclipse.mcp.core.internal;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.Status;
+import org.osgi.framework.FrameworkUtil;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.LogClearedHandlers;
@@ -211,6 +216,107 @@ public final class LogStateTools {
 			} catch (IOException e) {
 				return 0;
 			}
+		}
+	}
+
+	/** Writes one entry into the Error Log, and proves that it arrived. */
+	public static final class Write implements IMcpTool {
+
+		private static final Set<String> SEVERITIES = Set.of("info", "warning", "error"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+
+		@Override
+		public String getName() {
+			return "eclipse_log_status"; //$NON-NLS-1$
+		}
+
+		@Override
+		public String getDescription() {
+			return "Writes one entry into the Error Log. WRITES TO THE USER'S LOG, which the Error Log view shows and everything else in this IDE shares, so this exists for exercising log tooling and for marking that a run happened, not for talking to the person at the IDE; say what you have to say in the conversation instead. The answer reports verified, whether the entry was really read back out of the log file, because a writer that cannot prove arrival is not worth having. Read what it wrote with eclipse_get_log_entries, and take a marker with eclipse_mark_log beforehand if a later read should cover only what came after this entry."; //$NON-NLS-1$
+		}
+
+		@Override
+		public String getInputSchema() {
+			return """
+					{
+					  "type": "object",
+					  "required": ["message"],
+					  "properties": {
+					    "message":           {"type":"string","description":"Text of the entry."},
+					    "severity":          {"type":"string","enum":["info","warning","error"],"default":"info"},
+					    "pluginId":          {"type":"string","description":"Bundle symbolic name the entry is attributed to. Defaults to this server's bundle id."},
+					    "includeStackTrace": {"type":"boolean","default":false,"description":"Attach a throwable, so the entry carries a stack trace like a real failure."}
+					  },
+					  "additionalProperties": false
+					}"""; //$NON-NLS-1$
+		}
+
+		@Override
+		public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
+			ToolArguments args = ToolArguments.of(arguments);
+			String message = args.getString("message"); //$NON-NLS-1$
+			if (message == null) {
+				return McpToolResult.error("The argument 'message' is required."); //$NON-NLS-1$
+			}
+			String severityName = args.getString("severity", "info"); //$NON-NLS-1$ //$NON-NLS-2$
+			if (!SEVERITIES.contains(severityName)) {
+				return McpToolResult.error("Unknown severity '%s', expected one of info, warning, error." //$NON-NLS-1$
+						.formatted(severityName));
+			}
+			int severity = severityOf(severityName);
+			String pluginId = args.getString("pluginId", //$NON-NLS-1$
+					FrameworkUtil.getBundle(LogStateTools.class).getSymbolicName());
+			boolean includeStackTrace = args.getBoolean("includeStackTrace", false); //$NON-NLS-1$
+
+			ILog.get().log(new Status(severity, pluginId, message, includeStackTrace ? new Exception(message) : null));
+
+			JsonObject answer = new JsonObject().put("written", Boolean.TRUE) //$NON-NLS-1$
+					.put("severity", severityName) //$NON-NLS-1$
+					.put("pluginId", pluginId) //$NON-NLS-1$
+					.put("stackTrace", Boolean.valueOf(includeStackTrace)); //$NON-NLS-1$
+			JsonObject verified = verify(message, pluginId, severity);
+			answer.put("verified", verified.remove("verified")); //$NON-NLS-1$ //$NON-NLS-2$
+			Object warning = verified.remove("warning"); //$NON-NLS-1$
+			if (warning != null) {
+				answer.put("warning", warning); //$NON-NLS-1$
+			}
+			return McpToolResult.of(answer.put("note", //$NON-NLS-1$
+					"Read the log with eclipse_get_log_entries; take a marker with eclipse_mark_log first to scope a later read to what came after this entry.").toString());
+		}
+
+		/**
+		 * Reads the newest entries back from the log file and looks for this one.
+		 * <p>
+		 * Logging through {@link ILog} returns normally whether or not the framework
+		 * can still reach its file, so arrival is proven from the consuming end rather
+		 * than assumed, the way the clear tool checks itself.
+		 */
+		private static JsonObject verify(String message, String pluginId, int severity) {
+			Path log = logFile();
+			if (log == null || !Files.exists(log)) {
+				return new JsonObject().put("verified", Boolean.FALSE).put("warning", //$NON-NLS-1$ //$NON-NLS-2$
+						"The log file did not appear after an entry was written, so the entry may be going nowhere."); //$NON-NLS-1$
+			}
+			try {
+				List<PlatformLogFile.Entry> entries = PlatformLogFile.read(log);
+				for (int i = entries.size() - 1; i >= 0; i--) {
+					PlatformLogFile.Entry entry = entries.get(i);
+					if (entry.severity() == severity && pluginId.equals(entry.plugin()) && message.equals(entry.message())) {
+						return new JsonObject().put("verified", Boolean.TRUE); //$NON-NLS-1$
+					}
+				}
+				return new JsonObject().put("verified", Boolean.FALSE).put("warning", //$NON-NLS-1$ //$NON-NLS-2$
+						"The entry was written but could not be read back from the log file."); //$NON-NLS-1$
+			} catch (IOException e) {
+				return new JsonObject().put("verified", Boolean.FALSE).put("warning", String.valueOf(e.getMessage())); //$NON-NLS-1$ //$NON-NLS-2$
+			}
+		}
+
+		private static int severityOf(String severity) {
+			return switch (severity) {
+			case "info" -> IStatus.INFO; //$NON-NLS-1$
+			case "warning" -> IStatus.WARNING; //$NON-NLS-1$
+			default -> IStatus.ERROR;
+			};
 		}
 	}
 }
