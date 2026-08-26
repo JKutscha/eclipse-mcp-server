@@ -26,6 +26,22 @@ Nothing filed yet. The consequence for this project is that `includeToolbar`
 cannot show a view toolbar; capture the shell and crop to bounds from
 `eclipse_get_widget_tree` instead.
 
+### p2: a failed resolution reports only "Operation details"
+
+`ProfileChangeOperation.resolveModal` returns, for every planner failure, a
+status whose top level message is the literal string `Operation details`; the
+actual conflicts, one per unit, live only in the children of that multi status.
+p2 also logs nothing itself, so the failure does not reach the platform log and
+`eclipse_get_log_entries` shows nothing.
+
+Observed when a feature installed at `1.0.0.202608261121` was rebuilt as
+`1.0.0.202608261142`: every later install and update failed with no usable
+diagnosis, and the pin was found by unzipping the installed feature by hand.
+
+Worked around in `ResolutionStatuses`, which flattens the status tree into the
+tool answer and logs the whole status once at warning level.
+Not filed upstream as of 2026-08-26.
+
 ### PDE: `NullPointerException` in `DependencyManager.findRequirementsClosure`
 
 `ui/org.eclipse.pde.core/.../DependencyManager.java:266`

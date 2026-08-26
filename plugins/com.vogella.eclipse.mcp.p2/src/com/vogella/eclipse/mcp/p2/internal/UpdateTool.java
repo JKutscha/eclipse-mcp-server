@@ -101,7 +101,7 @@ public final class UpdateTool implements IMcpTool {
 			possible = operation.getSelectedUpdates();
 		}
 		if (!resolution.isOK() && resolution.getSeverity() == IStatus.ERROR) {
-			return McpToolResult.error("The update could not be resolved: " + resolution.getMessage()); //$NON-NLS-1$
+			return McpToolResult.error(ResolutionStatuses.failure("The update could not be resolved", resolution)); //$NON-NLS-1$
 		}
 		JsonArray changes = new JsonArray();
 		java.util.List<String> unexpected = new java.util.ArrayList<>();

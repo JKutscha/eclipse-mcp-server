@@ -98,7 +98,7 @@ public final class UninstallTool implements IMcpTool {
 		UninstallOperation operation = new UninstallOperation(new ProvisioningSession(agent), installed);
 		IStatus resolution = operation.resolveModal(monitor);
 		if (resolution.getSeverity() == IStatus.ERROR) {
-			return McpToolResult.error("The uninstall could not be resolved: " + resolution.getMessage()); //$NON-NLS-1$
+			return McpToolResult.error(ResolutionStatuses.failure("The uninstall could not be resolved", resolution)); //$NON-NLS-1$
 		}
 		IProvisioningPlan plan = operation.getProvisioningPlan();
 		Changes changes = capped(units(plan == null ? null : plan.getRemovals()),
