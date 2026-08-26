@@ -23,7 +23,7 @@ class ProvisioningGuardsTest {
 	@Test
 	void theProvisioningToolsAreRegistered() {
 		for (String name : List.of("eclipse_check_for_updates", "eclipse_update", "eclipse_install",
-				"eclipse_get_provisioning_status")) {
+				"eclipse_uninstall", "eclipse_get_provisioning_status")) {
 			TestFixture.tool(name);
 		}
 	}
@@ -50,8 +50,9 @@ class ProvisioningGuardsTest {
 
 	@Test
 	void everyProvisioningToolSaysItModifiesTheInstallation() {
-		for (String name : List.of("eclipse_update", "eclipse_install")) {
-			assertTrue(TestFixture.tool(name).getDescription().contains("MODIFIES THE INSTALLATION"),
+		for (String name : List.of("eclipse_update", "eclipse_install", "eclipse_uninstall")) {
+			assertTrue(TestFixture.tool(name).getDescription().contains("MODIFIES THE INSTALLATION")
+					|| TestFixture.tool(name).getDescription().contains("UNINSTALLS SOFTWARE FROM THE RUNNING INSTALLATION"),
 					name + " must announce what it does, since that is the only place the model sees it");
 		}
 	}

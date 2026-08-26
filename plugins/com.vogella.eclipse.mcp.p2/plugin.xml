@@ -6,6 +6,7 @@
       <tool class="com.vogella.eclipse.mcp.p2.internal.CheckForUpdatesTool"/>
       <tool class="com.vogella.eclipse.mcp.p2.internal.UpdateTool"/>
       <tool class="com.vogella.eclipse.mcp.p2.internal.InstallTool"/>
+      <tool class="com.vogella.eclipse.mcp.p2.internal.UninstallTool"/>
       <tool class="com.vogella.eclipse.mcp.p2.internal.GetProvisioningStatusTool"/>
       <tool class="com.vogella.eclipse.mcp.p2.internal.GetInstallationTool"/>
       <tool class="com.vogella.eclipse.mcp.p2.internal.AddRepositoryTool"/>

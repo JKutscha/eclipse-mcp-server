@@ -124,7 +124,7 @@ public final class InstallTool implements IMcpTool {
 		InstallOperation operation = new InstallOperation(new ProvisioningSession(agent), found);
 		IStatus resolution = operation.resolveModal(monitor);
 		if (resolution.getSeverity() == IStatus.ERROR) {
-			return McpToolResult.error("The install could not be resolved: " + resolution.getMessage()); //$NON-NLS-1$
+			return McpToolResult.error(ResolutionStatuses.failure("The install could not be resolved", resolution)); //$NON-NLS-1$
 		}
 		JsonArray changes = new JsonArray();
 		for (IInstallableUnit unit : found) {
