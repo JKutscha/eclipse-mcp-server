@@ -1657,6 +1657,31 @@ Both take `trustUnsigned`, which is **refused by default**. p2 asks whether to t
 
 This is self-updating machinery, and the descriptions say so: if a bad build lands, the tools that would fix it are the tools that just broke. Two things make that recoverable. `eclipse_restart` is in a different bundle and does not depend on the provisioning tools, so a half-applied update can still be restarted out of. And every result carries `previousConfiguration`, the timestamp to revert to from *Help > About > Installation Details > Installation History*, which works with no server at all.
 
+### `eclipse_uninstall`
+
+**Uninstalls software from the running installation**, and runs as a dry run unless `dryRun` is set to false.
+It is the way back out of `eclipse_install`, which is otherwise a one way door.
+The case that prompted it: a feature was installed at version `1.0.0.202608261121`, then rebuilt under a new qualifier, so the still installed feature pinned its bundles at the old version while every unit of the new build wanted the new one.
+Install and update both failed to resolve from then on, and the only way out was a person clicking through *Help > About > Installation Details > Uninstall*.
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `unit` | required | Installable unit id, as `eclipse_get_installation` reports it. A feature id usually ends in `.feature.group`. |
+| `version` | | Exact version, when more than one version of the unit is installed. |
+| `dryRun` | boolean, `true` | Resolve and report what would be removed without changing anything. |
+| `maxResults` | 100 | Cap on the reported additions and removals, 1 to 2000, with `total` and `truncated`. |
+
+A unit that is not installed is refused by name rather than handed to p2 as an exception.
+When several versions of the unit are installed, the exact one has to be named.
+
+**Read the dry run before applying it.**
+Removing one feature can drag out bundles that something else still needs, or fail because something else depends on it, so the answer reports what the resolved operation would actually remove, taken from the plan p2 computed, not merely the unit that was asked for.
+One feature going in and eleven bundles coming out is exactly the thing worth learning before committing.
+Each change entry is tagged `removed` or `added`.
+
+Applying runs as a job and returns an `operationId` polled through `eclipse_get_provisioning_status`.
+Like every install here, the removal takes effect on the next IDE restart; `eclipse_restart` works independently of this tool, including after a half applied operation that took this bundle with it.
+
 ### `eclipse_restart`
 
 **Restarts the IDE. The connection will drop by design.**

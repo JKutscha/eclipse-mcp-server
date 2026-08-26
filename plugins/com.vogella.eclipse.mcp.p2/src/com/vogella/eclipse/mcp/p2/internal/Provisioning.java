@@ -60,6 +60,8 @@ final class Provisioning {
 		private volatile String state = "running"; //$NON-NLS-1$
 		private volatile String message;
 		private volatile JsonArray changes = new JsonArray();
+		private volatile int changesTotal = -1;
+		private volatile boolean changesTruncated;
 		private volatile String previousConfiguration;
 		private volatile JsonArray trustPrompts = new JsonArray();
 		private volatile boolean trustedUnsigned;
@@ -84,6 +86,9 @@ final class Provisioning {
 					.put("previousConfiguration", previousConfiguration) //$NON-NLS-1$
 					.put("trustedUnsigned", trustedUnsigned) //$NON-NLS-1$
 					.put(trustedUnsigned ? "trustedContent" : "refusedTrust", trustPrompts); //$NON-NLS-1$ //$NON-NLS-2$
+			if (changesTotal >= 0) {
+				json.put("total", Integer.valueOf(changesTotal)).put("truncated", Boolean.valueOf(changesTruncated)); //$NON-NLS-1$ //$NON-NLS-2$
+			}
 			if (trustPrompts.size() > 0 && trustedUnsigned) {
 				json.put("trustNote", //$NON-NLS-1$
 						"p2 asked whether to trust content that is unsigned or signed by a certificate this IDE does not trust, and this server accepted it, because an install it performs is unattended and there is nobody to answer a dialog. A client can configure a new repository through eclipse_add_repository, so which sites are configured does not bound this. Nothing was added to the IDE's permanent trust store. Pass trustUnsigned false to refuse instead."); //$NON-NLS-1$
@@ -182,7 +187,14 @@ final class Provisioning {
 	}
 
 	static void setChanges(Operation operation, JsonArray changes) {
+		setChanges(operation, changes, -1, false);
+	}
+
+	/** Records the change list with the count behind a {@code maxResults} cap. */
+	static void setChanges(Operation operation, JsonArray changes, int total, boolean truncated) {
 		operation.changes = changes;
+		operation.changesTotal = total;
+		operation.changesTruncated = truncated;
 	}
 
 	/** Records what p2 asked about, so the answer is visible instead of looking like a slow download. */

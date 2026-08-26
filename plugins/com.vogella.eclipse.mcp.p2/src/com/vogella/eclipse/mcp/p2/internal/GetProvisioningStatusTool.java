@@ -19,7 +19,7 @@ public final class GetProvisioningStatusTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Reports an update or install started through eclipse_update or eclipse_install: running, done, failed or cancelled, what it changed and the previous configuration timestamp to revert to. Separate from eclipse_get_build_status because a build and an install are not the same kind of thing. Pass cancel to stop one that is still running."; //$NON-NLS-1$
+		return "Reports an update, install or uninstall started through eclipse_update, eclipse_install or eclipse_uninstall: running, done, failed or cancelled, what it changed and the previous configuration timestamp to revert to. Separate from eclipse_get_build_status because a build and an install are not the same kind of thing. Pass cancel to stop one that is still running."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -28,7 +28,7 @@ public final class GetProvisioningStatusTool implements IMcpTool {
 				{
 				  "type": "object",
 				  "properties": {
-				    "operationId": {"type":"string","description":"Identifier returned by eclipse_update or eclipse_install. Omit for the most recent."},
+				    "operationId": {"type":"string","description":"Identifier returned by eclipse_update, eclipse_install or eclipse_uninstall. Omit for the most recent."},
 				    "cancel":      {"type":"boolean","default":false,"description":"Stop the operation if it is still running. An install or update modifies the installation, so being able to stop one that was started by mistake matters."}
 				  },
 				  "additionalProperties": false
