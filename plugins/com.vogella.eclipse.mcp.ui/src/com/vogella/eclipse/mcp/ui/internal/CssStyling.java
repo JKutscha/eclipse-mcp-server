@@ -180,9 +180,16 @@ final class CssStyling {
 			snippet = parsed.ok() ? css : null;
 		}
 		List<JsonObject> preferenceRules = new ArrayList<>();
+		List<JsonObject> ignoredRules = new ArrayList<>();
 		boolean preferencesApplied = true;
 		if (!drop && parsed.ok()) {
 			for (PreferenceRules.Rule rule : PreferenceRules.scan(css)) {
+				if (themeEngine == null) {
+					ignoredRules.add(new JsonObject().put("selector", rule.selector()) //$NON-NLS-1$
+							.put("qualifier", rule.qualifier()) //$NON-NLS-1$
+							.put("reason", IGNORED_NOTE)); //$NON-NLS-1$
+					continue;
+				}
 				PreferenceOutcome outcome = stylePreferences(themeEngine, rule);
 				preferenceRules.add(outcome.json());
 				preferencesApplied &= outcome.fullyApplied();
@@ -196,6 +203,9 @@ final class CssStyling {
 				.put("rules", parsed.rules() < 0 ? null : Integer.valueOf(parsed.rules())) //$NON-NLS-1$
 				.put("errors", errors) //$NON-NLS-1$
 				.put("elapsedMillis", Long.valueOf((System.nanoTime() - start) / 1_000_000L)); //$NON-NLS-1$
+		if (!ignoredRules.isEmpty()) {
+			result.put("ignoredRules", ignoredRules); //$NON-NLS-1$
+		}
 		if (!preferenceRules.isEmpty()) {
 			result.put("preferenceRules", preferenceRules); //$NON-NLS-1$
 		}
@@ -212,6 +222,12 @@ final class CssStyling {
 
 	private static final String PREFERENCE_NOTE = "IEclipsePreferences blocks were styled through the theme engine's own preference path; preferenceRules says what took effect, and a theme change takes their overrides back like any other."; //$NON-NLS-1$
 
+	/** What styling one preference block came to: the report and whether every key took. */
+	private record PreferenceOutcome(JsonObject json, boolean fullyApplied) {
+	}
+
+	private static final String IGNORED_NOTE = "Preference blocks are styled on the theme activation path only, and the theme engine could not be reached, so this block was not applied. eclipse_set_theme activates a theme, which is what applies them."; //$NON-NLS-1$
+
 	/**
 	 * Styles one {@code IEclipsePreferences} block through the same call the
 	 * workbench makes when a theme changes, then reads the keys back.
@@ -220,17 +236,9 @@ final class CssStyling {
 	 * changed once this session, so verification is what makes the answer honest:
 	 * an unchanged key is reported as unchanged, with the value that is there now.
 	 */
-	/** What styling one preference block came to: the report and whether every key took. */
-	private record PreferenceOutcome(JsonObject json, boolean fullyApplied) {
-	}
-
 	private static PreferenceOutcome stylePreferences(Object themeEngine, PreferenceRules.Rule rule) {
 		JsonObject outcome = new JsonObject().put("selector", rule.selector()) //$NON-NLS-1$
 				.put("qualifier", rule.qualifier()); //$NON-NLS-1$
-		if (themeEngine == null) {
-			return new PreferenceOutcome(outcome.put("reason", //$NON-NLS-1$
-					"The theme engine could not be reached, so the block was not styled."), false);
-		}
 		JsonArray applied = new JsonArray();
 		JsonArray unchanged = new JsonArray();
 		boolean recognised = true;
