@@ -24,12 +24,19 @@ class SetPreferenceToolTest {
 
 	private static final String KEY = "com.vogella.eclipse.mcp.test.key";
 
+	private static final String THEME_QUALIFIER = "org.eclipse.e4.ui.css.swt.theme";
+
+	private static final String THEME_KEY = "com.vogella.eclipse.mcp.test.theme.key";
+
 	private final TestFixture fixture = new TestFixture();
 
 	@AfterEach
 	void cleanUp() throws Exception {
 		InstanceScope.INSTANCE.getNode(QUALIFIER).remove(KEY);
 		InstanceScope.INSTANCE.getNode(QUALIFIER).flush();
+		InstanceScope.INSTANCE.getNode(THEME_QUALIFIER).remove(THEME_KEY);
+		InstanceScope.INSTANCE.getNode(THEME_QUALIFIER).remove("themeid");
+		InstanceScope.INSTANCE.getNode(THEME_QUALIFIER).flush();
 		fixture.dispose();
 	}
 
@@ -74,6 +81,26 @@ class SetPreferenceToolTest {
 		assertTrue(result.isError());
 		assertTrue(result.text().contains("org.eclipse.ui.editors"), result.text());
 		assertTrue(result.text().contains("eclipse_get_preferences"), result.text());
+	}
+
+	@Test
+	void refusesTheThemeidKeyAndNamesTheToolThatDoesItInstead() throws Exception {
+		McpToolResult result = TestFixture.call(TOOL,
+				Map.of("qualifier", THEME_QUALIFIER, "key", "themeid", "value", "some.theme"));
+
+		assertTrue(result.isError(), result.text());
+		assertTrue(result.text().contains("themeid"), result.text());
+		assertTrue(result.text().contains("eclipse_set_theme"), result.text());
+		assertNull(InstanceScope.INSTANCE.getNode(THEME_QUALIFIER).get("themeid", null));
+	}
+
+	@Test
+	void stillWritesAnotherKeyInTheSameThemeQualifier() throws Exception {
+		Map<String, Object> result = TestFixture.callAndParse(TOOL,
+				Map.of("qualifier", THEME_QUALIFIER, "key", THEME_KEY, "value", "kept"));
+
+		assertEquals("kept", result.get("effective"));
+		assertEquals("kept", InstanceScope.INSTANCE.getNode(THEME_QUALIFIER).get(THEME_KEY, null));
 	}
 
 	@Test
