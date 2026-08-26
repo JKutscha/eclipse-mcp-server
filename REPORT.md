@@ -20,7 +20,7 @@ It waits up to 25 seconds through `UiThread.timed`; on timeout it answers `timed
 
 ### 1b. The `themeid` trap
 
-`eclipse_set_preference` refuses key `themeid` under `org.eclipse.e4.ui.css.swt.theme` with a message that says the engine persists the active theme's id on shutdown and names `eclipse_set_theme`.
+`eclipse_set_preference` refuses key `themeid` under `org.eclipse.e4.ui.css.swt.theme`, naming `eclipse_set_theme`; see the follow-up section at the end for the corrected mechanism behind that refusal.
 The qualifier stays writable for every other key, all other qualifiers untouched.
 
 ### 2. `IEclipsePreferences` blocks in `eclipse_apply_css`
@@ -111,3 +111,49 @@ The human end-to-end pass after merge should include: list themes on an IDE with
 - Preference-block application is deliberately not covered by a unit test beyond detection: it needs a running theme engine, and faking one would test the mock.
 - A qualifier containing a dash cannot be expressed unambiguously in an `IEclipsePreferences#...` selector; a wrongly unescaped one matches no rules and shows up as `unchangedKeys`, which is where the truth lands anyway.
 Noted in `docs/platform-bugs.md` next to the silence finding.
+
+## Follow-up: corrections from the reporter's measurements
+
+The reporter measured the mechanisms the original brief had inferred, disproved one of them, and asked for two wording corrections and one new tool.
+Everything below is on top of the work described above; nothing was reverted.
+
+### The themeid mechanism, corrected
+
+TASK.md said the engine persists the active theme's id at shutdown and overwrites a written value.
+That is wrong, and every place this report, the tool or its documentation repeated it has been corrected:
+
+- The write reaches disk and is still there immediately before the restart.
+- On startup the engine resolves the persisted id against the registered themes; an id that does not resolve falls back to a default that is persisted over the caller's value.
+Writing an id of a registered theme and restarting works.
+
+The refusal in `eclipse_set_preference` stays, with the startup-resolution reason: writing `themeid` is not a way to switch themes.
+Corrected in the refusal message, the allowlist comment, the tool description, the README section, and above in section 1b.
+
+### Unregistered ids are refused deliberately
+
+`eclipse_set_theme` already refused ids outside the registry, because resolution runs against `getThemes()`.
+The refusal now also says why forwarding would be worse: handed an unknown id the engine leaves the current theme up, logs an `ILog` warning no MCP caller can see, and answers nothing, while a persisted id it cannot resolve gets replaced by a fallback at the next startup.
+The reporter confirmed this path throws nothing and corrupts nothing, so the refusal is worthwhile rather than load bearing.
+The description adds the consequence for fresh installs: a bundle installed in this session contributes its themes only after the restart that activates it.
+
+### Preference blocks are not broken, and the wording now says so
+
+After a real theme activation, `org.eclipse.jdt.ui/java_keyword` carried exactly the value the theme's CSS declared; what a snippet cannot do is activate a theme.
+The `ignoredRules` note, the `ApplyCssTool` description and the README paragraph now say that preference rules take effect when a theme is activated and that this is the one thing the snippet tool cannot do, instead of anything that reads as "they do not work".
+The routing through the engine's preference styling and the per-key read-back stay exactly as built.
+
+### New: `eclipse_register_theme`
+
+Registers a theme with the running engine from a stylesheet already on disk, taking required `id`, `label` and `css`, reached reflectively through `IThemeEngine.registerTheme(String, String, String)`, which the public interface declares; the four argument overload exists only on the internal class and is not used.
+A bare path becomes an absolute file URI before the call, and a missing file is refused before the UI thread is involved, which is what the headless tests cover along with the required arguments and the workbench refusal.
+The answer and description state both caveats: nothing is installed, so the stylesheet must stay where it is for as long as the theme is used, and the registration lives for this session only.
+This closes the iterate loop: build the bundle, install it, register, switch, screenshot.
+
+The underlying gap went into `docs/platform-bugs.md`: the engine's constructor reads the extension registry once, there is no listener, so runtime-installed theme bundles never reach `getThemes()` until a restart.
+
+### Verification after the follow-up
+
+`mvn clean verify`: **BUILD SUCCESS**, all seventeen reactor modules.
+`com.vogella.eclipse.mcp.core.tests`: **284 tests, 0 failures, 0 errors** (281 plus three for `eclipse_register_theme`'s argument handling, missing stylesheet and workbench refusal).
+`com.vogella.eclipse.mcp.server.tests`: **11 tests, 0 failures, 0 errors**, smoke test included, with the third new tool in the registry.
+No port collision occurred; the run bound cleanly.
