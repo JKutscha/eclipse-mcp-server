@@ -94,3 +94,25 @@ Nothing functional from the brief.
 The honest caveat: the paths that need a real workbench, meaning enablement values and keybindings in the listing, every execute outcome including the three framework failures and the dialog timeout, and both window actions, were never exercised against a running IDE.
 They rest on the platform API contracts, on `javap` checks against the target platform's jars where signatures surprised me (`IParameter.getName` throws nothing, `IHandlerService.executeCommand` declares no `ParameterValuesException`, `IBindingService` lives in `org.eclipse.ui.keys`), and on the patterns this repository has already proven in a real IDE.
 No platform defect turned up that would earn an entry in `docs/platform-bugs.md`.
+
+## Follow-up: say whether the handler actually ran (commit on top of the verified 82722a3)
+
+Source was the usage-data analysis: the timeout answer could not tell "the command executed" from "it never got that far", which Eclipse's own `CommandUsageMonitor` distinguishes through `postExecuteSuccess`, `postExecuteFailure` and `notHandled`.
+
+`eclipse_run_workbench_command` now registers an `ExecutionRecorder`, an `IExecutionListener`, on the resolved `Command` for the duration of the execute call and removes it in a `finally`.
+Every answer, timeout included, carries `handlerFinished` (true once success or failure fired) and the `outcome` verb (`success`, `failure`, `notHandled`, or null when nothing reached a verdict); `timedOut` is unchanged, so the two read side by side.
+A dialog still holding the handler answers `timedOut: true, handlerFinished: false`; a slow handler whose verdict already came back answers `handlerFinished: true`.
+Because the listener fires before the corresponding exception propagates out of `executeCommand`, all three non-timeout outcomes report their verdict too.
+The recorder is created outside the `asyncExec` so the Jetty thread can read it when building the timeout answer, callbacks land on the UI thread into a volatile field.
+
+Decisions:
+- **Listener goes on the `Command`, not on `ICommandService`.** The command is resolved anyway; command-level registration needs no id filtering and hears exactly this run.
+- **The recorder is its own class** (`com.vogella.eclipse.mcp.ui.internal.ExecutionRecorder`) rather than a nested private one, so the verb mapping is testable.
+- **`preExecute` is heard but ignored**: dispatched is not a verdict, and the answer reports only what the brief named.
+- **Not-enabled reports no verdict.** The plain `IExecutionListener` has no enabled callback; if the platform routes not-enabled through `notHandled` it shows as such, otherwise `outcome` stays null beside `enabled: false`, both honest.
+- **Headless testability needed one export.** The mapping lives where the change lives, so `com.vogella.eclipse.mcp.ui.internal` is now exported `x-friends:="com.vogella.eclipse.mcp.core.tests"`, mirroring what core does for its own internals; `ExecutionRecorderTest` covers the four states the answer can report.
+
+Verification after the follow-up, from the repository root: `mvn clean verify`, BUILD SUCCESS in 03:28 min, same reactor summary as above with every module SUCCESS.
+Core tests now 259 run, 0 failures, 0 errors (the four new `ExecutionRecorderTest` tests included), server tests still 11, 0 failures.
+No existing test changed.
+

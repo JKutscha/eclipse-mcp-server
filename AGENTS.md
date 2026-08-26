@@ -55,6 +55,7 @@ A new tool that writes has to say so in its own description, because that is the
 **A command's dialog hazard is handled at the timeout, not by inspection.**
 Whether a command handler opens a modal dialog is not knowable in advance, and a modal one holds the UI thread inside the execute call forever, which no timeout from outside can interrupt.
 `eclipse_run_workbench_command` therefore caps its wait, answers `timedOut` with pointers to `eclipse_list_ui_targets` and `eclipse_dismiss_dialog`, leaves the future uncancelled so nothing is dropped, and logs what the command went on to do.
+An `IExecutionListener` on the resolved command records which verdict fired, so the timeout answer can tell a dialog still holding the handler from one that already reached success or failure; that listener is what makes `handlerFinished` trustworthy rather than an inference from the return.
 
 **Threading.**
 Tool calls arrive on Jetty worker threads.

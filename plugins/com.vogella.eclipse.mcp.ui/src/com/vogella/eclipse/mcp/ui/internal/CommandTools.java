@@ -177,7 +177,7 @@ public final class CommandTools {
 
 		@Override
 		public String getDescription() {
-			return "Runs a workbench command through Eclipse's command and handler framework, exactly as its menu entry, toolbar button or keybinding would. DOES WHATEVER THAT COMMAND DOES: the effect belongs to the command's handler and is unknown to this server, which neither knows in advance nor limits what it can be, and it can change files, preferences, perspectives or anything else the IDE can touch. This is how most of what an IDE can do becomes reachable here, because much of it exists only as a command with no other API; resolve ids with eclipse_list_commands first. A command no handler currently answers comes back as handled false with advice rather than an error, which usually means the part or selection it belongs to is not active; activate it with eclipse_set_part_state and try again. MANY HANDLERS OPEN A MODAL DIALOG, which holds the UI thread until somebody answers it, so the wait is capped and running out reports timedOut with the tools to see and answer the dialog; whatever the command went on to do afterwards is written to the Error Log rather than lost. Refuses org.eclipse.ui.file.exit, which ends the IDE and this server with it, and org.eclipse.ui.file.restartWorkbench, which eclipse_restart does in an orderly way."; //$NON-NLS-1$
+			return "Runs a workbench command through Eclipse's command and handler framework, exactly as its menu entry, toolbar button or keybinding would. DOES WHATEVER THAT COMMAND DOES: the effect belongs to the command's handler and is unknown to this server, which neither knows in advance nor limits what it can be, and it can change files, preferences, perspectives or anything else the IDE can touch. This is how most of what an IDE can do becomes reachable here, because much of it exists only as a command with no other API; resolve ids with eclipse_list_commands first. Every answer reports handlerFinished and the outcome verb success, failure or notHandled, heard from the framework's own execution listener, so whether the handler actually ran is never a guess. A command no handler currently answers comes back as handled false with advice rather than an error, which usually means the part or selection it belongs to is not active; activate it with eclipse_set_part_state and try again. MANY HANDLERS OPEN A MODAL DIALOG, which holds the UI thread until somebody answers it, so the wait is capped and running out reports timedOut with the tools to see and answer the dialog; there timedOut true with handlerFinished false reads as a dialog still holding the handler inside execute, while handlerFinished true reads as a slow handler whose verdict already came back, and whatever the command went on to do afterwards is written to the Error Log rather than lost. Refuses org.eclipse.ui.file.exit, which ends the IDE and this server with it, and org.eclipse.ui.file.restartWorkbench, which eclipse_restart does in an orderly way."; //$NON-NLS-1$
 		}
 
 		@Override
@@ -214,10 +214,11 @@ public final class CommandTools {
 				return McpToolResult.error("There is no running workbench."); //$NON-NLS-1$
 			}
 
+			ExecutionRecorder recorder = new ExecutionRecorder();
 			CompletableFuture<String> pending = new CompletableFuture<>();
 			PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
 				try {
-					pending.complete(execute(wanted, parameters, dryRun).toString());
+					pending.complete(execute(wanted, parameters, dryRun, recorder).toString());
 				} catch (RuntimeException e) {
 					pending.completeExceptionally(e);
 				}
@@ -229,7 +230,7 @@ public final class CommandTools {
 				// and this line is logged too: the handler keeps running either way, and
 				// dropping its record would hide whatever it went on to do
 				pending.whenComplete((text, error) -> logLateCompletion(wanted, text, error));
-				return McpToolResult.of(timedOut(wanted, timeoutSeconds).toString());
+				return McpToolResult.of(timedOut(wanted, timeoutSeconds, recorder).toString());
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 				return McpToolResult.error("The request was interrupted."); //$NON-NLS-1$
@@ -245,21 +246,24 @@ public final class CommandTools {
 		 * The three framework failures are answers rather than errors, because each one
 		 * is the caller's next question: not handled asks for the right active part,
 		 * not enabled for the right selection, and an execution exception carries the
-		 * handler's own failure.
+		 * handler's own failure. An {@link ExecutionRecorder} hears the verdict the
+		 * framework reports, which is what tells a dialog still holding the handler
+		 * apart from one that already finished.
 		 */
-		private static JsonObject execute(String wanted, Map<String, String> parameters, boolean dryRun) {
+		private static JsonObject execute(String wanted, Map<String, String> parameters, boolean dryRun,
+				ExecutionRecorder recorder) {
 			long started = System.nanoTime();
 			ICommandService service = PlatformUI.getWorkbench().getService(ICommandService.class);
 			List<Command> matches = match(service, wanted);
 			if (matches.isEmpty()) {
-				return new JsonObject().put("executed", Boolean.FALSE).put("id", wanted) //$NON-NLS-1$ //$NON-NLS-2$
-						.put("reason", "No command matches '%s'. Use eclipse_list_commands.".formatted(wanted)); //$NON-NLS-1$ //$NON-NLS-2$
+				return recorder.reportInto(new JsonObject().put("executed", Boolean.FALSE).put("id", wanted) //$NON-NLS-1$ //$NON-NLS-2$
+						.put("reason", "No command matches '%s'. Use eclipse_list_commands.".formatted(wanted))); //$NON-NLS-1$ //$NON-NLS-2$
 			}
 			if (matches.size() > 1) {
-				return new JsonObject().put("executed", Boolean.FALSE).put("id", wanted) //$NON-NLS-1$ //$NON-NLS-2$
+				return recorder.reportInto(new JsonObject().put("executed", Boolean.FALSE).put("id", wanted) //$NON-NLS-1$ //$NON-NLS-2$
 						.put("reason", "'%s' matches %d commands; name one of them exactly." //$NON-NLS-1$
 								.formatted(wanted, Integer.valueOf(matches.size())))
-						.put("candidates", candidates(matches)); //$NON-NLS-1$
+						.put("candidates", candidates(matches))); //$NON-NLS-1$
 			}
 			Command command = matches.get(0);
 
@@ -267,46 +271,56 @@ public final class CommandTools {
 			if (refusal != null) {
 				// a label can resolve to a refused command even though the raw argument got
 				// past the guard before resolution
-				return base(command, started).put("reason", refusal); //$NON-NLS-1$
+				return recorder.reportInto(base(command, started)).put("reason", refusal); //$NON-NLS-1$
 			}
 
-			JsonObject answer = base(command, started);
-			answer.put("parameters", parametersOf(command)); //$NON-NLS-1$
-			ParameterizedCommand parameterized = ParameterizedCommand.generateCommand(command, parameters);
-			if (parameterized == null) {
-				return answer.put("reason", "This command requires a value for %s; pass them under parameters." //$NON-NLS-1$ //$NON-NLS-2$
-						.formatted(requiredParameters(command)));
-			}
-			if (dryRun) {
-				return answer.put("dryRun", Boolean.TRUE).put("note", "Nothing was executed.") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-						.put("elapsedMillis", elapsed(started)); //$NON-NLS-1$
-			}
-			IHandlerService handlers = PlatformUI.getWorkbench().getService(IHandlerService.class);
-			Object returnValue;
+			command.addExecutionListener(recorder);
 			try {
-				returnValue = handlers.executeCommand(parameterized, null);
-			} catch (NotHandledException e) {
-				return answer.put("handled", Boolean.FALSE).put("elapsedMillis", elapsed(started)) //$NON-NLS-1$ //$NON-NLS-2$
-						.put("reason", //$NON-NLS-1$
-								"No handler is active for this command right now. Most commands are handled only while a particular part is active or a particular selection exists; activate the part with eclipse_set_part_state and try again."); //$NON-NLS-1$
-			} catch (NotEnabledException e) {
-				return answer.put("enabled", Boolean.FALSE).put("elapsedMillis", elapsed(started)) //$NON-NLS-1$ //$NON-NLS-2$
-						.put("reason", //$NON-NLS-1$
-								"The command's handler is active but not enabled right now, which usually depends on the active part or selection; activate the part with eclipse_set_part_state and try again."); //$NON-NLS-1$
-			} catch (org.eclipse.core.commands.ExecutionException e) {
-				Throwable cause = e.getCause() == null ? e : e.getCause();
-				String message = cause.getMessage() == null ? cause.toString() : cause.getMessage();
-				return answer.put("executed", Boolean.FALSE).put("elapsedMillis", elapsed(started)) //$NON-NLS-1$ //$NON-NLS-2$
-						.put("reason", "The command threw: " + message); //$NON-NLS-1$ //$NON-NLS-2$
-			} catch (NotDefinedException e) {
-				return answer.put("executed", Boolean.FALSE).put("elapsedMillis", elapsed(started)) //$NON-NLS-1$ //$NON-NLS-2$
-						.put("reason", String.valueOf(e.getMessage())); //$NON-NLS-1$
+				JsonObject answer = base(command, started);
+				answer.put("parameters", parametersOf(command)); //$NON-NLS-1$
+				ParameterizedCommand parameterized = ParameterizedCommand.generateCommand(command, parameters);
+				if (parameterized == null) {
+					return recorder.reportInto(answer.put("reason", //$NON-NLS-1$
+							"This command requires a value for %s; pass them under parameters." //$NON-NLS-1$
+									.formatted(requiredParameters(command))));
+				}
+				if (dryRun) {
+					return recorder.reportInto(answer.put("dryRun", Boolean.TRUE).put("note", "Nothing was executed.") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+							.put("elapsedMillis", elapsed(started))); //$NON-NLS-1$
+				}
+				IHandlerService handlers = PlatformUI.getWorkbench().getService(IHandlerService.class);
+				Object returnValue;
+				try {
+					returnValue = handlers.executeCommand(parameterized, null);
+				} catch (NotHandledException e) {
+					return recorder.reportInto(answer.put("handled", Boolean.FALSE) //$NON-NLS-1$
+							.put("elapsedMillis", elapsed(started)) //$NON-NLS-1$
+							.put("reason", //$NON-NLS-1$
+									"No handler is active for this command right now. Most commands are handled only while a particular part is active or a particular selection exists; activate the part with eclipse_set_part_state and try again.")); //$NON-NLS-1$
+				} catch (NotEnabledException e) {
+					return recorder.reportInto(answer.put("enabled", Boolean.FALSE) //$NON-NLS-1$
+							.put("elapsedMillis", elapsed(started)) //$NON-NLS-1$
+							.put("reason", //$NON-NLS-1$
+									"The command's handler is active but not enabled right now, which usually depends on the active part or selection; activate the part with eclipse_set_part_state and try again.")); //$NON-NLS-1$
+				} catch (org.eclipse.core.commands.ExecutionException e) {
+					Throwable cause = e.getCause() == null ? e : e.getCause();
+					String message = cause.getMessage() == null ? cause.toString() : cause.getMessage();
+					return recorder.reportInto(answer.put("executed", Boolean.FALSE) //$NON-NLS-1$
+							.put("elapsedMillis", elapsed(started)) //$NON-NLS-1$
+							.put("reason", "The command threw: " + message)); //$NON-NLS-1$ //$NON-NLS-2$
+				} catch (NotDefinedException e) {
+					return recorder.reportInto(answer.put("executed", Boolean.FALSE) //$NON-NLS-1$
+							.put("elapsedMillis", elapsed(started)) //$NON-NLS-1$
+							.put("reason", String.valueOf(e.getMessage()))); //$NON-NLS-1$
+				}
+				answer.put("executed", Boolean.TRUE); //$NON-NLS-1$
+				if (returnValue != null) {
+					answer.put("returnValue", cap(String.valueOf(returnValue))); //$NON-NLS-1$
+				}
+				return recorder.reportInto(answer.put("elapsedMillis", elapsed(started))); //$NON-NLS-1$
+			} finally {
+				command.removeExecutionListener(recorder);
 			}
-			answer.put("executed", Boolean.TRUE); //$NON-NLS-1$
-			if (returnValue != null) {
-				answer.put("returnValue", cap(String.valueOf(returnValue))); //$NON-NLS-1$
-			}
-			return answer.put("elapsedMillis", elapsed(started)); //$NON-NLS-1$
 		}
 
 		private static JsonObject base(Command command, long started) {
@@ -339,12 +353,12 @@ public final class CommandTools {
 			return required.isEmpty() ? "its required parameters" : String.join(", ", required); //$NON-NLS-1$
 		}
 
-		private static JsonObject timedOut(String wanted, long timeoutSeconds) {
-			return new JsonObject().put("executed", Boolean.FALSE).put("timedOut", Boolean.TRUE) //$NON-NLS-1$ //$NON-NLS-2$
+		private static JsonObject timedOut(String wanted, long timeoutSeconds, ExecutionRecorder recorder) {
+			return recorder.reportInto(new JsonObject().put("executed", Boolean.FALSE).put("timedOut", Boolean.TRUE) //$NON-NLS-1$ //$NON-NLS-2$
 					.put("id", wanted) //$NON-NLS-1$
 					.put("note", //$NON-NLS-1$
-							"The handler had not returned within %d seconds, which most likely means it opened a modal dialog and is holding the UI thread waiting for an answer. Use eclipse_list_ui_targets to see the dialog and eclipse_dismiss_dialog to answer it. If the command finishes after this answer, what it did is written to the Error Log rather than lost." //$NON-NLS-1$
-									.formatted(Long.valueOf(timeoutSeconds)));
+							"The handler had not returned within %d seconds. With handlerFinished false this most likely means it opened a modal dialog and is holding the UI thread waiting for an answer; use eclipse_list_ui_targets to see the dialog and eclipse_dismiss_dialog to answer it. With handlerFinished true the handler already reached its verdict and was merely slow. If the command finishes after this answer, what it did is written to the Error Log rather than lost." //$NON-NLS-1$
+									.formatted(Long.valueOf(timeoutSeconds))));
 		}
 
 		private static void logLateCompletion(String wanted, String answer, Throwable error) {

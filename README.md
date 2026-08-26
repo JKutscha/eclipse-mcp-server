@@ -1309,7 +1309,10 @@ This is the single biggest capability here, because most of what an IDE can do e
 | `dryRun` | boolean | `false` | Resolve the command, report `handled`, `enabled` and its parameters, execute nothing. |
 | `timeoutSeconds` | integer, 1 to 25 | 10 | Cap on waiting for the handler. |
 
-The answer carries `executed`, `id`, `name`, `handled`, `enabled`, `elapsedMillis` and, when the handler returned something, its `returnValue` capped at 500 characters.
+The answer carries `executed`, `id`, `name`, `handled`, `enabled`, `elapsedMillis`, `handlerFinished` and the `outcome` verb, and, when the handler returned something, its `returnValue` capped at 500 characters.
+
+`handlerFinished` and `outcome` come from an `IExecutionListener` registered on the resolved command for the duration of the call, the same source Eclipse's own usage monitoring hears.
+They report what the framework observed rather than what the call returned: `outcome` is `success`, `failure` or `notHandled`, and only success and failure count as the handler having run.
 
 **Not handled is an answer, not an error.**
 Most commands are handled only while a particular part is active or a particular selection exists, so `handled: false` usually means the context is missing rather than that the command does not exist.
@@ -1319,6 +1322,7 @@ Activate the part with `eclipse_set_part_state` and try again.
 **The dialog hazard is worth knowing before the first call.**
 Many handlers open a modal dialog, and a dialog holds the UI thread inside the execute call until somebody answers it, which no timeout from outside can interrupt.
 Whether a given handler opens one cannot be known in advance, so the hazard is handled at the timeout instead: the wait is capped by `timeoutSeconds`, running out returns `timedOut: true` with a note rather than an error, and points at `eclipse_list_ui_targets` to see the dialog and `eclipse_dismiss_dialog` to answer it.
+Read together with the verdict fields, the timeout stops being ambiguous: `timedOut: true, handlerFinished: false` is a dialog still holding the handler inside `execute`, while `timedOut: true, handlerFinished: true` is a slow handler that already reached its verdict after the wait ran out.
 If the command finishes after that answer has gone out, what it did is written to the Error Log rather than lost silently.
 
 Two commands are refused outright, whatever the arguments: `org.eclipse.ui.file.exit`, because ending the IDE ends this server with it and nothing could undo that from the client side, and `org.eclipse.ui.file.restartWorkbench`, which `eclipse_restart` does in an orderly way.
