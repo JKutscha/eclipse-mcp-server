@@ -33,6 +33,19 @@ public final class DebugLaunchTool implements IMcpTool {
 
 	private static final String JAVA_APPLICATION = IJavaLaunchConfigurationConstants.ID_JAVA_APPLICATION;
 
+	/**
+	 * Keeps a launch nobody is watching from asking a question: without these a
+	 * suspend raises the modal perspective switch prompt, which blocks the IDE.
+	 * The marker is what tells an adopted session apart from one a person started.
+	 */
+	static void unattended(org.eclipse.debug.core.ILaunchConfigurationWorkingCopy configuration) {
+		configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.TARGET_DEBUG_PERSPECTIVE,
+				com.vogella.eclipse.mcp.core.LaunchAttributes.PERSPECTIVE_NONE);
+		configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.TARGET_RUN_PERSPECTIVE,
+				com.vogella.eclipse.mcp.core.LaunchAttributes.PERSPECTIVE_NONE);
+		configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.STARTED_BY_MCP, true);
+	}
+
 	@Override
 	public String getName() {
 		return "eclipse_debug_launch"; //$NON-NLS-1$
@@ -165,6 +178,7 @@ public final class DebugLaunchTool implements IMcpTool {
 		ILaunchConfigurationWorkingCopy configuration = launchType.newInstance(null, "MCP debug " + mainType + " " + System.nanoTime()); //$NON-NLS-1$ //$NON-NLS-2$
 		configuration.setAttribute(IJavaLaunchConfigurationConstants.ATTR_PROJECT_NAME, projectName);
 		configuration.setAttribute(IJavaLaunchConfigurationConstants.ATTR_MAIN_TYPE_NAME, mainType);
+		unattended(configuration);
 		if (args.getBoolean("stopInMain", false)) { //$NON-NLS-1$
 			configuration.setAttribute(IJavaLaunchConfigurationConstants.ATTR_STOP_IN_MAIN, true);
 		}
