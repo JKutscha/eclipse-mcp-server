@@ -113,6 +113,8 @@ public final class SetBreakpointTool implements IMcpTool {
 				lineBp.setCondition(args.getString("condition")); //$NON-NLS-1$
 			}
 			return answer(Boolean.TRUE, Boolean.FALSE, created, targetTypeName);
+		} catch (DebugSupport.Refusal e) {
+			return McpToolResult.error(e.getMessage());
 		} catch (CoreException e) {
 			throw new McpToolException("Could not set the breakpoint: %s".formatted(e.getMessage()), e);
 		}
@@ -141,12 +143,12 @@ public final class SetBreakpointTool implements IMcpTool {
 		return null;
 	}
 
-	private void update(IJavaBreakpoint existing, ToolArguments args, int line) throws CoreException, McpToolException {
+	private void update(IJavaBreakpoint existing, ToolArguments args, int line) throws CoreException {
 		// a move to another line is a different breakpoint: refuse it rather than guess,
 		// because updating would silently leave the old position armed as well
 		if (existing instanceof ILineBreakpoint lineBp && args.has("line") //$NON-NLS-1$
 				&& lineBp.getLineNumber() != line) {
-			throw new McpToolException(
+			throw new DebugSupport.Refusal(
 					"Breakpoint %s sits on line %d, not %d. Remove it and set the new line, so no stale position is left behind." //$NON-NLS-1$
 							.formatted(ListBreakpointsTool.idOf(existing), Integer.valueOf(lineBp.getLineNumber()),
 									Integer.valueOf(line)));
@@ -167,7 +169,7 @@ public final class SetBreakpointTool implements IMcpTool {
 
 	/** Applies what both create and update share; defaults apply only on create. */
 	private void applyCommon(IJavaBreakpoint breakpoint, ToolArguments args, boolean applyDefaults)
-			throws CoreException, McpToolException {
+			throws CoreException {
 		if (applyDefaults) {
 			breakpoint.setEnabled(args.getBoolean("enabled", true)); //$NON-NLS-1$
 		}
@@ -180,7 +182,7 @@ public final class SetBreakpointTool implements IMcpTool {
 		} else if ("thread".equals(policy)) { //$NON-NLS-1$
 			breakpoint.setSuspendPolicy(IJavaBreakpoint.SUSPEND_THREAD);
 		} else if (policy != null) {
-			throw new McpToolException("'suspendPolicy' is 'thread' or 'vm', not '%s'.".formatted(policy)); //$NON-NLS-1$
+			throw new DebugSupport.Refusal("'suspendPolicy' is 'thread' or 'vm', not '%s'.".formatted(policy)); //$NON-NLS-1$
 		}
 	}
 
