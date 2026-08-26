@@ -230,8 +230,10 @@ public final class TestRunRegistry {
 			if (configuration == null) {
 				return errors;
 			}
+			// the constant, not a remembered string: IPDELauncherConstants.LOCATION is
+			// plain "location", and the guess that was here read nothing at all
 			String location = configuration
-					.getAttribute("org.eclipse.pde.ui.workspace_location", (String) null); //$NON-NLS-1$
+					.getAttribute(org.eclipse.pde.launching.IPDELauncherConstants.LOCATION, (String) null);
 			if (location == null) {
 				return errors;
 			}

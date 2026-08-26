@@ -96,6 +96,10 @@ public final class DebugLaunchTool implements IMcpTool {
 			// launching happens in a job: creating the JVM takes seconds, and doing it on
 			// the calling thread would hold the request open for all of it
 			org.eclipse.core.runtime.jobs.Job.create("MCP debug launch " + session.id(), progress -> { //$NON-NLS-1$
+				// the same prompt eclipse_run_tests answers: launching a project with
+				// compile errors otherwise opens a modal dialog and the launch waits for
+				// a person who does not know they are being asked
+				String promptWas = com.vogella.eclipse.mcp.core.CompileErrorPrompt.suppress();
 				try {
 					org.eclipse.debug.core.ILaunch launched = configuration.launch(ILaunchManager.DEBUG_MODE, progress);
 					if (!session.registered()) {
@@ -104,6 +108,8 @@ public final class DebugLaunchTool implements IMcpTool {
 					}
 				} catch (CoreException | RuntimeException e) {
 					session.failed(e.getMessage() == null ? String.valueOf(e) : e.getMessage());
+				} finally {
+					com.vogella.eclipse.mcp.core.CompileErrorPrompt.restore(promptWas);
 				}
 				return org.eclipse.core.runtime.Status.OK_STATUS;
 			}).schedule();

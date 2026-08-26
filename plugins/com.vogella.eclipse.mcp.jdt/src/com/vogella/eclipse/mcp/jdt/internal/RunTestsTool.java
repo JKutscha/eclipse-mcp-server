@@ -60,11 +60,6 @@ public final class RunTestsTool implements IMcpTool {
 	 * writes. Launching with compile errors otherwise raises a modal dialog through
 	 * the debug.ui status handler, which blocks a call nobody is watching.
 	 */
-	private static final String DEBUG_UI = "org.eclipse.debug.ui"; //$NON-NLS-1$
-
-	/** The constant is named PREF_CONTINUE_WITH_COMPILE_ERROR; its value is not. */
-	private static final String CONTINUE_WITH_COMPILE_ERROR = "org.eclipse.debug.ui.cancel_launch_with_compile_errors"; //$NON-NLS-1$
-
 	/** Launch configuration attributes of the JUnit launcher, which are a stable contract. */
 	private static final String ATTR_CONTAINER = "org.eclipse.jdt.junit.CONTAINER"; //$NON-NLS-1$
 
@@ -151,6 +146,9 @@ public final class RunTestsTool implements IMcpTool {
 					|| ("auto".equals(pluginTest) && project.hasNature(PLUGIN_NATURE)); //$NON-NLS-1$
 			boolean ui = args.getBoolean("ui", false); //$NON-NLS-1$
 			String launchedAs = launchedAs(project, args);
+			// what the person's own launches would have done, since this run answers the
+			// prompt for itself and puts the setting back
+			String compileErrorPromptWas = com.vogella.eclipse.mcp.core.CompileErrorPrompt.effectiveValue();
 			TestRunRegistry.Run run = TestRunRegistry.getInstance()
 					.create(testClass == null ? projectName : testClass + (testMethod == null ? "" : "#" + testMethod)); //$NON-NLS-1$ //$NON-NLS-2$
 
@@ -193,7 +191,7 @@ public final class RunTestsTool implements IMcpTool {
 			run.launchedAs(launchedAs);
 			boolean debug = args.getBoolean("debug", false); //$NON-NLS-1$
 			org.eclipse.core.runtime.jobs.Job.create("MCP test launch " + run.id(), progress -> { //$NON-NLS-1$
-				Object previous = suppressCompileErrorPrompt();
+				String previous = com.vogella.eclipse.mcp.core.CompileErrorPrompt.suppress();
 				try {
 					org.eclipse.debug.core.ILaunch launch = configuration.launch(
 							debug ? ILaunchManager.DEBUG_MODE : ILaunchManager.RUN_MODE, null);
@@ -203,7 +201,7 @@ public final class RunTestsTool implements IMcpTool {
 					// as an assertion rather than a CoreException
 					TestRunRegistry.failed(run, describe(e));
 				} finally {
-					restoreCompileErrorPrompt(previous);
+					com.vogella.eclipse.mcp.core.CompileErrorPrompt.restore(previous);
 				}
 				return org.eclipse.core.runtime.Status.OK_STATUS;
 			}).schedule();
@@ -242,6 +240,7 @@ public final class RunTestsTool implements IMcpTool {
 			JsonArray broken = projectsWithErrors(project);
 			if (broken.size() > 0) {
 				result.put("launchedWithCompileErrors", broken) //$NON-NLS-1$
+						.put("compileErrorPromptWas", compileErrorPromptWas) //$NON-NLS-1$
 						.put("compileErrorNote", //$NON-NLS-1$
 								"These projects do not compile. Eclipse would normally ask whether to launch anyway; this server answered yes, because a dialog would block a call nobody is watching. Failures may be stale classes rather than real results."); //$NON-NLS-1$
 			}
@@ -264,23 +263,6 @@ public final class RunTestsTool implements IMcpTool {
 			// restates the request and says nothing about what went wrong
 			throw new McpToolException(
 					"Could not run the tests of %s: %s".formatted(projectName, describe(e)), e); //$NON-NLS-1$
-		}
-	}
-
-	/** Pre-answers the compile error prompt, returning the previous setting. */
-	private static Object suppressCompileErrorPrompt() {
-		var node = org.eclipse.core.runtime.preferences.InstanceScope.INSTANCE.getNode(DEBUG_UI);
-		String previous = node.get(CONTINUE_WITH_COMPILE_ERROR, null);
-		node.put(CONTINUE_WITH_COMPILE_ERROR, "always"); //$NON-NLS-1$
-		return previous;
-	}
-
-	private static void restoreCompileErrorPrompt(Object previous) {
-		var node = org.eclipse.core.runtime.preferences.InstanceScope.INSTANCE.getNode(DEBUG_UI);
-		if (previous instanceof String value) {
-			node.put(CONTINUE_WITH_COMPILE_ERROR, value);
-		} else {
-			node.remove(CONTINUE_WITH_COMPILE_ERROR);
 		}
 	}
 
