@@ -2,9 +2,12 @@ package com.vogella.eclipse.mcp.core.tests;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import com.vogella.eclipse.mcp.core.McpToolResult;
 
@@ -19,20 +22,53 @@ class ThemeToolsTest {
 
 	@Test
 	void setThemeNamesItsRequiredArgument() throws Exception {
-		McpToolResult result = TestFixture.call("eclipse_set_theme", Map.of());
-
-		assertTrue(result.isError(), result.text());
-		assertTrue(result.text().contains("'theme' is required"), result.text());
+		assertNamesItsArgument("eclipse_set_theme", Map.of(), "'theme' is required");
 	}
 
 	@Test
 	void bothRefuseCleanlyWithoutAWorkbench() throws Exception {
-		assertRefused("eclipse_list_themes", Map.of());
-		assertRefused("eclipse_set_theme", Map.of("theme", "org.eclipse.e4.ui.css.theme.e4_dark"));
-		assertRefused("eclipse_set_theme", Map.of("theme", "Dark", "persist", Boolean.FALSE));
+		assertRefusedWithoutAWorkbench("eclipse_list_themes", Map.of());
+		assertRefusedWithoutAWorkbench("eclipse_set_theme", Map.of("theme", "org.eclipse.e4.ui.css.theme.e4_dark"));
+		assertRefusedWithoutAWorkbench("eclipse_set_theme", Map.of("theme", "Dark", "persist", Boolean.FALSE));
 	}
 
-	private static void assertRefused(String tool, Map<String, Object> arguments) throws Exception {
+	@Test
+	void registeringAThemeNamesItsRequiredArguments() throws Exception {
+		assertNamesItsArgument("eclipse_register_theme", Map.of(), "'id'");
+		assertNamesItsArgument("eclipse_register_theme", Map.of("id", "com.example.theme"), "'label'");
+		assertNamesItsArgument("eclipse_register_theme", Map.of("id", "com.example.theme", "label", "Example"),
+				"'css'");
+	}
+
+	@Test
+	void registeringAThemeReportsAMissingStylesheet() throws Exception {
+		assertError("eclipse_register_theme",
+				Map.of("id", "com.example.theme", "label", "Example", "css", "/no/such/theme.css"), "No stylesheet at");
+	}
+
+	@Test
+	void registeringAThemeRefusesWithoutAWorkbench(@TempDir Path dir) throws Exception {
+		Path css = Files.writeString(dir.resolve("theme.css"), "Label {color: #ff0000;}");
+		assertRefusedWithoutAWorkbench("eclipse_register_theme",
+				Map.of("id", "com.example.theme", "label", "Example", "css", css.toString()));
+	}
+
+	private static void assertError(String tool, Map<String, Object> arguments, String expected) throws Exception {
+		McpToolResult result = TestFixture.call(tool, arguments);
+		assertTrue(result.isError(), "expected an error, got " + result.text());
+		assertTrue(result.text().contains(expected),
+				"expected a message about '%s', got %s".formatted(expected, result.text()));
+	}
+
+	private static void assertNamesItsArgument(String tool, Map<String, Object> arguments, String expected)
+			throws Exception {
+		McpToolResult result = TestFixture.call(tool, arguments);
+		assertTrue(result.isError(), "expected an error, got " + result.text());
+		assertTrue(result.text().contains(expected),
+				"expected a message about '%s', got %s".formatted(expected, result.text()));
+	}
+
+	private static void assertRefusedWithoutAWorkbench(String tool, Map<String, Object> arguments) throws Exception {
 		McpToolResult result = TestFixture.call(tool, arguments);
 		assertTrue(result.isError(), "expected an error, got " + result.text());
 		assertTrue(result.text().toLowerCase().contains("no running workbench"),

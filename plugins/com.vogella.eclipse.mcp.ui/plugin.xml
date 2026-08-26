@@ -11,6 +11,7 @@
       <tool class="com.vogella.eclipse.mcp.ui.internal.ApplyCssTool"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.ThemeTools$ListThemes"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.ThemeTools$SetTheme"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.ThemeTools$RegisterTheme"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.OpenInEditorTool"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.SamplingTools$Start"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.SamplingTools$Stop"/>

@@ -226,7 +226,7 @@ final class CssStyling {
 	private record PreferenceOutcome(JsonObject json, boolean fullyApplied) {
 	}
 
-	private static final String IGNORED_NOTE = "Preference blocks are styled on the theme activation path only, and the theme engine could not be reached, so this block was not applied. eclipse_set_theme activates a theme, which is what applies them."; //$NON-NLS-1$
+	private static final String IGNORED_NOTE = "Preference rules take effect when a theme is activated, which is the one thing this tool cannot do, and the theme engine could not be reached here either, so this block was not styled. eclipse_set_theme activates a theme and applies such blocks outright."; //$NON-NLS-1$
 
 	/**
 	 * Styles one {@code IEclipsePreferences} block through the same call the
@@ -489,7 +489,8 @@ final class CssStyling {
 		}
 		if (matches.isEmpty()) {
 			return new JsonObject().put("switched", Boolean.FALSE) //$NON-NLS-1$
-					.put("reason", "No registered theme matches '%s'. Registered are:".formatted(wanted)) //$NON-NLS-1$ //$NON-NLS-2$
+					.put("reason", "No registered theme matches '%s', so nothing was switched; handed an unregistered id the engine leaves the current theme up and logs a warning this answer would never show. Registered are:" //$NON-NLS-1$ //$NON-NLS-2$
+							.formatted(wanted))
 					.put("candidates", candidates(all));
 		}
 		ThemeRef target = matches.get(0);
@@ -520,6 +521,41 @@ final class CssStyling {
 			candidates.add(theme.describe());
 		}
 		return candidates;
+	}
+
+	/**
+	 * Registers a theme for the rest of this session, from a stylesheet location.
+	 * <p>
+	 * Reached through {@code registerTheme(String, String, String)}, which the
+	 * public interface declares; the four argument overload with the os version
+	 * match exists only on the internal class and is not used.
+	 */
+	static JsonObject registerTheme(String id, String label, String stylesheetUri) {
+		Object engine = themeEngine();
+		if (engine == null) {
+			return new JsonObject().put("registered", Boolean.FALSE) //$NON-NLS-1$
+					.put("reason", "The e4 CSS theme engine could not be reached."); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		if (registeredThemes(engine).stream().anyMatch(theme -> theme.id().equals(id))) {
+			return new JsonObject().put("registered", Boolean.FALSE).put("id", id) //$NON-NLS-1$ //$NON-NLS-2$
+					.put("reason", "A theme with the id '%s' is already registered; switch to it with eclipse_set_theme." //$NON-NLS-1$ //$NON-NLS-2$
+							.formatted(id));
+		}
+		try {
+			engine.getClass().getMethod("registerTheme", String.class, String.class, String.class).invoke(engine, id, //$NON-NLS-1$
+					label, stylesheetUri);
+		} catch (java.lang.reflect.InvocationTargetException e) {
+			return new JsonObject().put("registered", Boolean.FALSE).put("id", id) //$NON-NLS-1$ //$NON-NLS-2$
+					.put("reason", "Registering the theme failed: " + e.getCause()); //$NON-NLS-1$ //$NON-NLS-2$
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return new JsonObject().put("registered", Boolean.FALSE).put("id", id) //$NON-NLS-1$ //$NON-NLS-2$
+					.put("reason", "Registering the theme failed: " + e); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		return new JsonObject().put("registered", Boolean.TRUE) //$NON-NLS-1$
+				.put("id", id) //$NON-NLS-1$
+				.put("label", label) //$NON-NLS-1$
+				.put("stylesheet", stylesheetUri) //$NON-NLS-1$
+				.put("note", "The registration lives for this session only and is gone when the IDE restarts. Nothing was installed: the stylesheet is read from where it is every time the theme activates, so the file has to stay where it is for as long as the theme is used. Switch to it with eclipse_set_theme."); //$NON-NLS-1$
 	}
 
 	/**

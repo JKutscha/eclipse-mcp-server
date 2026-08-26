@@ -328,7 +328,10 @@ The asymmetry is deliberate. Preferences span the whole `org.eclipse.*` key spac
 
 Auto-build is special cased. Setting `org.eclipse.core.resources` / `description.autobuilding` goes through `IWorkspaceDescription.setAutoBuilding` rather than writing the raw key, which is the usual way to get this subtly wrong, and the answer says so in `appliedThrough`.
 
-One key inside a writable qualifier is refused all the same: writing `themeid` under `org.eclipse.e4.ui.css.swt.theme` was accepted and did nothing, because the theme engine persists the id of the theme that is active when the IDE shuts down and overwrites the write, which cost one reporter a full restart of a five hundred project workspace before anyone noticed what had happened. Switch themes with `eclipse_set_theme`, which activates one instead of only writing its id down.
+One key inside a writable qualifier is refused all the same: writing `themeid` under `org.eclipse.e4.ui.css.swt.theme` reaches disk, but it is not a way to switch themes.
+At the next startup the theme engine resolves the persisted id against the registered themes, and an id that does not resolve falls back to a default that is persisted over the written value.
+That cost one reporter a full restart of a five hundred project workspace before anyone noticed what had happened, because the write looked accepted and the answer said nothing.
+Switch themes with `eclipse_set_theme`, which activates a registered theme in the running IDE.
 
 ### `eclipse_analyze_dependencies`
 
@@ -705,7 +708,10 @@ Nothing is written to disk. The snippet lives in the engine, and a restart, a th
 
 Every call re-applies the current theme first, so snippets replace each other instead of piling up, and `reset` is that step alone. `rules` says how many rules were parsed, and `errors` carries what the engine's error handler reported, which is where a selector typo surfaces; a snippet that parses to zero rules is the answer to "why did nothing change".
 
-An `IEclipsePreferences` block, which is how a theme sets JDT syntax colours, styles preference nodes rather than widgets and is otherwise applied on the theme activation path only. This tool routes it through the theme engine's own preference path and then reads every key back, because the engine leaves a value it did not set itself alone until the theme has changed this session: a key that kept its value lands in `preferenceRules` under `unchangedKeys`, with the value that is there now, `applied` stays false until every declared key took, and `eclipse_set_theme` is what opens them up. A later theme change takes those overrides back, exactly as it takes the snippet itself away.
+Preference rules take effect when a theme is activated: after a real activation a key such as `org.eclipse.jdt.ui/java_keyword` carries exactly the value the theme's CSS declares.
+This tool cannot activate a theme, but it routes such a block through the engine's own preference styling all the same and reads every declared key back afterwards, so the answer says what took rather than assuming.
+The engine leaves a value it did not set itself alone until the theme has changed this session: a key that kept its value lands in `preferenceRules` under `unchangedKeys`, with the value that is there now, `applied` stays false until every declared key took, and `eclipse_set_theme` is what applies them outright.
+A later theme change takes those overrides back, exactly as it takes the snippet itself away.
 
 This is what turns a theme question into an experiment. Whether a selector matches at all is not something `eclipse_inspect_widget` can answer on its own, and rebuilding a theme plug-in and restarting for every attempt is the alternative: apply a rule with an unmistakable colour, inspect, and read `origin`.
 
@@ -722,11 +728,33 @@ Discovery is the point: a theme id is easy to misremember, and grepping `plugin.
 | `theme` | string, required | | Theme id or label, from `eclipse_list_themes`. |
 | `persist` | boolean | `true` | Remember the choice across restarts; false switches this session only. |
 
-The name is resolved by exact id, then exact label, then substring, stopping at the first step that matches anything, and an ambiguous name is refused with the candidates rather than guessed. The answer reports `previousThemeId`, so the old theme can be put back exactly, which is what makes the tool usable on somebody's running workbench.
+The name is resolved by exact id, then exact label, then substring, stopping at the first step that matches anything, and an ambiguous name is refused with the candidates rather than guessed.
+The answer reports `previousThemeId`, so the old theme can be put back exactly, which is what makes the tool usable on somebody's running workbench.
 
-A switch restyles every shell in the IDE and is not instant, so the tool waits up to 25 seconds. When that runs out the answer says `timedOut` and that the switch may have completed anyway; `eclipse_list_themes` settles which theme is active before retrying.
+A theme id that is not currently registered is refused rather than passed to the engine.
+Handed one, the engine leaves the current theme up and writes only a platform log warning nobody sees, while a persisted id it cannot resolve at the next startup gets replaced by a fallback, which is exactly the silent failure this refusal exists to prevent.
+A bundle installed into the running IDE contributes its themes only after the restart that activates that install, so a freshly installed theme cannot be selected yet; see `eclipse_register_theme` for the way around that.
+
+A switch restyles every shell in the IDE and is not instant, so the tool waits up to 25 seconds.
+When that runs out the answer says `timedOut` and that the switch may have completed anyway; `eclipse_list_themes` settles which theme is active before retrying.
 
 A theme change drops any snippet `eclipse_apply_css` put on top and takes its `IEclipsePreferences` overrides back with it, and it is also what makes such a block take effect reliably in the first place.
+
+### `eclipse_register_theme`
+
+Makes a theme selectable in the running IDE without a restart, by registering a stylesheet that already exists on disk.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `id` | string, required | | Id to register the theme under. |
+| `label` | string, required | | Label shown wherever themes are listed. |
+| `css` | string, required | | Stylesheet as a file path or `file:` URI. |
+
+**It installs nothing.**
+The registration lives for this session only and is gone when the IDE restarts, and the engine reads the stylesheet from where it is on every activation, so the file has to stay where it is for as long as the theme is used.
+
+This closes the loop for iterating on a theme bundle: build it, install the bundle into the running IDE, register its css here, switch with `eclipse_set_theme`, screenshot.
+The bundle's own contribution lands at the next startup, because the theme engine reads the extension registry once, when it is constructed, and never again; registering the stylesheet by hand is the only way to use it before then.
 
 ### `eclipse_get_installation`
 

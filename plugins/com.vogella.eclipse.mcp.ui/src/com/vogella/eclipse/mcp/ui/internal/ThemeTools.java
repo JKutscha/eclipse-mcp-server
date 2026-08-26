@@ -1,5 +1,6 @@
 package com.vogella.eclipse.mcp.ui.internal;
 
+import java.nio.file.Path;
 import java.util.Map;
 
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -64,7 +65,7 @@ public final class ThemeTools {
 
 		@Override
 		public String getDescription() {
-			return "Switches the IDE to another registered theme, named by id or by label, so that everything the theme draws restyles at once. CHANGES WHAT THE USER SEES across the whole IDE, and with persist (the default) the choice survives restarts. An ambiguous name is refused with the candidates rather than guessed. The answer reports previousThemeId so the old theme can be put back exactly. This is also the reliable way to make an IEclipsePreferences block from eclipse_apply_css take effect: preference blocks are styled on the theme activation path only. A theme change drops any snippet eclipse_apply_css put on top."; //$NON-NLS-1$
+			return "Switches the IDE to another registered theme, named by id or by label, so that everything the theme draws restyles at once. CHANGES WHAT THE USER SEES across the whole IDE, and with persist (the default) the choice survives restarts. An id that is not currently in the registry is refused with the registered ids rather than accepted, because a persisted id the next startup cannot resolve is replaced by a fallback, which is exactly the silent failure this tool exists to avoid. A theme whose bundle was installed in this session is not in the registry yet and cannot be selected until after the restart that activates the install. An ambiguous name is refused with the candidates rather than guessed. The answer reports previousThemeId so the old theme can be put back exactly. This is also what makes an IEclipsePreferences block from eclipse_apply_css take effect: preference rules are applied on the theme activation path only. A theme change drops any snippet eclipse_apply_css put on top."; //$NON-NLS-1$
 		}
 
 		@Override
@@ -103,6 +104,63 @@ public final class ThemeTools {
 						.toString());
 			}
 			return McpToolResult.of(outcome.value().toString());
+		}
+	}
+
+	/** Registers a theme from a stylesheet on disk, for this session only. */
+	public static final class RegisterTheme implements IMcpTool {
+
+		@Override
+		public String getName() {
+			return "eclipse_register_theme"; //$NON-NLS-1$
+		}
+
+		@Override
+		public String getDescription() {
+			return "Registers a theme with the running IDE's CSS engine, from a stylesheet already on disk, so it can be selected in this session without a restart. MODIFIES THIS SESSION'S THEME REGISTRY ONLY, and installs nothing: the registration is gone when the IDE restarts, and the stylesheet is read from where it is every time the theme activates, so the file has to stay where it is for as long as the theme is used. This is what closes the loop for somebody iterating on a theme bundle: build it, install the bundle into the running IDE, register its css here, switch with eclipse_set_theme, screenshot. A bundle installed in this session contributes its own themes only at the next startup, which is exactly the gap this closes."; //$NON-NLS-1$
+		}
+
+		@Override
+		public String getInputSchema() {
+			return """
+					{
+					  "type": "object",
+					  "required": ["id","label","css"],
+					  "properties": {
+					    "id":    {"type":"string","description":"Id to register the theme under, e.g. com.example.themes.mytheme."},
+					    "label": {"type":"string","description":"Label shown wherever themes are listed."},
+					    "css":   {"type":"string","description":"Stylesheet as a file path or file: URI. Read by the engine on every activation, never copied."}
+					  },
+					  "additionalProperties": false
+					}"""; //$NON-NLS-1$
+		}
+
+		@Override
+		public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
+			ToolArguments args = ToolArguments.of(arguments);
+			String id = args.getString("id"); //$NON-NLS-1$
+			String label = args.getString("label"); //$NON-NLS-1$
+			String css = args.getString("css"); //$NON-NLS-1$
+			if (id == null || label == null || css == null) {
+				return McpToolResult.error("The arguments 'id', 'label' and 'css' are all required."); //$NON-NLS-1$
+			}
+			String stylesheetUri = stylesheetUri(css);
+			if (stylesheetUri == null) {
+				return McpToolResult.error("No stylesheet at '%s'.".formatted(css)); //$NON-NLS-1$
+			}
+			return UiThread.call(UI_TIMEOUT_SECONDS, () -> CssStyling.registerTheme(id, label, stylesheetUri));
+		}
+
+		/** Turns a bare path into an absolute file URI; a URI with a scheme passes through. */
+		private static String stylesheetUri(String css) {
+			if (!css.matches("(?i)[a-z][a-z0-9+.-]*:.*")) { //$NON-NLS-1$
+				Path path = Path.of(css);
+				if (!java.nio.file.Files.exists(path)) {
+					return null;
+				}
+				return path.toAbsolutePath().toUri().toString();
+			}
+			return css;
 		}
 	}
 }

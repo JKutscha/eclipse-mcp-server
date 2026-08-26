@@ -244,3 +244,28 @@ The selector syntax has the same shape of problem on the way in:
 no inverse that survives a qualifier which legitimately contains a dash.
 A wrongly unescaped qualifier matches no rules at all, so the read-back decides
 here too.
+
+### e4 CSS: themes contributed at runtime never reach the engine
+
+`ThemeEngine`'s constructor walks the extension registry once and stores the
+result in a private final list. There is no registry field, no listener field
+and no `IRegistryEventListener` on the class, so a theme bundle installed into a
+running framework contributes to `org.eclipse.e4.ui.css.swt.theme` and
+`getThemes()` still does not see it until the next start.
+
+Verified against `org.eclipse.e4.ui.css.swt.theme_0.15.100.v20260422-0926.jar`,
+the version the IDE on this machine runs, with `javap`.
+
+Not filed; the engine has always worked this way rather than regressed, but the
+gap is invisible: p2 reports the install as successful and the theme is simply
+absent until a restart.
+`eclipse_register_theme` works around it by registering the stylesheet through
+`IThemeEngine.registerTheme(String, String, String)`, which the public interface
+declares; the four argument overload with the os version match exists only on
+the internal class and is deliberately not used.
+
+Related, and measured at the same time: `setTheme` handed an id that matches
+nothing loops the themes, falls through, logs a warning through `ILog` and
+leaves the current theme alone. It does not throw and corrupts nothing, but the
+warning goes where an MCP caller cannot read it, which is why
+`eclipse_set_theme` refuses unregistered ids itself instead of forwarding them.
