@@ -239,6 +239,13 @@ public final class RunTestsTool implements IMcpTool {
 								configuration.getAttribute(IPDELauncherConstants.APP_TO_TEST, (String) null))
 						.put("workspacePlugins", allWorkspacePlugins ? "all" : "required") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 						.put("workspaceBundle", testBundle) //$NON-NLS-1$
+						// read back rather than echoed: the selection is only honoured
+						// when useDefault is false, and reporting the intention hid that
+						.put(IPDELauncherConstants.USE_DEFAULT,
+								configuration.getAttribute(IPDELauncherConstants.USE_DEFAULT, true))
+						.put(IPDELauncherConstants.SELECTED_WORKSPACE_BUNDLES,
+								String.join(", ", configuration.getAttribute( //$NON-NLS-1$
+										IPDELauncherConstants.SELECTED_WORKSPACE_BUNDLES, java.util.Set.<String>of())))
 						.put(IPDELauncherConstants.RUN_IN_UI_THREAD,
 								configuration.getAttribute(IPDELauncherConstants.RUN_IN_UI_THREAD, true))
 						.put(IPDELauncherConstants.LOCATION,
@@ -359,6 +366,11 @@ public final class RunTestsTool implements IMcpTool {
 		// is still the test bundle plus its closure plus the target platform. Taking
 		// everything is the launch tab's default and it kills a UI test launch in a
 		// workspace that holds unbuilt copies of the bundles the workbench is made of.
+		// USE_DEFAULT is the switch that decides whether any of the rest is read at
+		// all. BundleLauncherHelper.getMergedBundleMap returns every active model when
+		// it is true, which it is by default, so a selection written next to it is
+		// simply ignored. That is why setting AUTOMATIC_ADD alone changed nothing.
+		configuration.setAttribute(IPDELauncherConstants.USE_DEFAULT, allWorkspacePlugins);
 		configuration.setAttribute(IPDELauncherConstants.AUTOMATIC_ADD, allWorkspacePlugins);
 		configuration.setAttribute(IPDELauncherConstants.AUTOMATIC_INCLUDE_REQUIREMENTS, true);
 		if (!allWorkspacePlugins && testBundle != null) {
