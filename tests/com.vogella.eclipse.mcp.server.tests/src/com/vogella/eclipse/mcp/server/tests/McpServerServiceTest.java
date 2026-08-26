@@ -304,6 +304,9 @@ class McpServerServiceTest {
 		// writes one entry into the test IDE's own log, which is what the tool is for
 		case "eclipse_log_status" -> Map.of("message", "written by the smoke test");
 		case "eclipse_refresh", "eclipse_get_classpath" -> Map.of("project", PROJECT);
+		// a dry run against the fixture, so the smoke test edits nothing
+		case "eclipse_edit_file" -> Map.of("path", "/" + PROJECT + "/src/example/Sample.java",
+				"oldText", "class Sample", "newText", "class Sample", "dryRun", Boolean.TRUE);
 		// dry run: the smoke test must not launch a JVM
 		case "eclipse_run_tests" -> Map.of("project", PROJECT, "dryRun", Boolean.TRUE);
 		case "eclipse_open" -> Map.of("path", SAMPLE);
