@@ -1457,6 +1457,28 @@ The result is **aggregated, not dumped**: the frames where time was actually spe
 
 `ThreadMXBean` sampling is safepoint biased, so tight loops without safepoint polls are under-represented. Treat it as "where is the time going", not as an exact profiler.
 
+### `eclipse_start_flight_recording` and `eclipse_stop_flight_recording`
+
+Records this IDE's JVM with Java Flight Recorder and answers **where the memory goes**.
+
+`eclipse_start_sampling` cannot answer that. It samples call stacks by time, so code that allocates heavily and computes little is invisible to it, which is most of what causes a rising heap.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `settings` | `default` \| `profile` | `profile` | `profile` adds the allocation and execution samples. `default` costs about one percent and covers GC and threads. |
+| `durationSeconds` | integer | 1800 | Stops on its own. `0` runs until stopped, which then has to happen. |
+| `maxAgeSeconds` | integer | 600 | History kept, so a problem that appears after hours can still be dumped when it does. |
+| `maxSizeMegabytes` | integer | 100 | |
+| `name` | string | | Label, shown in JDK Mission Control. |
+
+Stopping dumps the recording and returns it aggregated: `allocationByClass`, `allocationByStack`, `hotMethods`, `gc` and the event counts. `keepRunning` reads a recording without ending it, so one recording can be read from several angles with different `frameFilter` values. `outputPath` keeps the `.jfr` file for opening in JDK Mission Control; without it the file is deleted after reading.
+
+**`allocationByStack` is the field that names a culprit.** A class on its own rarely does: a heap dominated by `Path` and `byte[]` says nothing until the call chain shows which code asked for them. `stackDepth` decides how much of the chain is aggregated, so deeper separates callers that share a top frame and shallower merges them.
+
+**Read the bytes as an estimate.** The allocation sampler is throttled and reports a weight per sample, so the figures rank allocators correctly and do not add up to what the process allocated.
+
+Recording happens in-process through `jdk.jfr`, so nothing has to be installed and no JVM flag is needed at startup. The packages are imported optionally: a JVM that does not expose them gets a refusal saying so rather than a failure. An Eclipse started from a normal `eclipse.ini` has them, because it launches with `--add-modules=ALL-SYSTEM`.
+
 ### `eclipse_list_ui_targets`
 
 Lists every open shell with its title, modality and bounds, and every workbench part with its id, title and visibility.
