@@ -243,6 +243,14 @@ public final class RunTestsTool implements IMcpTool {
 						// when useDefault is false, and reporting the intention hid that
 						.put(IPDELauncherConstants.USE_DEFAULT,
 								configuration.getAttribute(IPDELauncherConstants.USE_DEFAULT, true))
+						// where to read the bundle list the launch actually got: config.ini
+						// always holds it as osgi.bundles, while bundles.info is written
+						// only when simpleconfigurator is in use, which the narrow set is
+						// not, so naming that file alone would name a missing one
+						.put("configurationArea", //$NON-NLS-1$
+								"%s/.metadata/.plugins/org.eclipse.pde.core/%s (config.ini holds osgi.bundles; bundles.info is written next to it only for the wide set)" //$NON-NLS-1$
+										.formatted(org.eclipse.core.resources.ResourcesPlugin.getWorkspace().getRoot()
+												.getLocation(), run.launchName()))
 						.put(IPDELauncherConstants.SELECTED_WORKSPACE_BUNDLES,
 								String.join(", ", configuration.getAttribute( //$NON-NLS-1$
 										IPDELauncherConstants.SELECTED_WORKSPACE_BUNDLES, java.util.Set.<String>of())))

@@ -422,8 +422,11 @@ public final class TestRunRegistry {
 			JsonArray launchErrors = launchedPlatformErrors(run);
 			if (launchErrors.size() > 0) {
 				counted.put("launchedPlatformErrors", launchErrors) //$NON-NLS-1$
-						.put("launchedPlatformNote", //$NON-NLS-1$
-								"These come from the log of the platform that was launched, not from this IDE. A ClassNotFoundException in a bundle whose version ends in .qualifier is a workspace copy shadowing the installed bundle: it is on the launch's bundle list but has no compiled classes, and under the UI test application that stops the workbench from starting, which reports as no tests."); //$NON-NLS-1$
+						// the shadowing explanation fits one failure and misleads for the
+						// rest, so it is only offered when its own symptom is present
+						.put("launchedPlatformNote", launchErrors.toString().contains("ClassNotFoundException") //$NON-NLS-1$ //$NON-NLS-2$
+								? "These come from the log of the platform that was launched, not from this IDE. A ClassNotFoundException in a bundle whose version ends in .qualifier is a workspace copy shadowing the installed bundle: it is on the launch's bundle list but has no compiled classes, and under the UI test application that stops the workbench from starting, which reports as no tests. Narrow the bundle set with workspacePlugins required, or build the workspace." //$NON-NLS-1$
+								: "These come from the log of the platform that was launched, not from this IDE. The launch started and then failed on its own terms, so the tests never ran; read them as the platform's account of why, not as a fault of the test bundle."); //$NON-NLS-1$
 			}
 		}
 		// the counters must account for every case, or the summary contradicts the list
