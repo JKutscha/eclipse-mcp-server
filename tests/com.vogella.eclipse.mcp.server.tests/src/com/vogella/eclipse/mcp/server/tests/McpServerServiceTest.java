@@ -11,9 +11,13 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.jar.Attributes;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
 
 import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.resources.IProject;
@@ -65,6 +69,9 @@ class McpServerServiceTest {
 	/** A target whose only location is an empty directory, so resolving it needs no network. */
 	private static final String TARGET = "/%s/smoke.target".formatted(PROJECT);
 
+	/** A throwaway bundle jar the install tool can look at without installing it. */
+	private static Path SMOKE_JAR;
+
 	/** An initialize request answers 200 without a session, which makes it a usable probe. */
 	private static final String INITIALIZE = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":"
 			+ "{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},"
@@ -80,6 +87,22 @@ class McpServerServiceTest {
 		McpServerService.getInstance().start();
 		assertNotNull(endpoint(), "The server did not report an endpoint");
 		createSampleProject();
+		SMOKE_JAR = createSmokeBundleJar();
+	}
+
+	private static Path createSmokeBundleJar() throws Exception {
+		Path path = Files.createTempFile("mcp-install-bundle-smoke", ".jar");
+		path.toFile().deleteOnExit();
+		Manifest manifest = new Manifest();
+		Attributes main = manifest.getMainAttributes();
+		main.putValue("Manifest-Version", "1.0");
+		main.putValue("Bundle-ManifestVersion", "2");
+		main.putValue("Bundle-SymbolicName", "org.mcp.smoke.installable");
+		main.putValue("Bundle-Version", "0.0.1");
+		try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(path), manifest)) {
+			out.flush();
+		}
+		return path;
 	}
 
 	/** The Java tools need something to work on, otherwise they rightly refuse. */
@@ -314,6 +337,8 @@ class McpServerServiceTest {
 		// dryRun defaults true, so the smoke test deletes nothing; naming the fixture
 		// type keeps the refusal specific rather than a resolution failure
 		case "eclipse_delete" -> Map.of("typeName", "example.Sample");
+		// a dry run against a throwaway jar, so the smoke test installs nothing
+		case "eclipse_install_bundle" -> Map.of("jar", SMOKE_JAR.toString(), "dryRun", Boolean.TRUE);
 		// scoped to the fixture: an unscoped text search reads every file in the
 		// workspace and outruns the client timeout
 		case "eclipse_search_text" -> Map.of("pattern", "class", "projects", List.of(PROJECT));
