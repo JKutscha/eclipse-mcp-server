@@ -1630,6 +1630,14 @@ With no `shellTitle`, the active shell is meant, and the active workbench window
 
 `method` in the answer says how the image was produced. `rootCapture` reads the real screen pixels for the area and crops. `widgetPrint` paints the widget hierarchy instead, which is the fallback used when the first attempt comes back uniform: under a compositing window manager such as mutter, a redirected window's contents live in an offscreen pixmap, so reading the X11 root drawable yields nothing at all. Printing has known GTK gaps, which is why it is the fallback and not the primary path, but a slightly wrong image beats no image.
 
+A shell capture is sized to the shell's client area and composes every visible child of the shell into one picture, each at its own bounds, so the trim bars are in it: the top toolbar as well as the status line, HeapStatus and progress trim at the bottom.
+
+That matters because the trim bars are where a theming defect shows, and they are ordinary styled widgets no other target photographs.
+
+The window decorations, meaning the title bar and the frame around the window, stay out of a widget print: they are drawn by the window manager and are not children of anything SWT can paint. They are in the picture only when `rootCapture` succeeded.
+
+`requestedArea` in the answer names the bounds of what was asked for. When the capture covers less than that, `requestedAreaNote` says what was left out and why, so a shorter image is a reported truncation rather than something a caller notices after cropping.
+
 For `widgetPrint` the canvas is filled with magenta before printing, because anything the print leaves untouched has to stay detectable and white would be indistinguishable from the unstyled widgets a dark theme bug produces. After that check has judged the image, the still-magenta pixels are replaced with the widget's background colour in the image data, so a whole shell capture no longer arrives with every sash and part margin outlined in filler colour; the answer reports how many there were in `unpaintedPixels`, their share of the image in `unpaintedFraction`, and the colour they were filled with in `unpaintedFilledWith`. A UI that genuinely contains pure magenta shows up as a large count rather than as silence.
 
 There is no fallback for `display`, since there is no single widget to paint, so on such a display only `part` and `shell` can be captured.
