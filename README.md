@@ -8,6 +8,8 @@ An agent with a shell already has files, grep and git.
 What it does not have is the resolved Java model, the incremental builder's problem markers and the user's current editor context.
 Those are the capabilities exposed here.
 
+Built and maintained by [vogella GmbH](https://vogella.com/services/), and used in our consulting and in our AI based Java cleanup services.
+
 Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration within an allowlist, `eclipse_set_project_state` opens and closes projects, `eclipse_set_bree` rewrites plug-in manifests, `eclipse_add_repository` and `eclipse_remove_repository` change the configured update sites, `eclipse_run_command` runs arbitrary commands in directories that same preference page has to name first, `eclipse_run_workbench_command` runs whatever workbench command it is given, and `eclipse_manage_window` and `eclipse_log_status` open and close windows and write log entries.
 The debugger tools change things too, in narrower ways that each description states: `eclipse_set_breakpoint` edits the breakpoint list, `eclipse_debug_launch` starts a process under the debugger, `eclipse_debug_evaluate` runs an expression inside the debugged program, and `eclipse_debug_control` steps and terminates it.
 There is no general file writing and no refactoring.
