@@ -236,6 +236,16 @@ public final class FindReferencesTool implements IMcpTool {
 				// field is missing from this code path"
 				.put("linkedDuplicates", Integer.valueOf(rawTotal - hits.size())) //$NON-NLS-1$
 				.put("truncated", hits.size() > reported.size()); //$NON-NLS-1$
+		// said where the conclusion is drawn, not in documentation somebody reads
+		// later: a caller sweeping for dead code reads total 0 and moves on
+		List<String> injection = searched.stream().flatMap(overload -> overload.members().stream())
+				.flatMap(one -> InjectionAnnotations.on(one).stream()).distinct().toList();
+		if (!injection.isEmpty()) {
+			JsonArray annotations = new JsonArray();
+			injection.forEach(annotations::add);
+			result.put("injectionAnnotations", annotations) //$NON-NLS-1$
+					.put("injectionNote", InjectionAnnotations.warning(injection)); //$NON-NLS-1$
+		}
 		if (types.size() > 1) {
 			JsonArray declaredIn = new JsonArray();
 			types.forEach(copy -> declaredIn.add(JavaModelSupport.originOf(copy)));

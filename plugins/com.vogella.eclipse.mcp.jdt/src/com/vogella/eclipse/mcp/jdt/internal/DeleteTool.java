@@ -49,7 +49,7 @@ public final class DeleteTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Deletes a Java type's source file, or with memberName a single field, method or nested type, as the last step of a dead code sweep. A member is removed through the Java model, so its javadoc goes with it rather than being left behind describing something that no longer exists. DELETES A FILE FROM THE WORKSPACE, and runs as a dry run unless dryRun is set to false. It refuses, unless force is passed, when anything still references the type, when a registry position names it, or when its package is exported as public API, and it reports all three either way. It counts an e4 application model as a registry position: a class named by a bundleclass:// URI in a .e4xmi is instantiated by the workbench at every start and referenced from no Java, so it looks dead and is not. READ THIS LIMITATION: the deletion goes through LTK as a resource delete, and PDE's manifest participants are enabled on IType rather than on IResource, so plugin.xml class attributes and Export-Package are NOT updated. Whatever registryEvidence the answer reports is what will be left dangling and has to be fixed by hand. Use eclipse_list_declarations to find candidates and eclipse_find_references to confirm them."; //$NON-NLS-1$
+		return "Deletes a Java type's source file, or with memberName a single field, method or nested type, as the last step of a dead code sweep. A member is removed through the Java model, so its javadoc goes with it rather than being left behind describing something that no longer exists. DELETES A FILE FROM THE WORKSPACE, and runs as a dry run unless dryRun is set to false. It refuses, unless force is passed, when anything still references the type, when a registry position names it, when its package is exported as public API, or when the member carries a framework injection annotation, and it reports all four either way. THE INJECTION CASE IS THE ONE THAT LOOKS SAFEST AND IS NOT: a field annotated @Reference, @Inject, @Autowired and their relatives is written by a framework at runtime and read by no Java, so every reference count and every text search agrees it is dead. Deleting two such @Reference fields, whose only purpose was to order declarative services components, once cost a night and surfaced three subsystems away as a workbench that would not start. It counts an e4 application model as a registry position: a class named by a bundleclass:// URI in a .e4xmi is instantiated by the workbench at every start and referenced from no Java, so it looks dead and is not. READ THIS LIMITATION: the deletion goes through LTK as a resource delete, and PDE's manifest participants are enabled on IType rather than on IResource, so plugin.xml class attributes and Export-Package are NOT updated. Whatever registryEvidence the answer reports is what will be left dangling and has to be fixed by hand. Use eclipse_list_declarations to find candidates and eclipse_find_references to confirm them."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -63,7 +63,7 @@ public final class DeleteTool implements IMcpTool {
 				    "memberName": {"type":"string","description":"A field, method or nested type to delete instead of the file. Its javadoc goes with it. An overloaded method name is refused, since this tool cannot tell which one you mean."},
 				    "project":  {"type":"string","description":"Project to resolve the name in. Omit to search every Java project."},
 				    "dryRun":   {"type":"boolean","default":true,"description":"Report what would happen and change nothing."},
-				    "force":    {"type":"boolean","default":false,"description":"Delete despite references, a registry position, or a public API package."}
+				    "force":    {"type":"boolean","default":false,"description":"Delete despite references, a registry position, a public API package, or a framework injection annotation."}
 				  },
 				  "additionalProperties": false
 				}"""; //$NON-NLS-1$
@@ -326,7 +326,24 @@ public final class DeleteTool implements IMcpTool {
 				.put("registryEvidence", registry) //$NON-NLS-1$
 				.put("apiTier", export.tier()); //$NON-NLS-1$
 
+		// the same phenomenon as a registry position, one level down: an injection
+		// annotation says a framework reads or writes this member from outside any
+		// compilation unit, so the reference count that would otherwise justify the
+		// deletion is exactly the number that cannot see it
+		List<String> injection = InjectionAnnotations.on(member);
+		if (!injection.isEmpty()) {
+			JsonArray annotations = new JsonArray();
+			injection.forEach(annotations::add);
+			result.put("injectionAnnotations", annotations) //$NON-NLS-1$
+					.put("injectionNote", InjectionAnnotations.warning(injection)); //$NON-NLS-1$
+		}
+
 		List<String> blockers = new ArrayList<>();
+		if (!injection.isEmpty()) {
+			blockers.add(
+					"it declares %s, so a framework wires it from outside Java and a reference count of zero says nothing about whether it is used" //$NON-NLS-1$
+							.formatted(String.join(", ", injection.stream().map(a -> "@" + a).toList()))); //$NON-NLS-1$ //$NON-NLS-2$
+		}
 		if (references > 0) {
 			blockers.add("%d reference(s) to it remain".formatted(Integer.valueOf(references)));
 		}
