@@ -12,6 +12,7 @@
       <tool class="com.vogella.eclipse.mcp.core.internal.GetLogEntriesTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.GetPreferencesTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.BuildTool"/>
+      <tool class="com.vogella.eclipse.mcp.core.internal.CancelBuildTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.RefreshTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.GetBuildStatusTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.SetPreferenceTool"/>

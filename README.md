@@ -543,6 +543,23 @@ It never counts markers: a refresh does not build, so any count would describe w
 
 Refreshing is available on `eclipse_build` and `eclipse_get_problems` as well, but only as a step before something else. With auto-build off, picking up external edits and deciding whether to build are separate decisions, which is why this exists on its own.
 
+### `eclipse_cancel_build`
+
+**Cancels work in progress.**
+Stops what is building: the jobs `eclipse_build` started and the workspace's own auto-build and manual build.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `waitSeconds` | integer, 0 to 20 | 5 | How long to watch for the cancelled jobs to end before answering. |
+
+Three things the answer says on purpose, because a cancel that reports success while the builder carries on is worse than no cancel.
+
+Cancelling is a request, not a kill. A builder stops only where it checks its progress monitor, and one that never checks runs to the end of what it is doing, so `stillRunning` reports what had not ended when the wait was up rather than the tool claiming more than it did.
+
+A cancelled build leaves the workspace partly built, so error and warning counts afterwards describe nothing until something builds again.
+
+`autoBuildEnabled` is always reported, because with auto-build on a cancel buys a pause and not a stop: the next change starts a build again. Turning it off with `eclipse_set_preference` on `description.autobuilding` is what actually stops it coming back, and the note says so.
+
 ### `eclipse_get_build_status`
 
 Reports a build started through `eclipse_build`, by `buildId`, or the most recent one when that is omitted.

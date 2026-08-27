@@ -75,6 +75,7 @@ public final class BuildRegistry {
 		private volatile int[] builtFiles;
 		private volatile List<String> builtProjects = List.of();
 		private volatile String note;
+		private volatile Job job;
 		private volatile List<String> builderFailures = List.of();
 		private volatile int errors = -1;
 		private volatile int warnings = -1;
@@ -161,6 +162,21 @@ public final class BuildRegistry {
 		boolean await(long timeout, TimeUnit unit) throws InterruptedException {
 			return finished.await(timeout, unit);
 		}
+
+		/**
+		 * Asks the job to stop. Cancellation is cooperative: a builder that never
+		 * looks at its monitor runs to the end of whatever it is doing.
+		 *
+		 * @return whether there was a job left to ask
+		 */
+		public boolean cancel() {
+			Job running = job;
+			if (running == null || !"running".equals(state)) { //$NON-NLS-1$
+				return false;
+			}
+			running.cancel();
+			return true;
+		}
 	}
 
 	/**
@@ -190,8 +206,21 @@ public final class BuildRegistry {
 		});
 		job.setRule(ResourcesPlugin.getWorkspace().getRuleFactory().buildRule());
 		job.setUser(false);
+		build.job = job;
 		job.schedule();
 		return build;
+	}
+
+	/** The builds this server started that have not ended, newest first. */
+	public synchronized List<Build> running() {
+		List<Build> found = new java.util.ArrayList<>();
+		for (Build build : builds.values()) {
+			if ("running".equals(build.state())) { //$NON-NLS-1$
+				found.add(build);
+			}
+		}
+		java.util.Collections.reverse(found);
+		return found;
 	}
 
 	private static void run(Build build, Request request, IProgressMonitor monitor) {
