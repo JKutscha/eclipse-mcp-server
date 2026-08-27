@@ -10,7 +10,7 @@ Those are the capabilities exposed here.
 
 Built and maintained by [vogella GmbH](https://vogella.com/services/), and used in our consulting and in our AI based Java cleanup services.
 
-Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration within an allowlist, `eclipse_set_project_state` opens and closes projects, `eclipse_set_bree` rewrites plug-in manifests, `eclipse_add_repository` and `eclipse_remove_repository` change the configured update sites, `eclipse_run_command` runs arbitrary commands in directories that same preference page has to name first, `eclipse_run_workbench_command` runs whatever workbench command it is given, and `eclipse_manage_window` and `eclipse_log_status` open and close windows and write log entries.
+Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration, `eclipse_set_project_state` opens and closes projects, `eclipse_set_bree` rewrites plug-in manifests, `eclipse_add_repository` and `eclipse_remove_repository` change the configured update sites, `eclipse_run_command` runs arbitrary commands in directories that same preference page has to name first, `eclipse_run_workbench_command` runs whatever workbench command it is given, and `eclipse_manage_window` and `eclipse_log_status` open and close windows and write log entries.
 The debugger tools change things too, in narrower ways that each description states: `eclipse_set_breakpoint` edits the breakpoint list, `eclipse_debug_launch` starts a process under the debugger, `eclipse_debug_evaluate` runs an expression inside the debugged program, and `eclipse_debug_control` steps and terminates it.
 There is no general file writing and no refactoring.
 Commands run only in directories the user has named, and the only git operation is a branch switch through EGit.
@@ -318,19 +318,21 @@ Writes one preference and returns the previous value, so any change can be undon
 
 | Argument | Type | Default | Meaning |
 |---|---|---|---|
-| `qualifier` | string, required | | Restricted to an allowlist, see below. |
+| `qualifier` | string, required | | Any preference qualifier. |
 | `key` | string, required | | |
 | `value` | string | remove the key | Omitting it removes the key, letting the value below it in the lookup order take over. |
 | `scope` | `instance` \| `project` | `instance` | |
 | `project` | string | | Required for the project scope. |
 
-Only `org.eclipse.core.resources`, `org.eclipse.jdt.core`, `org.eclipse.jdt.ui` and `org.eclipse.core.runtime` may be written.
-Reading is not restricted: `eclipse_get_preferences` takes any qualifier.
-The asymmetry is deliberate. Preferences span the whole `org.eclipse.*` key space, and a wrongly set compiler or formatter option is invisible in the IDE while producing confusing results for a long time afterwards, so the writable set starts from what is defensible rather than from everything.
+Any qualifier may be written.
+An allowlist of four qualifiers used to stand here and was removed, because it was not a boundary.
+Project preferences are ordinary files under `.settings` that `eclipse_write_file` writes anyway, and a CSS snippet carrying an `IEclipsePreferences` block writes any qualifier at all through `eclipse_apply_css`.
+A restriction that two other tools of the same server walk around stops the caller with a legitimate need and nobody else, which is what it did.
+The real hazard is unchanged and is now carried by the answer instead: a wrongly set compiler or formatter option is invisible in the IDE and confusing for a long time afterwards, so `previous` is the only record that the value was ever something else. Keep it.
 
 Auto-build is special cased. Setting `org.eclipse.core.resources` / `description.autobuilding` goes through `IWorkspaceDescription.setAutoBuilding` rather than writing the raw key, which is the usual way to get this subtly wrong, and the answer says so in `appliedThrough`.
 
-One key inside a writable qualifier is refused all the same: writing `themeid` under `org.eclipse.e4.ui.css.swt.theme` reaches disk, but it is not a way to switch themes.
+One key is refused all the same: writing `themeid` under `org.eclipse.e4.ui.css.swt.theme` reaches disk, but it is not a way to switch themes.
 At the next startup the theme engine resolves the persisted id against the registered themes, and an id that does not resolve falls back to a default that is persisted over the written value.
 That cost one reporter a full restart of a five hundred project workspace before anyone noticed what had happened, because the write looked accepted and the answer said nothing.
 Switch themes with `eclipse_set_theme`, which activates a registered theme in the running IDE.

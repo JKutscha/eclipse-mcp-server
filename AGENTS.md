@@ -203,9 +203,10 @@ This was shipped broken once and caught only against a real workspace, where a c
 It over-reports by design, because anything logged during the window is included; calling a broken build clean is worse.
 The unit tests can only check that entries from before the build are excluded, since making a builder throw on demand is not worth the fixture. The positive case is verified against a real workspace.
 
-**`eclipse_set_preference` writes an allowlist, `eclipse_get_preferences` reads anything.**
-The asymmetry is the point: a wrongly set compiler or formatter preference is invisible and long-lived, so the writable qualifiers are the four in `SetPreferenceTool.ALLOWED_QUALIFIERS`.
-Widening that list is a decision, not a fix.
+**`eclipse_set_preference` has no allowlist, and adding one back would not buy anything.**
+It had one, of four qualifiers, and every extension of it was friction rather than safety: `eclipse_write_file` writes any `.settings/*.prefs`, and the `IEclipsePreferences` blocks `eclipse_apply_css` accepts write any qualifier at all.
+A guard that two tools of the same server walk around only ever stopped the caller with a legitimate need.
+The hazard it was aimed at is real and is handled by reporting instead: a wrongly set compiler or formatter preference is invisible and long-lived, and `previous` in the answer is the only record of what it was.
 Auto-build goes through `IWorkspaceDescription.setAutoBuilding`, not through a raw write of `description.autobuilding`, which is the usual way to get it subtly wrong.
 
 **Platform mismatch is read from `Eclipse-PlatformFilter`, not from the project name.**

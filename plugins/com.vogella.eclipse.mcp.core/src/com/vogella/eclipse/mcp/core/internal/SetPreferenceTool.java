@@ -1,7 +1,6 @@
 package com.vogella.eclipse.mcp.core.internal;
 
 import java.util.Map;
-import java.util.Set;
 
 import org.eclipse.core.resources.IWorkspace;
 import org.eclipse.core.resources.IWorkspaceDescription;
@@ -19,29 +18,18 @@ import com.vogella.eclipse.mcp.core.ToolArguments;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
 /**
- * Writes a single preference, within an allowlist of qualifiers.
+ * Writes a single preference and reports what was there before.
+ * <p>
+ * An allowlist of qualifiers used to stand here. It held back only legitimate
+ * work: project preferences are ordinary files under {@code .settings} that
+ * eclipse_write_file writes anyway, and a CSS snippet carrying an
+ * {@code IEclipsePreferences} block writes any qualifier at all through
+ * eclipse_apply_css. A restriction that two other tools of the same server walk
+ * around stops the caller with a legitimate need and nobody else. What remains
+ * are the two keys where writing the obvious thing does not do the obvious
+ * thing.
  */
 public final class SetPreferenceTool implements IMcpTool {
-
-	/**
-	 * The qualifiers a client may write. Preferences reach into every corner of the
-	 * IDE and a wrong value is both invisible and long-lived, so the tool starts
-	 * from what is defensible rather than from everything.
-	 */
-	static final Set<String> ALLOWED_QUALIFIERS = Set.of("org.eclipse.core.resources", //$NON-NLS-1$
-			"org.eclipse.jdt.core", //$NON-NLS-1$
-			"org.eclipse.jdt.ui", //$NON-NLS-1$
-			"org.eclipse.core.runtime", //$NON-NLS-1$
-			// the theme qualifier, so that keys like disableOSDarkThemeInherit stay
-			// writable; themeid itself is refused below, because a startup that cannot
-			// resolve it replaces the written value with a fallback
-			"org.eclipse.e4.ui.css.swt.theme", //$NON-NLS-1$
-			// declarative services descriptor generation, off by platform default. A
-			// plug-in test launch runs workspace bundles in dev mode and reads the
-			// descriptors under OSGI-INF off disk, so a bundle that never generated
-			// them registers components with the wrong services and breaks the launched
-			// platform in a way that looks nothing like a descriptor problem
-			"org.eclipse.pde.ds.annotations"); //$NON-NLS-1$
 
 	private static final String AUTOBUILD_QUALIFIER = "org.eclipse.core.resources"; //$NON-NLS-1$
 
@@ -58,7 +46,7 @@ public final class SetPreferenceTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Writes a single preference in the instance or project scope and returns the previous value, so the change can be undone. MODIFIES THE IDE CONFIGURATION. Only the qualifiers org.eclipse.core.resources, org.eclipse.jdt.core, org.eclipse.jdt.ui and org.eclipse.core.runtime may be written. Auto-build (org.eclipse.core.resources, description.autobuilding) is applied through the workspace description rather than as a raw preference write, because writing the raw key does not take effect properly. The key themeid under org.eclipse.e4.ui.css.swt.theme is refused: the write reaches disk, but at the next startup the engine resolves the persisted id against the registered themes and an id that does not resolve is replaced by a fallback that is persisted over it, so it is not a way to switch themes. Use eclipse_set_theme."; //$NON-NLS-1$
+		return "Writes a single preference in the instance or project scope and returns the previous value, so the change can be undone. MODIFIES THE IDE CONFIGURATION: any qualifier may be written, and a wrong preference is both invisible and long-lived, so keep the previous value out of the answer, since nothing else records it. Auto-build (org.eclipse.core.resources, description.autobuilding) is applied through the workspace description rather than as a raw preference write, because writing the raw key does not take effect properly. The key themeid under org.eclipse.e4.ui.css.swt.theme is refused: the write reaches disk, but at the next startup the engine resolves the persisted id against the registered themes and an id that does not resolve is replaced by a fallback that is persisted over it, so it is not a way to switch themes. Use eclipse_set_theme."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -67,7 +55,7 @@ public final class SetPreferenceTool implements IMcpTool {
 				{
 				  "type": "object",
 				  "properties": {
-				    "qualifier": {"type":"string","description":"Preference qualifier. Restricted to an allowlist; eclipse_get_preferences can read any qualifier."},
+				    "qualifier": {"type":"string","description":"Preference qualifier, such as org.eclipse.jdt.core. eclipse_get_preferences reads them, which is how to find the key you mean before writing it."},
 				    "key":       {"type":"string","description":"Preference key."},
 				    "value":     {"type":"string","description":"New value. Omit to remove the key, which lets the value below it in the lookup order take over."},
 				    "scope":     {"type":"string","enum":["instance","project"],"default":"instance"},
@@ -85,11 +73,6 @@ public final class SetPreferenceTool implements IMcpTool {
 		String key = args.getString("key"); //$NON-NLS-1$
 		if (qualifier == null || key == null) {
 			return McpToolResult.error("The arguments 'qualifier' and 'key' are both required."); //$NON-NLS-1$
-		}
-		if (!ALLOWED_QUALIFIERS.contains(qualifier)) {
-			return McpToolResult.error(
-					"Writing '%s' is not allowed. Writable qualifiers are %s. Reading is not restricted; use eclipse_get_preferences." //$NON-NLS-1$
-							.formatted(qualifier, String.join(", ", ALLOWED_QUALIFIERS.stream().sorted().toList()))); //$NON-NLS-1$
 		}
 		if (THEME_QUALIFIER.equals(qualifier) && THEMEID_KEY.equals(key)) {
 			return McpToolResult.error(

@@ -19,8 +19,11 @@ class SetPreferenceToolTest {
 
 	private static final String TOOL = "eclipse_set_preference";
 
-	/** An allowlisted qualifier, with a key nothing else uses. */
+	/** A qualifier with a key nothing else uses. */
 	private static final String QUALIFIER = "org.eclipse.core.runtime";
+
+	/** One the old allowlist refused, to show that it no longer does. */
+	private static final String OTHER_QUALIFIER = "org.eclipse.ui.editors";
 
 	private static final String KEY = "com.vogella.eclipse.mcp.test.key";
 
@@ -34,6 +37,8 @@ class SetPreferenceToolTest {
 	void cleanUp() throws Exception {
 		InstanceScope.INSTANCE.getNode(QUALIFIER).remove(KEY);
 		InstanceScope.INSTANCE.getNode(QUALIFIER).flush();
+		InstanceScope.INSTANCE.getNode(OTHER_QUALIFIER).remove(KEY);
+		InstanceScope.INSTANCE.getNode(OTHER_QUALIFIER).flush();
 		InstanceScope.INSTANCE.getNode(THEME_QUALIFIER).remove(THEME_KEY);
 		InstanceScope.INSTANCE.getNode(THEME_QUALIFIER).remove("themeid");
 		InstanceScope.INSTANCE.getNode(THEME_QUALIFIER).flush();
@@ -74,13 +79,16 @@ class SetPreferenceToolTest {
 	}
 
 	@Test
-	void refusesAQualifierThatIsNotOnTheAllowlist() throws Exception {
-		McpToolResult result = TestFixture.call(TOOL,
-				Map.of("qualifier", "org.eclipse.ui.editors", "key", KEY, "value", "x"));
+	void writesAQualifierNoListEverNamed() throws Exception {
+		// there is no allowlist: it stopped legitimate work while eclipse_write_file
+		// and the IEclipsePreferences blocks of eclipse_apply_css wrote whatever they
+		// liked. What is left is that the answer carries the previous value
+		Map<String, Object> result = TestFixture.callAndParse(TOOL,
+				Map.of("qualifier", OTHER_QUALIFIER, "key", KEY, "value", "written"));
 
-		assertTrue(result.isError());
-		assertTrue(result.text().contains("org.eclipse.ui.editors"), result.text());
-		assertTrue(result.text().contains("eclipse_get_preferences"), result.text());
+		assertEquals("written", result.get("effective"), "got " + result);
+		assertNull(result.get("previous"), "the key did not exist before");
+		assertEquals("written", InstanceScope.INSTANCE.getNode(OTHER_QUALIFIER).get(KEY, null));
 	}
 
 	@Test
