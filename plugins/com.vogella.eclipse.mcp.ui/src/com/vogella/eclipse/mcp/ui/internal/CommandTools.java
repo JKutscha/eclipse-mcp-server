@@ -342,7 +342,7 @@ public final class CommandTools {
 		private static String requiredParameters(Command command) {
 			List<String> required = new ArrayList<>();
 			try {
-				for (IParameter parameter : command.getParameters()) {
+				for (IParameter parameter : parametersFor(command)) {
 					if (!parameter.isOptional()) {
 						required.add(parameter.getId());
 					}
@@ -425,10 +425,23 @@ public final class CommandTools {
 		}
 	}
 
+	/**
+	 * The parameters of a command, empty for one that declares none.
+	 * <p>
+	 * {@code Command.getParameters()} returns null rather than an empty array in
+	 * that case, and most workbench commands declare none: every toggle, every
+	 * Expand All. Reading the length unguarded therefore failed for the majority
+	 * of commands and worked for the parameterised few.
+	 */
+	public static IParameter[] parametersFor(Command command) throws NotDefinedException {
+		IParameter[] declared = command.getParameters();
+		return declared == null ? new IParameter[0] : declared;
+	}
+
 	private static JsonArray parametersOf(Command command) {
 		JsonArray parameters = new JsonArray();
 		try {
-			for (IParameter parameter : command.getParameters()) {
+			for (IParameter parameter : parametersFor(command)) {
 				parameters.add(new JsonObject().put("id", parameter.getId()).put("name", parameter.getName()) //$NON-NLS-1$ //$NON-NLS-2$
 						.put("optional", Boolean.valueOf(parameter.isOptional()))); //$NON-NLS-1$
 			}
