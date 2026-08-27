@@ -72,9 +72,16 @@ class CancelBuildToolTest {
 		assertTrue(List.of("done", "cancelled", "failed", "running").contains(status.get("state")), "got " + status);
 	}
 
-	/** Waits out whatever the preceding tests left building, so this one starts from quiet. */
+	/**
+	 * Waits out whatever the preceding tests left building, so this one starts from
+	 * quiet. The server's own build family has to be joined too: it is not one of
+	 * the platform's, so joining those alone leaves an eclipse_build job running
+	 * and the next test then finds something to cancel.
+	 */
 	private static void waitForQuiet() throws Exception {
-		org.eclipse.core.runtime.jobs.Job.getJobManager().join(ResourcesPlugin.FAMILY_AUTO_BUILD, null);
-		org.eclipse.core.runtime.jobs.Job.getJobManager().join(ResourcesPlugin.FAMILY_MANUAL_BUILD, null);
+		org.eclipse.core.runtime.jobs.IJobManager jobs = org.eclipse.core.runtime.jobs.Job.getJobManager();
+		jobs.join(com.vogella.eclipse.mcp.core.internal.BuildRegistry.FAMILY, null);
+		jobs.join(ResourcesPlugin.FAMILY_AUTO_BUILD, null);
+		jobs.join(ResourcesPlugin.FAMILY_MANUAL_BUILD, null);
 	}
 }

@@ -51,6 +51,13 @@ public final class BuildRegistry {
 
 	private String lastId;
 
+	/**
+	 * The job family of the builds this server starts, so they can be found and
+	 * waited for the way the platform's own build jobs can. Without one a caller
+	 * can watch a build only through its id.
+	 */
+	public static final Object FAMILY = "com.vogella.eclipse.mcp.build"; //$NON-NLS-1$
+
 	public static BuildRegistry getInstance() {
 		return INSTANCE;
 	}
@@ -166,6 +173,11 @@ public final class BuildRegistry {
 		/**
 		 * Asks the job to stop. Cancellation is cooperative: a builder that never
 		 * looks at its monitor runs to the end of whatever it is doing.
+		 * <p>
+		 * A job cancelled before it ever started is a different case, and
+		 * {@code Job.cancel} reporting true is how it is told apart. Nothing will run
+		 * for it, so nothing would ever set its outcome, and it would be reported as
+		 * running for the rest of the session. It is ended here instead.
 		 *
 		 * @return whether there was a job left to ask
 		 */
@@ -174,7 +186,12 @@ public final class BuildRegistry {
 			if (running == null || !"running".equals(state)) { //$NON-NLS-1$
 				return false;
 			}
-			running.cancel();
+			if (running.cancel()) {
+				endedAt = System.currentTimeMillis();
+				state = "cancelled"; //$NON-NLS-1$
+				note = "Cancelled before it started, so nothing was built and no builder ran."; //$NON-NLS-1$
+				finished.countDown();
+			}
 			return true;
 		}
 	}
@@ -200,10 +217,19 @@ public final class BuildRegistry {
 		builds.put(id, build);
 		lastId = id;
 
-		Job job = Job.create("MCP " + request.kind(), monitor -> { //$NON-NLS-1$
-			run(build, request, monitor);
-			return Status.OK_STATUS;
-		});
+		Job job = new Job("MCP " + request.kind()) { //$NON-NLS-1$
+
+			@Override
+			protected org.eclipse.core.runtime.IStatus run(org.eclipse.core.runtime.IProgressMonitor monitor) {
+				BuildRegistry.run(build, request, monitor);
+				return Status.OK_STATUS;
+			}
+
+			@Override
+			public boolean belongsTo(Object family) {
+				return FAMILY.equals(family);
+			}
+		};
 		job.setRule(ResourcesPlugin.getWorkspace().getRuleFactory().buildRule());
 		job.setUser(false);
 		build.job = job;

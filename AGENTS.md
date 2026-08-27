@@ -206,6 +206,7 @@ The unit tests can only check that entries from before the build are excluded, s
 **`eclipse_set_preference` has no allowlist, and adding one back would not buy anything.**
 It had one, of four qualifiers, and every extension of it was friction rather than safety: `eclipse_write_file` writes any `.settings/*.prefs`, and the `IEclipsePreferences` blocks `eclipse_apply_css` accepts write any qualifier at all.
 A guard that two tools of the same server walk around only ever stopped the caller with a legitimate need.
+That is measured, not argued: the theme session wrote `SHOW_MEMORY_MONITOR` into the `org.eclipse.ui` node from a theme stylesheet, a qualifier the list refused, and it went through.
 The hazard it was aimed at is real and is handled by reporting instead: a wrongly set compiler or formatter preference is invisible and long-lived, and `previous` in the answer is the only record of what it was.
 Auto-build goes through `IWorkspaceDescription.setAutoBuilding`, not through a raw write of `description.autobuilding`, which is the usual way to get it subtly wrong.
 
