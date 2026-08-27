@@ -355,9 +355,14 @@ public final class ScreenshotTools {
 							? "The capture came back uniform, so this display cannot be captured through the X11 root drawable. A compositing window manager redirects window contents into an offscreen pixmap, so reading the root yields nothing. There is no fallback for the whole display; capture a part or a shell instead, which can be painted directly." //$NON-NLS-1$
 							: "The capture came back uniform through both the X11 root drawable and by painting the widget, so this display cannot be captured at all. Nothing was written; do not trust screenshots here."); //$NON-NLS-1$
 				}
+				// before the filler is replaced, because replacing it is what makes this
+				// invisible: a paint that landed at half scale fills the top left quarter
+				// and leaves the rest filler, which afterwards reads as a plain
+				// background and counts as zero unpainted pixels
+				String scaleWarning = "widgetPrint".equals(method) ? paintCoverageWarning(data) : null; //$NON-NLS-1$
 				// after the blank check: a fully unpainted capture must still read as
 				// uniform here, and swapping the filler first would hide exactly that
-				Unpainted unpainted = "widgetPrint".equals(method) && printable != null //$NON-NLS-1$
+				Unpainted unpainted = "widgetPrint".equals(method) && printable != null && scaleWarning == null //$NON-NLS-1$
 						? replaceFiller(data, backgroundSource(printable, pieces))
 						: null;
 				JsonObject written = write(display, image, data, area, maxWidth, outputPath, includeBase64)
@@ -369,6 +374,9 @@ public final class ScreenshotTools {
 							: "The capture covers %dx%d points while requestedArea names %dx%d." //$NON-NLS-1$
 									.formatted(Integer.valueOf(area.width), Integer.valueOf(area.height),
 											Integer.valueOf(requested.width), Integer.valueOf(requested.height)));
+				}
+				if (scaleWarning != null) {
+					written.put("paintScaleMismatch", scaleWarning); //$NON-NLS-1$
 				}
 				if (unpainted != null) {
 					written.put("unpaintedPixels", Integer.valueOf(unpainted.pixels())) //$NON-NLS-1$
@@ -526,6 +534,40 @@ public final class ScreenshotTools {
 				return "%d,%d,%d (the widget's background colour)".formatted(Integer.valueOf(fill().red), //$NON-NLS-1$
 						Integer.valueOf(fill().green), Integer.valueOf(fill().blue));
 			}
+		}
+
+		/**
+		 * Whether the paint covered the image it was given, or only a corner of it.
+		 * <p>
+		 * A print that lands at half the scale of its buffer fills the top left
+		 * quarter and leaves the rest as it was filled, which the metadata cannot
+		 * show: the sizes agree with each other and only the pixels disagree. Sampling
+		 * the far corner catches it, and it has to happen before the filler is
+		 * replaced, or the evidence is gone.
+		 *
+		 * @return the warning, or {@code null} when the far corner holds real content
+		 */
+		private static String paintCoverageWarning(ImageData data) {
+			int fillerPixel = pixelOf(data.palette, FILLER);
+			if (fillerPixel < 0 || data.width < 8 || data.height < 8) {
+				return null;
+			}
+			int sampled = 0;
+			int filler = 0;
+			// the bottom right eighth: far enough from the middle that a real widget
+			// tree covers it, small enough to stay cheap on a 5000 pixel wide capture
+			for (int y = data.height * 7 / 8; y < data.height; y += 4) {
+				for (int x = data.width * 7 / 8; x < data.width; x += 4) {
+					sampled++;
+					if (data.getPixel(x, y) == fillerPixel) {
+						filler++;
+					}
+				}
+			}
+			if (sampled == 0 || filler < sampled) {
+				return null;
+			}
+			return "The far corner of this capture is entirely unpainted while the answer claims the whole area, which means the widget print landed at a different scale than the image it was given: the picture holds the top left part of the widget, enlarged, and the rest is filler. The filler was NOT replaced here, so the image shows the problem rather than hiding it. Known to happen after the window has been resized; a restart of the IDE clears it."; //$NON-NLS-1$
 		}
 
 		private static final org.eclipse.swt.graphics.RGB FILLER = new org.eclipse.swt.graphics.RGB(255, 0, 255);
