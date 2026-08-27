@@ -500,6 +500,13 @@ public final class ScreenshotTools {
 						// capture that kept a quarter of the window look complete
 						.put("capturedArea", data.width + "x" + data.height) //$NON-NLS-1$ //$NON-NLS-2$
 						.put("areaInPoints", area.width + "x" + area.height) //$NON-NLS-1$ //$NON-NLS-2$
+						// every number the scaling depends on, from its own source: the
+						// image as SWT sizes it, the data as it came back, and the factor
+						// actually applied. A capture that looks right in every derived
+						// field and wrong on screen is a disagreement between these, and
+						// naming them is cheaper than inferring them from the picture
+						.put("imageBounds", image.getBounds().width + "x" + image.getBounds().height) //$NON-NLS-1$ //$NON-NLS-2$
+						.put("scaleFactor", Math.round(scaled.width * 1000.0 / data.width) / 1000.0) //$NON-NLS-1$
 						.put("bytes", bytes.size()); //$NON-NLS-1$
 				if (includeBase64) {
 					result.put("base64", Base64.getEncoder().encodeToString(bytes.toByteArray())); //$NON-NLS-1$
