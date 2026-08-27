@@ -98,7 +98,7 @@ final class TargetPlatforms {
 		File location = vm.getInstallLocation();
 		json.put("resolved", Boolean.TRUE).put("vmName", vm.getName()) //$NON-NLS-1$ //$NON-NLS-2$
 				.put("installLocation", location == null ? null : location.getAbsolutePath()); //$NON-NLS-1$
-		String unusable = JreUsability.reason(location);
+		String unusable = com.vogella.eclipse.mcp.core.JreUsability.reason(location);
 		if (unusable != null) {
 			json.put("usable", Boolean.FALSE).put("warning", unusable); //$NON-NLS-1$ //$NON-NLS-2$
 		} else {

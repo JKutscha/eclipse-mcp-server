@@ -135,10 +135,21 @@ public final class GetClasspathTool implements IMcpTool {
 		try {
 			IVMInstall vm = JavaRuntime.getVMInstall(javaProject);
 			if (vm != null) {
-				json.put("boundJre", new JsonObject().put("name", vm.getName()) //$NON-NLS-1$ //$NON-NLS-2$
+				JsonObject bound = new JsonObject().put("name", vm.getName()) //$NON-NLS-1$
 						.put("location", vm.getInstallLocation() == null ? null //$NON-NLS-1$
 								: vm.getInstallLocation().getAbsolutePath())
-						.put("type", vm.getVMInstallType() == null ? null : vm.getVMInstallType().getName())); //$NON-NLS-1$
+						.put("type", vm.getVMInstallType() == null ? null : vm.getVMInstallType().getName()); //$NON-NLS-1$
+				// a container path with no execution environment segment is the workspace
+				// default VM, which is shared: a project bound to it changes underneath
+				// whenever that setting does, and nothing in the project records it
+				if (entry.getPath().segmentCount() == 1) {
+					bound.put("fromWorkspaceDefault", Boolean.TRUE); //$NON-NLS-1$
+				}
+				String unusable = com.vogella.eclipse.mcp.core.JreUsability.reason(vm.getInstallLocation());
+				if (unusable != null) {
+					bound.put("usable", Boolean.FALSE).put("warning", unusable); //$NON-NLS-1$ //$NON-NLS-2$
+				}
+				json.put("boundJre", bound); //$NON-NLS-1$
 			}
 		} catch (CoreException e) {
 			json.put("boundJre", null); //$NON-NLS-1$

@@ -11,7 +11,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.vogella.eclipse.mcp.pde.internal.JreUsability;
+import com.vogella.eclipse.mcp.core.JreUsability;
 
 /**
  * The check that would have caught a JDK which is present but cannot compile.

@@ -1,4 +1,4 @@
-package com.vogella.eclipse.mcp.pde.internal;
+package com.vogella.eclipse.mcp.core;
 
 import java.io.File;
 
