@@ -490,8 +490,10 @@ public final class ScreenshotTools {
 		 * <p>
 		 * Resampling already rendered text by a fraction makes the glyphs mushy, and a
 		 * caller asking for 1920 from a 5370 wide capture wants a picture that reads
-		 * rather than exactly 1920 pixels. Only snaps within a tenth of the request, so
-		 * a deliberate width is still honoured.
+		 * rather than exactly 1920 pixels. Only snaps within a fifth of the request, so
+		 * a deliberate width is still honoured. A tenth was too tight to be useful: a
+		 * 5370 wide capture asked for 2000 lands on 1790, which missed by half a
+		 * percent and left the picture mushy for nothing.
 		 */
 		private static int crispWidth(int actual, int maxWidth) {
 			if (actual <= maxWidth) {
@@ -499,7 +501,7 @@ public final class ScreenshotTools {
 			}
 			int divisor = Math.max(1, Math.round(actual / (float) maxWidth));
 			int candidate = actual / divisor;
-			return candidate <= maxWidth && candidate >= maxWidth * 9 / 10 ? candidate : maxWidth;
+			return candidate <= maxWidth && candidate >= maxWidth * 4 / 5 ? candidate : maxWidth;
 		}
 
 		private static JsonObject write(Display display, Image image, ImageData data, Rectangle area, int maxWidth,
