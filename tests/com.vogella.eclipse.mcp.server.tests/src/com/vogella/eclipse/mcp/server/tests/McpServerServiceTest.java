@@ -324,6 +324,7 @@ class McpServerServiceTest {
 		case "eclipse_set_project_state" -> Map.of("state", "open", "namePattern", "no-such-project-*");
 		case "eclipse_organize_imports", "eclipse_format" -> Map.of("path", SAMPLE);
 		case "eclipse_read_file" -> Map.of("path", SAMPLE);
+		case "eclipse_resolve_path" -> Map.of("of", List.of(PROJECT));
 		// a command that does nothing, in the temporary directory the setup allows
 		case "eclipse_run_command" -> Map.of("args", List.of("true"), "directory",
 				System.getProperty("java.io.tmpdir"), "wait", Boolean.TRUE);

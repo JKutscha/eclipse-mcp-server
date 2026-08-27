@@ -258,6 +258,9 @@ public final class ScreenshotTools {
 			String exclusion = null;
 			Rectangle clientArea = null;
 			List<Paintable> pieces = null;
+			// what the pieces report about themselves, which the scan of the finished
+			// canvas can no longer see: they are handed over already repainted
+			int[] insidePieces = { 0 };
 			// the control to paint if reading the root drawable comes back empty
 			Control printable = null;
 			if ("display".equals(target)) { //$NON-NLS-1$
@@ -332,6 +335,7 @@ public final class ScreenshotTools {
 					// with a GC transform instead does not work: it shrinks the paint to
 					// a quarter of a canvas that is still device sized.
 					zoom = zoomOf(painted);
+					final int pieceZoom = zoom;
 					image = new Image(display, (drawer, drawnWidth, drawnHeight) -> {
 						// anything print leaves untouched stays this colour. White would
 						// be indistinguishable from the unstyled widgets a dark theme bug
@@ -342,7 +346,7 @@ public final class ScreenshotTools {
 							painted.print(drawer);
 						} else {
 							for (Paintable piece : composed) {
-								piece.print(drawer);
+								insidePieces[0] += piece.print(drawer, pieceZoom);
 							}
 						}
 					}, canvas.width(), canvas.height());
@@ -365,6 +369,9 @@ public final class ScreenshotTools {
 				Unpainted unpainted = "widgetPrint".equals(method) && printable != null && scaleWarning == null //$NON-NLS-1$
 						? replaceFiller(data, backgroundSource(printable, pieces))
 						: null;
+				if (unpainted != null && insidePieces[0] > 0) {
+					unpainted = unpainted.plus(insidePieces[0]);
+				}
 				JsonObject written = write(display, image, data, area, maxWidth, outputPath, includeBase64)
 						.put("method", method) //$NON-NLS-1$
 						.put("zoom", Integer.valueOf(zoom)) //$NON-NLS-1$
@@ -384,7 +391,7 @@ public final class ScreenshotTools {
 							.put("unpaintedFilledWith", unpainted.fillDescription()); //$NON-NLS-1$
 				}
 				if ("widgetPrint".equals(method)) { //$NON-NLS-1$
-					written.put("printNote", "The widget print does not paint the sash and margin areas between parts; those were filled before printing and replaced with the widget background colour afterwards, which is what unpaintedPixels counts."); //$NON-NLS-1$ //$NON-NLS-2$
+					written.put("printNote", "The widget print does not paint the sash and margin areas between parts. Those carry the background colour of the part they sit in, and unpaintedPixels counts them; a composed shell capture measures each piece against a filler colour and then repaints it against its own background, so no text in the image is blended against the filler."); //$NON-NLS-1$ //$NON-NLS-2$
 				}
 				// zoom, the pixels and the points have to agree, and when they do not the
 				// paint landed at the wrong scale and part of the image is whatever the
@@ -440,14 +447,19 @@ public final class ScreenshotTools {
 			/**
 			 * Prints the control into an image of its own and draws that image at its
 			 * place, so every piece goes through the same print a single child would.
+			 * <p>
+			 * It prints twice, because the two things wanted of the fill colour cannot
+			 * both come from one pass. Finding what no print touched needs a colour no
+			 * widget uses; delivering pixels a human reads needs the colour the widget
+			 * would have had, since a label draws its glyphs blended against whatever
+			 * lies under them and a magenta ground turns the text magenta.
+			 *
+			 * @return how many pixels of this piece no print touched
 			 */
-			void print(GC target) {
+			int print(GC target, int zoom) {
+				int unpainted = unpaintedPixels(target, zoom);
 				Image piece = new Image(target.getDevice(), (gc, w, h) -> {
-					// a fresh SWT image starts white, and what the print leaves untouched
-					// inside a child, its sashes and part margins, then survives as white
-					// lines drawn over the canvas filler. Filling each piece the same way
-					// the canvas is filled is what lets those areas be found at all
-					gc.setBackground(gc.getDevice().getSystemColor(SWT.COLOR_MAGENTA));
+					gc.setBackground(background());
 					gc.fillRectangle(0, 0, w, h);
 					control.print(gc);
 				}, at.width, at.height);
@@ -456,7 +468,48 @@ public final class ScreenshotTools {
 				} finally {
 					piece.dispose();
 				}
+				return unpainted;
 			}
+
+			/** The same print onto filler, counted and thrown away. */
+			private int unpaintedPixels(GC target, int zoom) {
+				Image probe = new Image(target.getDevice(), (gc, w, h) -> {
+					gc.setBackground(gc.getDevice().getSystemColor(SWT.COLOR_MAGENTA));
+					gc.fillRectangle(0, 0, w, h);
+					control.print(gc);
+				}, at.width, at.height);
+				try {
+					return countFiller(probe.getImageData(zoom));
+				} catch (RuntimeException e) {
+					return 0;
+				} finally {
+					probe.dispose();
+				}
+			}
+
+			private org.eclipse.swt.graphics.Color background() {
+				org.eclipse.swt.graphics.Color own = control.getBackground();
+				return own == null ? control.getDisplay().getSystemColor(SWT.COLOR_WIDGET_BACKGROUND) : own;
+			}
+		}
+
+		/** Pixels still carrying the fill colour, which is what no print touched. */
+		private static int countFiller(ImageData data) {
+			int fillerPixel = pixelOf(data.palette, FILLER);
+			if (fillerPixel < 0) {
+				return 0;
+			}
+			int count = 0;
+			int[] row = new int[data.width];
+			for (int y = 0; y < data.height; y++) {
+				data.getPixels(0, y, data.width, row, 0);
+				for (int x = 0; x < data.width; x++) {
+					if (row[x] == fillerPixel) {
+						count++;
+					}
+				}
+			}
+			return count;
 		}
 
 		private static List<Paintable> paintablesOf(Shell shell) {
@@ -562,6 +615,11 @@ public final class ScreenshotTools {
 
 		/** The pre-print fill and what it was replaced with. */
 		private record Unpainted(int pixels, int width, int height, org.eclipse.swt.graphics.RGB fill) {
+
+			/** Adds what a piece counted in itself before it was drawn onto the canvas. */
+			Unpainted plus(int more) {
+				return new Unpainted(pixels + more, width, height, fill);
+			}
 
 			double fraction() {
 				return width * height == 0 ? 0.0 : Math.round(pixels * 1000.0 / (width * height)) / 10.0;
