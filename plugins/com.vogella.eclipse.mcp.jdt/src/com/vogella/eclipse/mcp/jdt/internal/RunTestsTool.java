@@ -95,6 +95,7 @@ public final class RunTestsTool implements IMcpTool {
 				    "debug":          {"type":"boolean","default":false,"description":"Launch in debug mode instead of plain run. The session appears in eclipse_debug_status and its state at a failure is readable through eclipse_debug_get_frames and eclipse_debug_evaluate."},
 				    "runtimeWorkspace": {"type":"string","description":"Workspace directory for the launched platform. Defaults to a sibling junit-workspace, and it is cleared on every run."},
 				    "maxResults":     {"type":"integer","default":50,"minimum":1,"maximum":2000,"description":"Reported cases. A suite of several hundred truncates; omitted says how many were dropped and eclipse_get_test_results returns the rest."},
+				    "flightRecording":{"type":"string","enum":["off","default","profile"],"default":"off","description":"Record the test JVM with Java Flight Recorder. 'profile' includes allocation and execution samples at a few percent overhead, 'default' covers GC and threads at about one percent. The file is written when the test JVM EXITS and is read with eclipse_stop_flight_recording by passing its path as 'file'. This is what answers why a suite is slow or where its memory goes: the IDE's own recording tools record the IDE's process, not the one the tests run in."},
 				    "dryRun":         {"type":"boolean","default":false,"description":"List the test types that would run, without running anything."},
 				    "wait":           {"type":"boolean","default":true,"description":"Defaults to false for a plug-in test: launching a second Eclipse takes tens of seconds, well past the server's call timeout, so waiting would abandon the call rather than answer it."},
 				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":3600,"description":"Keep below the server's tool call timeout; poll with eclipse_get_test_results for longer runs."}
@@ -186,6 +187,16 @@ public final class RunTestsTool implements IMcpTool {
 					configuration.setAttribute(ATTR_TEST_NAME, testMethod);
 				}
 			}
+			java.nio.file.Path recordingFile = null;
+			String recording = args.getString("flightRecording", "off"); //$NON-NLS-1$ //$NON-NLS-2$
+			if (com.vogella.eclipse.mcp.core.LaunchRecording.wanted(recording)) {
+				recordingFile = com.vogella.eclipse.mcp.core.LaunchRecording.fileFor(run.launchName());
+				configuration.setAttribute(IJavaLaunchConfigurationConstants.ATTR_VM_ARGUMENTS,
+						com.vogella.eclipse.mcp.core.LaunchRecording.appendTo(
+								configuration.getAttribute(IJavaLaunchConfigurationConstants.ATTR_VM_ARGUMENTS,
+										(String) null),
+								com.vogella.eclipse.mcp.core.LaunchRecording.vmArgument(recording, recordingFile)));
+			}
 			String buildFirst = args.getString("buildFirst", "auto"); //$NON-NLS-1$ //$NON-NLS-2$
 			boolean autoBuilding = ResourcesPlugin.getWorkspace().isAutoBuilding();
 			JsonObject built = asPlugin ? buildForLaunch(project, buildFirst, autoBuilding, monitor) : null;
@@ -273,6 +284,10 @@ public final class RunTestsTool implements IMcpTool {
 			}
 			if (displayed != null) {
 				result.put("display", displayed); //$NON-NLS-1$
+			}
+			if (recordingFile != null) {
+				result.put("flightRecordingFile", recordingFile.toString()) //$NON-NLS-1$
+						.put("flightRecordingNote", com.vogella.eclipse.mcp.core.LaunchRecording.note(recordingFile)); //$NON-NLS-1$
 			}
 			if (asPlugin) {
 				result.put("descriptorGeneration", descriptorGeneration(project)); //$NON-NLS-1$

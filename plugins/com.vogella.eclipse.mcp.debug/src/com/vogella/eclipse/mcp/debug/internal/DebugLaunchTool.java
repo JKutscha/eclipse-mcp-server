@@ -54,7 +54,7 @@ public final class DebugLaunchTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Starts a debug session and returns its sessionId plus the state at the moment of answering. STARTS A PROCESS: this runs project code under the IDE's debugger, so anything main does, the debugged program does. Give either 'configuration', the name of an existing launch configuration, or 'project' plus 'mainType'; the latter builds a transient configuration that never appears in the user's saved launches. With 'stopInMain' the program suspends at the first line of main; otherwise set breakpoints first through eclipse_set_breakpoint and wait for them through eclipse_debug_status with waitForSuspendSeconds. Sessions started here are terminated again when this plug-in stops or after autoTerminateAfterSeconds, whichever comes first. To run tests under the debugger use eclipse_run_tests with debug true instead."; //$NON-NLS-1$
+		return "Starts a debug session and returns its sessionId plus the state at the moment of answering. STARTS A PROCESS: this runs project code under the IDE's debugger, so anything main does, the debugged program does. Give either 'configuration', the name of an existing launch configuration, or 'project' plus 'mainType'; the latter builds a transient configuration that never appears in the user's saved launches. With 'stopInMain' the program suspends at the first line of main; otherwise set breakpoints first through eclipse_set_breakpoint and wait for them through eclipse_debug_status with waitForSuspendSeconds. Sessions started here are terminated again when this plug-in stops or after autoTerminateAfterSeconds, whichever comes first. To run tests under the debugger use eclipse_run_tests with debug true instead. Pass flightRecording to profile the launched JVM, which the IDE's own recording tools cannot reach because they record the IDE's own process."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -71,7 +71,8 @@ public final class DebugLaunchTool implements IMcpTool {
 				    "stopInMain":              {"type":"boolean","default":false,"description":"Suspend at the first executable line of main."},
 				    "autoTerminateAfterSeconds":{"type":"integer","default":900,"minimum":0,"maximum":86400,"description":"Terminate the program after this long, whether it finished or not. Only sessions this tool started are ever terminated."},
 				    "waitForSuspendSeconds":   {"type":"integer","default":20,"minimum":0,"maximum":25,"description":"Wait for the first suspend (a breakpoint or stopInMain) before answering."},
-				    "maxResults":              {"type":"integer","default":50,"minimum":1,"maximum":500,"description":"Threads reported per answer."}
+				    "maxResults":              {"type":"integer","default":50,"minimum":1,"maximum":500,"description":"Threads reported per answer."},
+				    "flightRecording":         {"type":"string","enum":["off","default","profile"],"default":"off","description":"Record the launched JVM with Java Flight Recorder. 'profile' includes allocation and execution samples at a few percent overhead, 'default' covers GC and threads at about one percent. The file is written when the program EXITS and is read with eclipse_stop_flight_recording by passing its path as 'file'. This is the only way to profile a launched program: the IDE's own recording tools work inside the IDE's JVM and cannot see another process."}
 				  },
 				  "additionalProperties": false
 				}"""; //$NON-NLS-1$
@@ -87,6 +88,7 @@ public final class DebugLaunchTool implements IMcpTool {
 		} catch (CoreException e) {
 			throw new McpToolException("Could not build the launch configuration: %s".formatted(e.getMessage()), e);
 		}
+		java.nio.file.Path recordingFile = record(configuration, args.getString("flightRecording", "off")); //$NON-NLS-1$ //$NON-NLS-2$
 		try {
 			DebugSessionRegistry registry = DebugSessionRegistry.getInstance();
 			DebugSessionRegistry.Session session = registry.prepare(configuration.getName());
@@ -138,11 +140,38 @@ public final class DebugLaunchTool implements IMcpTool {
 				}
 			}
 			json.put("note", "The session ends with eclipse_debug_control action terminate; it also terminates by itself after autoTerminateAfterSeconds."); //$NON-NLS-1$ //$NON-NLS-2$
+			if (recordingFile != null) {
+				json.put("flightRecordingFile", recordingFile.toString()) //$NON-NLS-1$
+						.put("flightRecordingNote", com.vogella.eclipse.mcp.core.LaunchRecording.note(recordingFile)); //$NON-NLS-1$
+			}
 			return McpToolResult.of(json.toString());
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new McpToolException("Interrupted while waiting for the debug session to start.", e);
 		}
+	}
+
+	/**
+	 * Adds the flight recorder flag to whatever VM arguments the configuration
+	 * already carries, saved ones included, and answers where it will write.
+	 *
+	 * @return {@code null} when no recording was asked for
+	 */
+	private static java.nio.file.Path record(ILaunchConfigurationWorkingCopy configuration, String settings) {
+		if (!com.vogella.eclipse.mcp.core.LaunchRecording.wanted(settings)) {
+			return null;
+		}
+		java.nio.file.Path file = com.vogella.eclipse.mcp.core.LaunchRecording.fileFor(configuration.getName());
+		String existing = null;
+		try {
+			existing = configuration.getAttribute(IJavaLaunchConfigurationConstants.ATTR_VM_ARGUMENTS, (String) null);
+		} catch (CoreException e) {
+			// unreadable VM arguments are not a reason to lose the recording
+		}
+		configuration.setAttribute(IJavaLaunchConfigurationConstants.ATTR_VM_ARGUMENTS,
+				com.vogella.eclipse.mcp.core.LaunchRecording.appendTo(existing,
+						com.vogella.eclipse.mcp.core.LaunchRecording.vmArgument(settings, file)));
+		return file;
 	}
 
 	private ILaunchConfigurationWorkingCopy configuration(ToolArguments args)

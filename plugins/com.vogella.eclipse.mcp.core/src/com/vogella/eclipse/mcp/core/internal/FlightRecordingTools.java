@@ -103,6 +103,7 @@ public final class FlightRecordingTools {
 					  "type": "object",
 					  "properties": {
 					    "recordingId":  {"type":"string","description":"Id from eclipse_start_flight_recording. Omit for the most recent."},
+				    "file":         {"type":"string","description":"Absolute path of an existing .jfr file to read instead of a recording of this IDE, such as the one a launch made with flightRecording. Nothing is stopped and the file is left where it is."},
 					    "keepRunning":  {"type":"boolean","default":false,"description":"Report what has been recorded so far without stopping."},
 					    "topClasses":   {"type":"integer","default":15,"minimum":1,"maximum":200},
 					    "topStacks":    {"type":"integer","default":10,"minimum":1,"maximum":100},
@@ -124,6 +125,10 @@ public final class FlightRecordingTools {
 					args.getInt("topStacks", 10, 1, 100), //$NON-NLS-1$
 					args.getInt("stackDepth", 8, 1, 64), //$NON-NLS-1$
 					args.getString("frameFilter")); //$NON-NLS-1$
+			String existing = args.getString("file"); //$NON-NLS-1$
+			if (existing != null) {
+				return read(Path.of(existing), options);
+			}
 			try {
 				String id = args.getString("recordingId", FlightRecording.mostRecentId()); //$NON-NLS-1$
 				if (id == null) {
@@ -154,6 +159,32 @@ public final class FlightRecordingTools {
 				return McpToolResult.error(UNAVAILABLE);
 			} catch (IOException | RuntimeException e) {
 				return McpToolResult.error("Could not read the recording: " + e); //$NON-NLS-1$
+			}
+		}
+
+		/** A recording somebody else wrote, most likely a launched program's own. */
+		private static McpToolResult read(Path file, FlightRecording.Aggregation options) {
+			if (!Files.isReadable(file)) {
+				return McpToolResult.error(
+						"There is no readable file at '%s'. A launch that records itself writes the file when the JVM EXITS, so it is absent while the program still runs and stays absent if the program was killed rather than ended." //$NON-NLS-1$
+								.formatted(file));
+			}
+			try {
+				long size = Files.size(file);
+				if (size == 0) {
+					return McpToolResult.error(
+							"'%s' is empty, which is what a recording looks like before its JVM has written it out.".formatted(file)); //$NON-NLS-1$
+				}
+				return McpToolResult.of(FlightRecording.aggregate(file, options).put("file", file.toString()) //$NON-NLS-1$
+						.put("recordingBytes", Long.valueOf(size)) //$NON-NLS-1$
+						.put("of", "another JVM, read from its file; nothing of this IDE was recorded or stopped") //$NON-NLS-1$ //$NON-NLS-2$
+						.put("note", //$NON-NLS-1$
+								"The byte figures are the allocation sampler's weights, so they rank allocators rather than adding up to everything allocated. allocationByStack is what names a caller; a class on its own rarely does.") //$NON-NLS-1$
+						.toString());
+			} catch (LinkageError e) {
+				return McpToolResult.error(UNAVAILABLE);
+			} catch (IOException | RuntimeException e) {
+				return McpToolResult.error("Could not read '%s': %s".formatted(file, e)); //$NON-NLS-1$
 			}
 		}
 	}

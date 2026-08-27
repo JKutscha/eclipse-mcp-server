@@ -198,6 +198,26 @@ final class DebugSupport {
 	}
 
 	/** One entry per session, the shape status, launch and control answers carry. */
+	/**
+	 * The operating system process id of the launched JVM, or {@code null}.
+	 * <p>
+	 * It is what lets a caller reach that JVM with the tools this server has no
+	 * business wrapping, jcmd and jstack among them, since everything here runs
+	 * inside the IDE's own process and cannot see another one.
+	 */
+	private static String pid(ILaunch launchValue) {
+		if (launchValue == null) {
+			return null;
+		}
+		for (org.eclipse.debug.core.model.IProcess process : launchValue.getProcesses()) {
+			String value = process.getAttribute(org.eclipse.debug.core.model.IProcess.ATTR_PROCESS_ID);
+			if (value != null) {
+				return value;
+			}
+		}
+		return null;
+	}
+
 	static JsonObject sessionJson(Session session, int maxThreads) {
 		JsonObject json = new JsonObject().put("sessionId", session.id()) //$NON-NLS-1$
 				.put("startedByMcp", Boolean.valueOf(session.startedByMcp())) //$NON-NLS-1$
@@ -206,6 +226,7 @@ final class DebugSupport {
 		ILaunch launchValue = session.launch();
 		json.put("configuration", launchValue == null ? session.expectedConfigName() : configurationName(launchValue)); //$NON-NLS-1$
 		json.put("registered", Boolean.valueOf(session.registered())); //$NON-NLS-1$
+		json.put("pid", pid(launchValue)); //$NON-NLS-1$
 		if (!session.registered() && session.failure() != null) {
 			json.put("failure", session.failure()); //$NON-NLS-1$
 		}

@@ -543,6 +543,19 @@ It never counts markers: a refresh does not build, so any count would describe w
 
 Refreshing is available on `eclipse_build` and `eclipse_get_problems` as well, but only as a step before something else. With auto-build off, picking up external edits and deciding whether to build are separate decisions, which is why this exists on its own.
 
+### Profiling a launched program
+
+The recording tools work inside the IDE's own JVM: `eclipse_start_flight_recording` builds a `jdk.jfr.Recording` there and `eclipse_start_sampling` reads its `ThreadMXBean`.
+Neither can see a program the IDE launches, because that is a separate process.
+
+`eclipse_debug_launch` and `eclipse_run_tests` therefore take `flightRecording`, one of `off`, `default` or `profile`, which appends `-XX:StartFlightRecording` to the launch's VM arguments rather than replacing them.
+The decision has to be made before the launch, which is the price of needing no attach mechanism and no external tool.
+`dumponexit` is set, so the file is written when the JVM **exits**: it is not there while the program runs, and a program that is killed rather than ended leaves nothing.
+The answer carries `flightRecordingFile`, and `eclipse_stop_flight_recording` reads it back through its `file` argument, aggregating it exactly as it aggregates the IDE's own recordings.
+
+For a process that is already running, the answers of the debug tools carry `pid`, from `IProcess.ATTR_PROCESS_ID`.
+That is deliberately where this server stops: `jcmd <pid> JFR.start` reaches such a JVM, and wrapping the JDK's own command line tools is not this server's job.
+
 ### `eclipse_cancel_build`
 
 **Cancels work in progress.**
