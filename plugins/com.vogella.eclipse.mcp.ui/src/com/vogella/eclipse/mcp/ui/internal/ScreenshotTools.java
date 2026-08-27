@@ -442,7 +442,15 @@ public final class ScreenshotTools {
 			 * place, so every piece goes through the same print a single child would.
 			 */
 			void print(GC target) {
-				Image piece = new Image(target.getDevice(), (gc, w, h) -> control.print(gc), at.width, at.height);
+				Image piece = new Image(target.getDevice(), (gc, w, h) -> {
+					// a fresh SWT image starts white, and what the print leaves untouched
+					// inside a child, its sashes and part margins, then survives as white
+					// lines drawn over the canvas filler. Filling each piece the same way
+					// the canvas is filled is what lets those areas be found at all
+					gc.setBackground(gc.getDevice().getSystemColor(SWT.COLOR_MAGENTA));
+					gc.fillRectangle(0, 0, w, h);
+					control.print(gc);
+				}, at.width, at.height);
 				try {
 					target.drawImage(piece, at.x, at.y);
 				} finally {
@@ -476,12 +484,31 @@ public final class ScreenshotTools {
 			return rectangle.x + "," + rectangle.y + " " + rectangle.width + "x" + rectangle.height; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 		}
 
+		/**
+		 * The width to scale to, snapped to a whole number ratio when that is close to
+		 * what was asked for.
+		 * <p>
+		 * Resampling already rendered text by a fraction makes the glyphs mushy, and a
+		 * caller asking for 1920 from a 5370 wide capture wants a picture that reads
+		 * rather than exactly 1920 pixels. Only snaps within a tenth of the request, so
+		 * a deliberate width is still honoured.
+		 */
+		private static int crispWidth(int actual, int maxWidth) {
+			if (actual <= maxWidth) {
+				return maxWidth;
+			}
+			int divisor = Math.max(1, Math.round(actual / (float) maxWidth));
+			int candidate = actual / divisor;
+			return candidate <= maxWidth && candidate >= maxWidth * 9 / 10 ? candidate : maxWidth;
+		}
+
 		private static JsonObject write(Display display, Image image, ImageData data, Rectangle area, int maxWidth,
 				String outputPath, boolean includeBase64) {
 			ImageData scaled = data;
-			if (data.width > maxWidth) {
-				int height = Math.max(1, data.height * maxWidth / data.width);
-				scaled = data.scaledTo(maxWidth, height);
+			int snapped = crispWidth(data.width, maxWidth);
+			if (data.width > snapped) {
+				int height = Math.max(1, data.height * snapped / data.width);
+				scaled = data.scaledTo(snapped, height);
 			}
 			ImageLoader loader = new ImageLoader();
 			loader.data = new ImageData[] { scaled };
@@ -507,6 +534,7 @@ public final class ScreenshotTools {
 						// naming them is cheaper than inferring them from the picture
 						.put("imageBounds", image.getBounds().width + "x" + image.getBounds().height) //$NON-NLS-1$ //$NON-NLS-2$
 						.put("scaleFactor", Math.round(scaled.width * 1000.0 / data.width) / 1000.0) //$NON-NLS-1$
+						.put("maxWidthSnappedTo", snapped == maxWidth ? null : Integer.valueOf(snapped)) //$NON-NLS-1$
 						.put("bytes", bytes.size()); //$NON-NLS-1$
 				if (includeBase64) {
 					result.put("base64", Base64.getEncoder().encodeToString(bytes.toByteArray())); //$NON-NLS-1$
