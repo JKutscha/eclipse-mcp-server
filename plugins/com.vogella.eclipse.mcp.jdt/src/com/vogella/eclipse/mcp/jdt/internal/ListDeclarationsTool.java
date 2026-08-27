@@ -58,7 +58,7 @@ public final class ListDeclarationsTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Enumerates the types, methods or fields a project declares in its own source, or reports on a list of types you already have through typeNames, and cross-checks each one against the places an Eclipse runtime instantiates a class by name. This is the candidate generation step of a dead code sweep; eclipse_find_references is the confirm step, and neither replaces the other. Binary types are never listed, so a class that exists a dozen times over inside built jars appears once, as source. registryStatus is THREE valued and the distinction matters: 'dead' means only that no registry position this tool understands names it, never that deleting it is safe; 'live-via-registry' means not provably dead, not that anything still uses it, since an extension can be contributed to a point nobody reads; 'undecidable' means something names it in a position that cannot be judged. Extension attributes are resolved through the extension point's .exsd schema, so only attributes the schema declares java-typed count, and a class name in a comment or a changelog counts for nothing."; //$NON-NLS-1$
+		return "Enumerates the types, methods or fields a project declares in its own source, or reports on a list of types you already have through typeNames, and cross-checks each one against the places an Eclipse runtime instantiates a class by name. This is the candidate generation step of a dead code sweep; eclipse_find_references is the confirm step, and neither replaces the other. Binary types are never listed, so a class that exists a dozen times over inside built jars appears once, as source. registryStatus is THREE valued and the distinction matters: 'dead' means only that no registry position this tool understands names it, never that deleting it is safe; 'live-via-registry' means not provably dead, not that anything still uses it, since an extension can be contributed to a point nobody reads; 'undecidable' means something names it in a position that cannot be judged. Extension attributes are resolved through the extension point's .exsd schema, so only attributes the schema declares java-typed count, and a class name in a comment or a changelog counts for nothing. It also answers which declarations are deprecated, semantically rather than by text search: the @Deprecated annotation and the @deprecated Javadoc tag are reported separately, because they routinely disagree. An annotation added in a later bulk sweep dates the deprecation to the sweep and not to the deprecation, and a tag without an annotation raises no warning at any call site. For deprecated USAGES ask eclipse_get_problems with a messageFilter instead, which is the compiler's own answer and resolves inheritance and binary types."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -73,6 +73,7 @@ public final class ListDeclarationsTool implements IMcpTool {
 				    "kinds":      {"type":"array","items":{"type":"string","enum":["types","methods","fields"]},"default":["types"]},
 				    "visibility": {"type":"array","items":{"type":"string","enum":["public","protected","package","private"]},"description":"Report only these. Omit for all."},
 				    "status":     {"type":"string","enum":["dead","live-via-registry","undecidable","all"],"default":"all","description":"Report only declarations with this verdict."},
+				    "deprecated": {"type":"string","enum":["all","yes","no","forRemoval","annotationOnly","javadocOnly"],"default":"all","description":"Filter by deprecation. 'yes' is either mark, 'forRemoval' only @Deprecated(forRemoval=true). 'annotationOnly' and 'javadocOnly' find the two marks disagreeing, which is what dates a deprecation wrongly."},
 				    "includeTest":{"type":"boolean","default":false,"description":"Include source folders the build path marks as test."},
 				    "includeReflection":{"type":"boolean","default":true,"description":"Scan source for Class.forName and loadClass. A literal name counts as a registry position; a name built at runtime makes every dead verdict in that project provisional, which is reported either way."},
 				    "maxResults": {"type":"integer","default":500,"minimum":1,"maximum":5000}
@@ -96,6 +97,7 @@ public final class ListDeclarationsTool implements IMcpTool {
 		}
 		Set<String> visibility = new LinkedHashSet<>(strings(arguments, "visibility")); //$NON-NLS-1$
 		String status = args.getString("status", "all"); //$NON-NLS-1$ //$NON-NLS-2$
+		String deprecated = args.getString("deprecated", "all"); //$NON-NLS-1$ //$NON-NLS-2$
 		boolean includeTest = args.getBoolean("includeTest", false); //$NON-NLS-1$
 		boolean includeReflection = args.getBoolean("includeReflection", true); //$NON-NLS-1$
 		int maxResults = args.getInt("maxResults", 500, 1, 5000); //$NON-NLS-1$
@@ -137,14 +139,14 @@ public final class ListDeclarationsTool implements IMcpTool {
 			List<String> typeNames = strings(arguments, "typeNames"); //$NON-NLS-1$
 			RegistryIndex index = RegistryIndex.build(monitor);
 			if (!typeNames.isEmpty()) {
-				return McpToolResult.of(reportNamed(typeNames, projects, index, kinds, visibility, status, maxResults,
+				return McpToolResult.of(reportNamed(typeNames, projects, index, kinds, visibility, status, deprecated, maxResults,
 						includeReflection, monitor).toString());
 			}
 			List<IPackageFragmentRoot> roots = sourceRoots(projects, includeTest);
 			if (includeReflection) {
 				index.indexReflection(containers(roots), MAX_REFLECTION_FILES, monitor);
 			}
-			return McpToolResult.of(report(roots, index, kinds, visibility, status, maxResults, includeReflection,
+			return McpToolResult.of(report(roots, index, kinds, visibility, status, deprecated, maxResults, includeReflection,
 					monitor).toString());
 		} catch (JavaModelException e) {
 			throw new McpToolException("Could not read the Java model", e); //$NON-NLS-1$
@@ -160,7 +162,7 @@ public final class ListDeclarationsTool implements IMcpTool {
 	 * twenty candidates costs one index build rather than twenty project walks.
 	 */
 	private JsonObject reportNamed(List<String> typeNames, List<IJavaProject> projects, RegistryIndex index,
-			List<String> kinds, Set<String> visibility, String status, int maxResults, boolean includeReflection,
+			List<String> kinds, Set<String> visibility, String status, String deprecated, int maxResults, boolean includeReflection,
 			IProgressMonitor monitor) throws CoreException, McpToolException {
 		LineIndex lines = new LineIndex();
 		PackageExports exports = new PackageExports();
@@ -183,7 +185,7 @@ public final class ListDeclarationsTool implements IMcpTool {
 				unresolved.add(name);
 				continue;
 			}
-			total += collect(type, index, kinds, visibility, status, maxResults, declarations, lines, exports,
+			total += collect(type, index, kinds, visibility, status, deprecated, maxResults, declarations, lines, exports,
 					workspaceBundles, monitor);
 		}
 		JsonObject result = new JsonObject().put("kinds", array(kinds)) //$NON-NLS-1$
@@ -201,7 +203,7 @@ public final class ListDeclarationsTool implements IMcpTool {
 	}
 
 	private JsonObject report(List<IPackageFragmentRoot> roots, RegistryIndex index, List<String> kinds,
-			Set<String> visibility, String status, int maxResults, boolean includeReflection, IProgressMonitor monitor)
+			Set<String> visibility, String status, String deprecated, int maxResults, boolean includeReflection, IProgressMonitor monitor)
 			throws CoreException {
 		LineIndex lines = new LineIndex();
 		PackageExports exports = new PackageExports();
@@ -218,7 +220,7 @@ public final class ListDeclarationsTool implements IMcpTool {
 				}
 				for (ICompilationUnit unit : fragment.getCompilationUnits()) {
 					for (IType type : unit.getTypes()) {
-						total += collect(type, index, kinds, visibility, status, maxResults, declarations, lines,
+						total += collect(type, index, kinds, visibility, status, deprecated, maxResults, declarations, lines,
 								exports, workspaceBundles, monitor);
 					}
 				}
@@ -235,7 +237,7 @@ public final class ListDeclarationsTool implements IMcpTool {
 	}
 
 	/** Returns how many declarations matched, which is not how many were reported. */
-	private int collect(IType type, RegistryIndex index, List<String> kinds, Set<String> visibility, String status,
+	private int collect(IType type, RegistryIndex index, List<String> kinds, Set<String> visibility, String status, String deprecated,
 			int maxResults, JsonArray into, LineIndex lines, PackageExports exports, Set<String> workspaceBundles,
 			IProgressMonitor monitor) throws CoreException {
 		int matched = 0;
@@ -243,32 +245,37 @@ public final class ListDeclarationsTool implements IMcpTool {
 		JsonObject api = api(type, exports, workspaceBundles);
 		if (kinds.contains("types")) { //$NON-NLS-1$
 			matched += consider(type, type.getFullyQualifiedName(), "type", verdict, index, visibility, status, //$NON-NLS-1$
-					maxResults, into, lines, api, monitor);
+					deprecated, maxResults, into, lines, api, monitor);
 		}
 		if (kinds.contains("methods")) { //$NON-NLS-1$
 			for (IMethod method : type.getMethods()) {
 				matched += consider(method, name(type, method), "method", verdict, index, visibility, status, //$NON-NLS-1$
-						maxResults, into, lines, api, monitor);
+						deprecated, maxResults, into, lines, api, monitor);
 			}
 		}
 		if (kinds.contains("fields")) { //$NON-NLS-1$
 			for (IField field : type.getFields()) {
-				matched += consider(field, name(type, field), "field", verdict, index, visibility, status, maxResults, //$NON-NLS-1$
-						into, lines, api, monitor);
+				matched += consider(field, name(type, field), "field", verdict, index, visibility, status, //$NON-NLS-1$
+						deprecated, maxResults, into, lines, api, monitor);
 			}
 		}
 		for (IType nested : type.getTypes()) {
-			matched += collect(nested, index, kinds, visibility, status, maxResults, into, lines, exports,
+			matched += collect(nested, index, kinds, visibility, status, deprecated, maxResults, into, lines, exports,
 					workspaceBundles, monitor);
 		}
 		return matched;
 	}
 
 	private int consider(IMember member, String name, String kind, String enclosingVerdict, RegistryIndex index,
-			Set<String> visibility, String status, int maxResults, JsonArray into, LineIndex lines, JsonObject api,
+			Set<String> visibility, String status, String deprecated, int maxResults, JsonArray into, LineIndex lines, JsonObject api,
 			IProgressMonitor monitor) throws CoreException {
 		String visible = visibility(member.getFlags());
 		if (!visibility.isEmpty() && !visibility.contains(visible)) {
+			return 0;
+		}
+		// before the registry verdict, which is the expensive one
+		Deprecation deprecation = Deprecation.of(member);
+		if (!deprecation.matches(deprecated)) {
 			return 0;
 		}
 		String verdict = "type".equals(kind) ? enclosingVerdict : verdict(member, index, enclosingVerdict, monitor); //$NON-NLS-1$
@@ -309,6 +316,7 @@ public final class ListDeclarationsTool implements IMcpTool {
 					.put("typeTestNote", //$NON-NLS-1$
 							"Named by an instanceof test in an enablement expression, which is not instantiation and does not make it live. Deleting it breaks the expression silently: it stops matching rather than failing to compile."); //$NON-NLS-1$
 		}
+		deprecation.describe(entry);
 		into.add(entry);
 		return 1;
 	}
