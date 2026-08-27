@@ -71,6 +71,42 @@ final class TargetPlatforms {
 		return onDisk.isFile() ? service.getTarget(onDisk.toURI()) : null;
 	}
 
+	/**
+	 * The JRE a target binds, resolved to the install it actually names.
+	 * <p>
+	 * The container path alone says {@code JavaSE-21} and hides which JDK on this
+	 * machine that is. Activating writes the binding into the projects, it outlives
+	 * the target that set it, and a JDK that cannot serve {@code --release} then
+	 * fails every plug-in project at once with a message about ct.sym that names no
+	 * target at all. Naming the install and checking it before the caller commits
+	 * is the difference between a decision and a surprise.
+	 */
+	static JsonObject jre(ITargetDefinition definition) {
+		org.eclipse.core.runtime.IPath container = definition.getJREContainer();
+		if (container == null) {
+			return new JsonObject().put("container", null) //$NON-NLS-1$
+					.put("note", //$NON-NLS-1$
+							"This target names no JRE, so activating it leaves the projects on the JRE they already have."); //$NON-NLS-1$
+		}
+		JsonObject json = new JsonObject().put("container", container.toString()); //$NON-NLS-1$
+		org.eclipse.jdt.launching.IVMInstall vm = org.eclipse.jdt.launching.JavaRuntime.getVMInstall(container);
+		if (vm == null) {
+			return json.put("resolved", Boolean.FALSE) //$NON-NLS-1$
+					.put("warning", //$NON-NLS-1$
+							"The JRE container resolves to no installed VM, so activating this target binds the projects to a JRE that is not there."); //$NON-NLS-1$
+		}
+		File location = vm.getInstallLocation();
+		json.put("resolved", Boolean.TRUE).put("vmName", vm.getName()) //$NON-NLS-1$ //$NON-NLS-2$
+				.put("installLocation", location == null ? null : location.getAbsolutePath()); //$NON-NLS-1$
+		String unusable = JreUsability.reason(location);
+		if (unusable != null) {
+			json.put("usable", Boolean.FALSE).put("warning", unusable); //$NON-NLS-1$ //$NON-NLS-2$
+		} else {
+			json.put("usable", Boolean.TRUE); //$NON-NLS-1$
+		}
+		return json;
+	}
+
 	/** The full JSON view of a definition, as far as it has been resolved. */
 	static JsonObject describe(ITargetDefinition definition, boolean includeLocations, int maxProblems) {
 		JsonObject json = new JsonObject().put("name", definition.getName()) //$NON-NLS-1$
@@ -79,6 +115,7 @@ final class TargetPlatforms {
 				.put("status", status(definition.getStatus())) //$NON-NLS-1$
 				.put("jreContainer", //$NON-NLS-1$
 						definition.getJREContainer() == null ? null : definition.getJREContainer().toString())
+				.put("jre", jre(definition)) //$NON-NLS-1$
 				.put("environment", new JsonObject().put("os", definition.getOS()) //$NON-NLS-1$ //$NON-NLS-2$
 						.put("ws", definition.getWS()) //$NON-NLS-1$
 						.put("arch", definition.getArch()) //$NON-NLS-1$
