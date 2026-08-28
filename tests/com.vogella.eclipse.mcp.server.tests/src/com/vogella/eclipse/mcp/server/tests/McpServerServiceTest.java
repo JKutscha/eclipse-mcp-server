@@ -333,6 +333,8 @@ class McpServerServiceTest {
 				.getRoot().getLocation().append(PROJECT).toOSString());
 		// status only: the smoke test must not rewrite the bundles.info it runs on
 		case "eclipse_substitute_bundle" -> Map.of("action", "status");
+		// a name nothing has, so the search runs over every scope and finds nothing
+		case "eclipse_find_resources" -> Map.of("namePattern", "no-such-icon-*.svg");
 		// an id nothing matches, so the smoke test hides nothing persistently
 		case "eclipse_set_model_visibility" -> Map.of("elementId", "no.such.model.element", "visible", Boolean.TRUE);
 		// a dry run: a real save in the test runtime runs every save participant, and

@@ -9,6 +9,7 @@
       <tool class="com.vogella.eclipse.mcp.pde.internal.AnalyzeDependenciesTool"/>
       <tool class="com.vogella.eclipse.mcp.pde.internal.GetTargetPlatformTool"/>
       <tool class="com.vogella.eclipse.mcp.pde.internal.SetTargetPlatformTool"/>
+      <tool class="com.vogella.eclipse.mcp.pde.internal.FindResourcesTool"/>
    </extension>
 
 </plugin>

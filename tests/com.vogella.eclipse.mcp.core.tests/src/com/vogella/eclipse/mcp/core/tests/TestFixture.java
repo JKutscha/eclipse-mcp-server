@@ -68,10 +68,45 @@ final class TestFixture {
 
 	IProject createProject(String name) throws CoreException {
 		IProject project = ResourcesPlugin.getWorkspace().getRoot().getProject(name);
+		removeLeftover(project);
 		project.create(new NullProgressMonitor());
 		project.open(new NullProgressMonitor());
 		created.add(project);
 		return project;
+	}
+
+	/**
+	 * Deletes a project of that name that an earlier test left behind.
+	 * <p>
+	 * dispose() deletes what a test created, but a delete can fail while something
+	 * still holds the workspace, and the next test then failed on "Resource already
+	 * exists" rather than on anything it was testing. Every failure of that shape
+	 * was a previous test's leftover, so the fixture clears the ground it is about
+	 * to build on instead of assuming it is clear.
+	 */
+	/** Lets whatever holds the workspace finish, so a second delete can succeed. */
+	private static void waitForJobs() {
+		try {
+			Job.getJobManager().join(ResourcesPlugin.FAMILY_AUTO_BUILD, null);
+			Job.getJobManager().join(ResourcesPlugin.FAMILY_MANUAL_BUILD, null);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		} catch (RuntimeException e) {
+			// nothing to wait for is not a problem here
+		}
+	}
+
+	private static void removeLeftover(IProject project) throws CoreException {
+		if (!project.exists()) {
+			return;
+		}
+		try {
+			project.delete(true, true, new NullProgressMonitor());
+		} catch (CoreException e) {
+			// one retry after letting whatever holds it finish
+			waitForJobs();
+			project.delete(true, true, new NullProgressMonitor());
+		}
 	}
 
 	/**
@@ -81,6 +116,7 @@ final class TestFixture {
 	 */
 	IProject createProjectAt(String name, java.nio.file.Path location) throws CoreException {
 		IProject project = ResourcesPlugin.getWorkspace().getRoot().getProject(name);
+		removeLeftover(project);
 		IProjectDescription description = ResourcesPlugin.getWorkspace().newProjectDescription(name);
 		description.setLocationURI(location.toUri());
 		project.create(description, new NullProgressMonitor());

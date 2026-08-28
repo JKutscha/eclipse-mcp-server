@@ -53,6 +53,7 @@ public final class SubstituteBundleTool implements IMcpTool {
 				  "type": "object",
 				  "properties": {
 				    "action":  {"type":"string","enum":["substitute","restore","status"],"default":"status","description":"'substitute' packs the project and points bundles.info at it, 'restore' puts the recorded original lines back, 'status' only reports."},
+				    "jar":     {"type":"string","description":"Absolute path of a jar that is already built, used instead of 'project'. Its Bundle-SymbolicName and Bundle-Version are read from its own manifest rather than guessed from the file name, which for a Maven build matches neither. The jar is copied, so rebuilding it afterwards does not silently change what this IDE runs."},
 				    "project": {"type":"string","description":"Plug-in project to pack, for substitute. Its output folder and the bin.includes of build.properties are what goes into the jar. CHECK WHICH CLONE IT IS: the answer reports packedFrom, because a workspace project can point at one clone of a repository while the change being measured lives in another, and then this packs a tree without it."},
 				    "dryRun":  {"type":"boolean","default":true,"description":"Report the line that would change, and change nothing."}
 				  },
@@ -213,9 +214,12 @@ public final class SubstituteBundleTool implements IMcpTool {
 
 	private static McpToolResult substitute(Path configuration, Path bundlesInfo, ToolArguments args,
 			IProgressMonitor monitor) throws IOException {
+		if (args.getString("jar") != null) { //$NON-NLS-1$
+			return substituteJar(configuration, bundlesInfo, args);
+		}
 		String projectName = args.getString("project"); //$NON-NLS-1$
 		if (projectName == null) {
-			return McpToolResult.error("The argument 'project' is required for action substitute."); //$NON-NLS-1$
+			return McpToolResult.error("Name what to substitute with: 'project' to pack a workspace project, or 'jar' for one that is already built."); //$NON-NLS-1$
 		}
 		IProject project = ResourcesPlugin.getWorkspace().getRoot().getProject(projectName);
 		if (!project.isAccessible() || project.getLocation() == null) {
@@ -281,6 +285,84 @@ public final class SubstituteBundleTool implements IMcpTool {
 				.put("restartRequired", Boolean.TRUE) //$NON-NLS-1$
 				.put("note", //$NON-NLS-1$
 						"Restart with eclipse_restart for the IDE to run this jar. Until then it still runs the installed bundle. The original line is recorded, so action restore puts it back without you keeping it, and action status reports the substitution to any session that asks.") //$NON-NLS-1$
+				.toString());
+	}
+
+	/**
+	 * Substitutes a jar that somebody else already built.
+	 * <p>
+	 * The identity comes from the jar's own manifest, never from its file name: a
+	 * Maven build is called artifact-version-SNAPSHOT.jar and matches neither the
+	 * symbolic name nor the OSGi version, so guessing from the name would point
+	 * bundles.info at the wrong line or at none.
+	 */
+	private static McpToolResult substituteJar(Path configuration, Path bundlesInfo, ToolArguments args)
+			throws IOException {
+		Path source = Path.of(args.getString("jar")); //$NON-NLS-1$
+		if (!Files.isRegularFile(source)) {
+			return McpToolResult.error("There is no file at '%s'.".formatted(source)); //$NON-NLS-1$
+		}
+		String symbolicName;
+		String version;
+		try (java.util.jar.JarFile jarFile = new java.util.jar.JarFile(source.toFile())) {
+			java.util.jar.Manifest manifest = jarFile.getManifest();
+			if (manifest == null) {
+				return McpToolResult.error("'%s' has no manifest, so it is not an OSGi bundle.".formatted(source)); //$NON-NLS-1$
+			}
+			String declared = manifest.getMainAttributes().getValue("Bundle-SymbolicName"); //$NON-NLS-1$
+			version = manifest.getMainAttributes().getValue("Bundle-Version"); //$NON-NLS-1$
+			symbolicName = declared == null ? null : declared.split(";")[0].strip(); //$NON-NLS-1$
+		}
+		if (symbolicName == null) {
+			return McpToolResult.error("'%s' declares no Bundle-SymbolicName.".formatted(source)); //$NON-NLS-1$
+		}
+
+		List<String> lines = new ArrayList<>(Files.readAllLines(bundlesInfo, StandardCharsets.UTF_8));
+		int index = -1;
+		for (int i = 0; i < lines.size(); i++) {
+			if (lines.get(i).startsWith(symbolicName + ",")) { //$NON-NLS-1$
+				index = i;
+				break;
+			}
+		}
+		if (index < 0) {
+			return McpToolResult.error(
+					"bundles.info has no line for '%s', which is what %s declares, so this installation does not run that bundle." //$NON-NLS-1$
+							.formatted(symbolicName, source.getFileName()));
+		}
+		String original = lines.get(index);
+		String[] fields = original.split(","); //$NON-NLS-1$
+		if (fields.length < 5) {
+			return McpToolResult.error("The bundles.info line for '%s' is not in the expected five field form: %s" //$NON-NLS-1$
+					.formatted(symbolicName, original));
+		}
+		Path jars = configuration.resolve(JARS);
+		Path copy = jars.resolve("%s_%d.jar".formatted(symbolicName, Long.valueOf(System.currentTimeMillis()))); //$NON-NLS-1$
+		String substituted = "%s,%s,%s,%s,%s".formatted(fields[0], fields[1], copy.toUri(), fields[3], fields[4]); //$NON-NLS-1$
+
+		JsonObject result = new JsonObject().put("bundle", symbolicName) //$NON-NLS-1$
+				.put("jar", source.toString()) //$NON-NLS-1$
+				.put("jarVersion", version) //$NON-NLS-1$
+				.put("originalLine", original) //$NON-NLS-1$
+				.put("substitutedLine", substituted); //$NON-NLS-1$
+		if (args.getBoolean("dryRun", true)) { //$NON-NLS-1$
+			return McpToolResult.of(result.put("dryRun", Boolean.TRUE) //$NON-NLS-1$
+					.put("note", //$NON-NLS-1$
+							"Nothing was changed and nothing was copied. Pass dryRun false to carry it out; it needs a restart afterwards, and an unresolvable jar leaves an IDE that does not start.") //$NON-NLS-1$
+					.toString());
+		}
+		Files.createDirectories(jars);
+		// copied rather than referenced in place: a later rebuild of the source jar
+		// would otherwise change what this IDE runs without anybody saying so
+		Files.copy(source, copy, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+		lines.set(index, substituted);
+		Files.write(bundlesInfo, lines, StandardCharsets.UTF_8);
+		record(configuration, symbolicName, original, substituted);
+		return McpToolResult.of(result.put("dryRun", Boolean.FALSE) //$NON-NLS-1$
+				.put("copiedTo", copy.toString()) //$NON-NLS-1$
+				.put("restartRequired", Boolean.TRUE) //$NON-NLS-1$
+				.put("note", //$NON-NLS-1$
+						"Restart with eclipse_restart for the IDE to run this jar. The copy is what is referenced, so rebuilding the source jar changes nothing until this is called again. action restore puts the original line back.") //$NON-NLS-1$
 				.toString());
 	}
 
