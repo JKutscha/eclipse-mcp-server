@@ -252,8 +252,11 @@ final class DebugSupport {
 			processes.add(entry);
 		}
 		if (processes.size() == 0) {
+			// a launch registers its process a moment after it starts, so an empty list
+			// right after launching means "not yet", not "never". Saying the opposite
+			// sent a caller looking for a failure that had not happened
 			json.put("processes", processes).put("processNote", //$NON-NLS-1$ //$NON-NLS-2$
-					"The launch produced no process at all, so nothing was started. That is not the same as a program that is still coming up."); //$NON-NLS-1$
+					"No process is registered for this launch yet. Immediately after eclipse_debug_launch that is normal and it appears within seconds; ask eclipse_debug_status again. If it is still empty after that, nothing was started."); //$NON-NLS-1$
 			return;
 		}
 		json.put("processes", processes); //$NON-NLS-1$

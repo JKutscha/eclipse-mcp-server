@@ -62,7 +62,8 @@ public final class GetFramesTool implements IMcpTool {
 			DebugSessionRegistry.Session session = DebugSupport.requireSession(args.getString("sessionId")); //$NON-NLS-1$
 			var target = DebugSupport.target(session);
 			IThread thread = DebugSupport.requireThread(target, args.getString("thread"));
-			IJavaStackFrame frame = frame(thread, args.getInt("frame", 0, 0, 500)); //$NON-NLS-1$
+			int frameIndex = args.getInt("frame", 0, 0, 500); //$NON-NLS-1$
+			IJavaStackFrame frame = frame(thread, frameIndex);
 
 			JsonArray frames = new JsonArray();
 			List<IStackFrame> stack = stackOf(thread);
@@ -78,6 +79,18 @@ public final class GetFramesTool implements IMcpTool {
 
 			String path = args.getString("variablePath"); //$NON-NLS-1$
 			IVariable[] shown;
+			if (frame.isNative()) {
+				// the frame list is worth having even here, and it is what a caller
+				// needs to pick a frame that does carry variables. A native frame has
+				// none, and asking for them throws rather than answering empty, which
+				// used to fail the whole call: the top frame of an idle SWT event loop
+				// is org.eclipse.swt.internal.gtk.OS.Call
+				return McpToolResult.of(json.put("variables", new JsonArray()) //$NON-NLS-1$
+						.put("variablesUnavailable", //$NON-NLS-1$
+								"Frame %d is a native method, which carries no variable information. The frames above are listed; pass 'frame' with one of them to read variables." //$NON-NLS-1$
+										.formatted(Integer.valueOf(frameIndex)))
+						.toString());
+			}
 			if (path == null) {
 				shown = frame.getVariables();
 			} else {

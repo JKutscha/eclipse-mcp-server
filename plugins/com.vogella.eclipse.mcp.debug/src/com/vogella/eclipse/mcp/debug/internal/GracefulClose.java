@@ -62,19 +62,28 @@ final class GracefulClose {
 			return refuse(json,
 					"No thread of this session could be suspended with Java frames, so there is nowhere to evaluate the close from. Terminate it instead, and expect an unsaved workspace."); //$NON-NLS-1$
 		}
-		boolean weSuspended = false;
 		if (!thread.isSuspended()) {
-			thread.suspend();
-			weSuspended = waitForSuspend(thread, 5);
-			if (!thread.isSuspended()) {
-				return refuse(json, "The thread did not suspend, so the close could not be queued."); //$NON-NLS-1$
-			}
+			return refuse(json,
+					"No thread of this session is suspended at a breakpoint. A method cannot be invoked in a thread that was merely suspended: JDI allows it only for a thread stopped BY A BREAKPOINT OR A STEP, and eclipse_debug_control action suspend does not qualify. Set a breakpoint with eclipse_set_breakpoint in a NAMED class of org.eclipse.ui that the UI thread reaches regularly, wait for it with eclipse_debug_status, then call close."); //$NON-NLS-1$
+		}
+		if (thread.getBreakpoints().length == 0 && !thread.isPerformingEvaluation()) {
+			// the same JDI rule, seen from the other side: a thread suspended by the VM
+			// carries no breakpoint, and the invocation would fail with "Thread must be
+			// suspended by step or breakpoint to perform method invocation"
+			json.put("suspendedByBreakpoint", Boolean.FALSE); //$NON-NLS-1$
+		} else {
+			json.put("suspendedByBreakpoint", Boolean.TRUE); //$NON-NLS-1$
 		}
 		json.put("suspendedThread", DebugSupport.name(thread)); //$NON-NLS-1$
 
 		try {
-			IJavaStackFrame frame = topFrame(thread);
-			IJavaProject project = frame == null ? null : EvaluateTool.projectOf(frame, session);
+			IJavaStackFrame frame = workbenchFrame(thread);
+			if (frame == null) {
+				return refuse(json,
+						"No frame of this thread belongs to a named class that can see org.eclipse.ui. The top frame of an idle workbench is org.eclipse.swt.internal.gtk.OS.Call, whose class loader does not see the workbench at all, and an anonymous class such as Workbench$1 cannot compile the lambda. Suspend at a breakpoint in a named org.eclipse.ui class and call close again."); //$NON-NLS-1$
+			}
+			json.put("frame", DebugSupport.location(frame)); //$NON-NLS-1$
+			IJavaProject project = EvaluateTool.projectOf(frame, session);
 			if (project == null) {
 				return refuse(json,
 						"No workspace project supplies the types of the suspended frame, so the expression cannot be compiled against it. That is the same limit eclipse_debug_evaluate has."); //$NON-NLS-1$
@@ -92,7 +101,6 @@ final class GracefulClose {
 				thread.resume();
 			}
 		}
-		json.put("suspendedByThisCall", Boolean.valueOf(weSuspended)); //$NON-NLS-1$
 
 		boolean gone = waitForExit(launchValue, waitSeconds);
 		json.put("closedGracefully", Boolean.valueOf(gone)) //$NON-NLS-1$
@@ -151,13 +159,42 @@ final class GracefulClose {
 		return candidate;
 	}
 
-	private static IJavaStackFrame topFrame(IJavaThread thread) throws DebugException {
-		for (var frame : thread.getStackFrames()) {
-			if (frame instanceof IJavaStackFrame java) {
-				return java;
+	/**
+	 * A frame the close expression can actually be compiled and run against.
+	 * <p>
+	 * Two things rule most frames out, and both were measured rather than guessed.
+	 * The type of the frame decides which class loader the expression is compiled
+	 * against, so a frame in org.eclipse.swt cannot see org.eclipse.ui at all and
+	 * reports it as an unresolved type, which reads like a missing workbench and is
+	 * not one. And JDT refuses a lambda inside a local or anonymous class, so
+	 * Workbench$1, where the idle event loop lives, is unusable even though it is
+	 * the frame a breakpoint most easily reaches.
+	 */
+	private static IJavaStackFrame workbenchFrame(IJavaThread thread) throws DebugException {
+		IJavaStackFrame fallback = null;
+		for (var candidate : thread.getStackFrames()) {
+			if (!(candidate instanceof IJavaStackFrame frame)) {
+				continue;
+			}
+			String type = frame.getDeclaringTypeName();
+			if (type == null || anonymous(type)) {
+				continue;
+			}
+			if (type.startsWith("org.eclipse.ui.")) { //$NON-NLS-1$
+				return frame;
+			}
+			if (fallback == null && (type.startsWith("org.eclipse.e4.ui.") //$NON-NLS-1$
+					|| type.startsWith("org.eclipse.equinox.launcher."))) { //$NON-NLS-1$
+				fallback = frame;
 			}
 		}
-		return null;
+		return fallback;
+	}
+
+	/** {@code Workbench$1} and friends, where a lambda cannot be compiled. */
+	private static boolean anonymous(String typeName) {
+		int dollar = typeName.lastIndexOf('$');
+		return dollar >= 0 && dollar + 1 < typeName.length() && Character.isDigit(typeName.charAt(dollar + 1));
 	}
 
 	private static boolean waitForSuspend(IJavaThread thread, int seconds) throws InterruptedException {
