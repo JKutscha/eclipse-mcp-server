@@ -119,7 +119,7 @@ public final class ViewTools {
 
 		@Override
 		public String getDescription() {
-			return "Closes an open view in the active perspective, named by id or by its title. Only views that are currently open can be closed, and the answer lists what is open when nothing matches. CHANGES THE PERSPECTIVE LAYOUT, which Eclipse remembers across restarts, but writes nothing to the workspace. This does not close editors; there is no tool for that, because an editor can hold unsaved work."; //$NON-NLS-1$
+			return "Closes an open view in the active perspective, named by id or by its title. Only views that are currently open can be closed, and the answer lists what is open when nothing matches. CHANGES THE PERSPECTIVE LAYOUT, which Eclipse remembers across restarts, but writes nothing to the workspace. This does not close editors, which eclipse_close_editor does."; //$NON-NLS-1$
 		}
 
 		@Override
