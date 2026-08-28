@@ -29,7 +29,7 @@ public final class SaveWorkspaceTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Saves the workspace, which is what the IDE otherwise only does while shutting down. MODIFIES THE WORKSPACE METADATA, and a full save is NOT a read-only operation: it writes the element tree, the markers and the sync info of every project, moves the save number on, deletes the snapshots and runs the local history pruning, which removes file states by the history policy. That is the same work an exit does, so it is repeatable and measurable here rather than only observable once per process. It takes the workspace root scheduling rule, so nothing else can change the workspace while it runs, and it runs in a job rather than on the calling thread. THE INTERESTING PART OF THE ANSWER IS THE STATUS: each save participant contributes its own child status, so a plug-in that fails or complains while saving is named instead of vanishing into one number. mode snapshot writes only what changed since the last full save and skips the pruning, which is what the workspace does periodically by itself. A SERIES OF SAVES DOES NOT MEASURE A SHUTDOWN SAVE: the expensive part of the first one is the delta chain, a tree per save participant and per builder of every open project, and once those trees are unchanged the comparison short circuits, so every save after the first is systematically cheaper and stays cheap even across a restart, because the builders read their trees back from the same chain. The costly case returns only after builders have really rebuilt. Measured here at about 1.5 seconds repeated against nearly 4 seconds for the first save of a session."; //$NON-NLS-1$
+		return "Saves the workspace, which is what the IDE otherwise only does while shutting down. MODIFIES THE WORKSPACE METADATA, and a full save is NOT a read-only operation: it writes the element tree, the markers and the sync info of every project, moves the save number on, deletes the snapshots and runs the local history pruning, which removes file states by the history policy. That is the same work an exit does, so it is repeatable and measurable here rather than only observable once per process. It takes the workspace root scheduling rule, so nothing else can change the workspace while it runs, and it runs in a job rather than on the calling thread. THE INTERESTING PART OF THE ANSWER IS THE STATUS: each save participant contributes its own child status, so a plug-in that fails or complains while saving is named instead of vanishing into one number. mode snapshot writes only what changed since the last full save and skips the pruning, which is what the workspace does periodically by itself. A SERIES OF SAVES DOES NOT MEASURE A SHUTDOWN SAVE: the expensive part of the first one is the delta chain, a tree per save participant and per builder of every open project, and once those trees are unchanged the comparison short circuits, so every save after the first is systematically cheaper and stays cheap even across a restart, because the builders read their trees back from the same chain. The costly case returns only after builders have really rebuilt. Measured here at about 1.5 seconds repeated against nearly 4 seconds for the first save of a session. THE DURATION IS REPORTED IN TWO PARTS, because the save takes the workspace root rule and therefore queues behind a running build: waitedForRuleMillis is that queueing and saveMillis is the save, and only the second is comparable between runs. jobsWhenRequested says what the job manager was doing when the request arrived."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -57,15 +57,21 @@ public final class SaveWorkspaceTool implements IMcpTool {
 
 		CountDownLatch done = new CountDownLatch(1);
 		IStatus[] outcome = new IStatus[1];
-		long[] elapsed = new long[1];
+		// the wait for the rule and the save itself, kept apart: a save that queues
+		// behind a build reports the build in its duration otherwise
+		long[] saveMillis = new long[1];
+		long[] waitedForRule = new long[1];
+		JsonObject before = WorkspaceJobs.snapshot();
+		long requestedAt = System.currentTimeMillis();
 		Job job = Job.create("MCP workspace save", progress -> { //$NON-NLS-1$
+			waitedForRule[0] = System.currentTimeMillis() - requestedAt;
 			long startedAt = System.currentTimeMillis();
 			try {
 				outcome[0] = ResourcesPlugin.getWorkspace().save(full, progress);
 			} catch (CoreException e) {
 				outcome[0] = e.getStatus();
 			} finally {
-				elapsed[0] = System.currentTimeMillis() - startedAt;
+				saveMillis[0] = System.currentTimeMillis() - startedAt;
 				done.countDown();
 			}
 			return Status.OK_STATUS;
@@ -83,7 +89,8 @@ public final class SaveWorkspaceTool implements IMcpTool {
 			Thread.currentThread().interrupt();
 			return McpToolResult.error("Interrupted while waiting for the save."); //$NON-NLS-1$
 		}
-		JsonObject result = new JsonObject().put("mode", full ? "full" : "snapshot"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		JsonObject result = new JsonObject().put("mode", full ? "full" : "snapshot") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+				.put("jobsWhenRequested", before); //$NON-NLS-1$
 		if (!finished) {
 			return McpToolResult.of(result.put("state", "running") //$NON-NLS-1$ //$NON-NLS-2$
 					.put("waitedSeconds", Integer.valueOf(timeoutSeconds)) //$NON-NLS-1$
@@ -93,9 +100,11 @@ public final class SaveWorkspaceTool implements IMcpTool {
 					.toString());
 		}
 		return McpToolResult.of(result.put("state", "done") //$NON-NLS-1$ //$NON-NLS-2$
-				.put("elapsedMillis", Long.valueOf(elapsed[0])) //$NON-NLS-1$
+				.put("saveMillis", Long.valueOf(saveMillis[0])) //$NON-NLS-1$
+				.put("waitedForRuleMillis", Long.valueOf(waitedForRule[0])) //$NON-NLS-1$
+				.put("elapsedMillis", Long.valueOf(saveMillis[0] + waitedForRule[0])) //$NON-NLS-1$
 				.put("status", describe(outcome[0])) //$NON-NLS-1$
-				.put("note", note(full)) //$NON-NLS-1$
+				.put("note", note(full) + timing(waitedForRule[0], before)) //$NON-NLS-1$
 				.toString());
 	}
 
@@ -121,7 +130,8 @@ public final class SaveWorkspaceTool implements IMcpTool {
 				.put("projects", new JsonObject().put("total", //$NON-NLS-1$ //$NON-NLS-2$
 						Integer.valueOf(workspace.getRoot().getProjects().length)).put("open", Integer.valueOf(open))) //$NON-NLS-1$
 				.put("markers", markers()) //$NON-NLS-1$
-				.put("autoBuilding", Boolean.valueOf(workspace.isAutoBuilding())); //$NON-NLS-1$
+				.put("autoBuilding", Boolean.valueOf(workspace.isAutoBuilding())) //$NON-NLS-1$
+				.put("jobs", WorkspaceJobs.snapshot()); //$NON-NLS-1$
 		if (full) {
 			json.put("localHistory", history(description)); //$NON-NLS-1$
 		}
@@ -169,6 +179,15 @@ public final class SaveWorkspaceTool implements IMcpTool {
 		return json.put("bytes", Long.valueOf(bytes)).put("files", Integer.valueOf(files)) //$NON-NLS-1$ //$NON-NLS-2$
 				.put("note", //$NON-NLS-1$
 						"A full save applies the policy above to these files and deletes what falls outside it. That is the one part of a save that removes something a person might want back."); //$NON-NLS-1$
+	}
+
+	/** Says whether the number can be compared with another one. */
+	private static String timing(long waitedForRule, JsonObject before) {
+		if (waitedForRule < 200) {
+			return " The save took the workspace rule immediately, so saveMillis is the save alone."; //$NON-NLS-1$
+		}
+		return " It waited %d ms for the workspace rule before saving anything, which is time that belongs to whatever held the rule, a build above all; jobsWhenRequested says what was running. Compare saveMillis, not elapsedMillis." //$NON-NLS-1$
+				.formatted(Long.valueOf(waitedForRule));
 	}
 
 	private static String note(boolean full) {

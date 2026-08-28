@@ -16,6 +16,7 @@
       <tool class="com.vogella.eclipse.mcp.core.internal.RefreshTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.SaveWorkspaceTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.GetBuildStatusTool"/>
+      <tool class="com.vogella.eclipse.mcp.core.internal.WaitUntilQuietTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.SetPreferenceTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.SetProjectStateTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.RemoveProjectTool"/>

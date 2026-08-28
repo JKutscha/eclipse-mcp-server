@@ -340,6 +340,8 @@ class McpServerServiceTest {
 		// a dry run: a real save in the test runtime runs every save participant, and
 		// one of them failing left later tests in this same runtime failing too
 		case "eclipse_save_workspace" -> Map.of("mode", "snapshot");
+		// one second, because the smoke test must not sit through a build
+		case "eclipse_wait_until_quiet" -> Map.of("timeoutSeconds", Integer.valueOf(1));
 		// headless, so there is no folder to select in; a named path keeps the refusal specific
 		case "eclipse_select_tab" -> Map.of("part", "org.eclipse.ui.views.ProblemView", "path", "0/i0");
 		// a dry run against the fixture, so no compliance is actually written

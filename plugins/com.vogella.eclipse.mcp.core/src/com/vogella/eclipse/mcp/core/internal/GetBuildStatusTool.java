@@ -22,7 +22,7 @@ public final class GetBuildStatusTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Reports the state of work started through eclipse_build or eclipse_refresh: running, done, failed or cancelled, how long the refresh and the build each took, the builder failures it hit and the error and warning counts that followed it. Without a buildId it reports the most recent build."; //$NON-NLS-1$
+		return "Reports the state of work started through eclipse_build or eclipse_refresh: running, done, failed or cancelled, how long the refresh and the build each took, the builder failures it hit and the error and warning counts that followed it. Without a buildId it reports the most recent build. EVERY ANSWER ALSO CARRIES 'jobs', which is the live job manager rather than this server's own record: the auto-build is started by the workspace and by nobody's tool, so after a restart the IDE builds for a minute or two while no build here has a state at all. Ask that before timing anything. eclipse_wait_until_quiet waits for it instead of asking."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -44,6 +44,7 @@ public final class GetBuildStatusTool implements IMcpTool {
 			return McpToolResult.error(com.vogella.eclipse.mcp.core.ClientSessions.ambiguousDefault("build", //$NON-NLS-1$
 					"buildId", BuildRegistry.getInstance().ids())); //$NON-NLS-1$
 		}
+		JsonObject jobs = WorkspaceJobs.snapshot();
 		BuildRegistry.Build build = buildId == null ? BuildRegistry.getInstance().findLatest()
 				: BuildRegistry.getInstance().find(buildId);
 		if (build == null) {
@@ -51,11 +52,15 @@ public final class GetBuildStatusTool implements IMcpTool {
 				return McpToolResult
 						.error("No build with the id '%s'. Only the last few builds are kept.".formatted(buildId)); //$NON-NLS-1$
 			}
-			// nothing built yet is an answer, not a failure
+			// nothing built yet is an answer, not a failure, and the workspace may
+			// well be building anyway
 			return McpToolResult.of(new JsonObject().put("state", "none") //$NON-NLS-1$ //$NON-NLS-2$
-					.put("message", "No build has been started through eclipse_build yet.").toString()); //$NON-NLS-1$ //$NON-NLS-2$
+					.put("jobs", jobs) //$NON-NLS-1$
+					.put("message", //$NON-NLS-1$
+							"No build has been started through eclipse_build yet. 'jobs' says what the workspace is doing on its own.") //$NON-NLS-1$
+					.toString());
 		}
-		return McpToolResult.of(toJson(build).toString());
+		return McpToolResult.of(toJson(build).put("jobs", jobs).toString()); //$NON-NLS-1$
 	}
 
 	/** {added, changed, removed} as an object, or null when that phase did not run. */
