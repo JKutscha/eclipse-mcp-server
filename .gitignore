@@ -2,3 +2,5 @@ target/
 bin/
 *.class
 .polyglot.*
+.playwright-mcp/
+.claude/settings.local.json

@@ -1,7 +1,6 @@
 package com.vogella.eclipse.mcp.server.internal;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.eclipse.core.runtime.ILog;
@@ -90,12 +89,4 @@ public final class EndpointFile {
 		}
 	}
 
-	public static void delete() {
-		Path path = location();
-		try {
-			Files.deleteIfExists(path);
-		} catch (IOException e) {
-			ILog.get().warn("Could not delete the MCP endpoint file " + path, e); //$NON-NLS-1$
-		}
-	}
 }

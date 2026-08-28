@@ -19,7 +19,9 @@ import com.vogella.eclipse.mcp.core.json.JsonObject;
  * it. The timeout is what turns a frozen IDE into an answer instead of a
  * request that never returns.
  */
-final class UiThread {
+public final class UiThread {
+
+	static final String NO_WORKBENCH = "There is no running workbench."; //$NON-NLS-1$
 
 	private UiThread() {
 	}
@@ -37,32 +39,63 @@ final class UiThread {
 	}
 
 	/**
+	 * Queues the work and hands back the pending answer, or {@code null} when there
+	 * is no workbench to queue it on.
+	 * <p>
+	 * Catches {@link Throwable} and not {@link RuntimeException}: SWT reports an
+	 * exhausted handle table as {@code SWTError}, and an {@code Error} that only
+	 * escaped into the event loop would leave this future uncompleted, so the caller
+	 * would wait out its whole timeout and then blame a frozen UI for what was
+	 * really an exception it could have named.
+	 */
+	private static CompletableFuture<JsonObject> submit(Supplier<JsonObject> work) {
+		if (!PlatformUI.isWorkbenchRunning()) {
+			return null;
+		}
+		CompletableFuture<JsonObject> pending = new CompletableFuture<>();
+		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> completeFrom(pending, work));
+		return pending;
+	}
+
+	/**
+	 * Runs the work into the future, treating an {@link Error} exactly like an
+	 * exception. Separate from {@link #submit} so that it can be exercised without
+	 * a workbench, which is the only place the distinction is visible.
+	 */
+	public static void completeFrom(CompletableFuture<JsonObject> pending, Supplier<JsonObject> work) {
+		try {
+			pending.complete(work.get());
+		} catch (Throwable e) {
+			pending.completeExceptionally(e);
+		}
+	}
+
+	/** The message for a wait that ended in neither an answer nor a timeout. */
+	public static String failure(Exception e) {
+		if (e instanceof InterruptedException) {
+			Thread.currentThread().interrupt();
+			return "The request was interrupted."; //$NON-NLS-1$
+		}
+		Throwable cause = e.getCause() == null ? e : e.getCause();
+		return "The request failed: " + cause; //$NON-NLS-1$
+	}
+
+	/**
 	 * The same, for a tool whose timeout is an answer rather than a failure. The
 	 * future is left uncancelled, because the work keeps running and cancelling
 	 * would only drop the record of what it went on to do.
 	 */
 	static TimedOutcome timed(long timeoutSeconds, Supplier<JsonObject> work) {
-		if (!PlatformUI.isWorkbenchRunning()) {
-			return new TimedOutcome(null, false, "There is no running workbench."); //$NON-NLS-1$
+		CompletableFuture<JsonObject> pending = submit(work);
+		if (pending == null) {
+			return new TimedOutcome(null, false, NO_WORKBENCH);
 		}
-		CompletableFuture<JsonObject> pending = new CompletableFuture<>();
-		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
-			try {
-				pending.complete(work.get());
-			} catch (RuntimeException e) {
-				pending.completeExceptionally(e);
-			}
-		});
 		try {
 			return new TimedOutcome(pending.get(timeoutSeconds, TimeUnit.SECONDS), false, null);
 		} catch (TimeoutException e) {
 			return new TimedOutcome(null, true, null);
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			return new TimedOutcome(null, false, "The request was interrupted."); //$NON-NLS-1$
-		} catch (ExecutionException e) {
-			Throwable cause = e.getCause() == null ? e : e.getCause();
-			return new TimedOutcome(null, false, "The request failed: " + cause); //$NON-NLS-1$
+		} catch (InterruptedException | ExecutionException e) {
+			return new TimedOutcome(null, false, failure(e));
 		}
 	}
 
@@ -77,29 +110,18 @@ final class UiThread {
 	 * to fold the failure into an answer somebody else is writing.
 	 */
 	static Outcome run(long timeoutSeconds, Supplier<JsonObject> work) {
-		if (!PlatformUI.isWorkbenchRunning()) {
-			return new Outcome(null, "There is no running workbench."); //$NON-NLS-1$
+		CompletableFuture<JsonObject> pending = submit(work);
+		if (pending == null) {
+			return new Outcome(null, NO_WORKBENCH);
 		}
-		CompletableFuture<JsonObject> pending = new CompletableFuture<>();
-		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
-			try {
-				pending.complete(work.get());
-			} catch (RuntimeException e) {
-				pending.completeExceptionally(e);
-			}
-		});
 		try {
 			return new Outcome(pending.get(timeoutSeconds, TimeUnit.SECONDS), null);
 		} catch (TimeoutException e) {
 			pending.cancel(false);
 			return new Outcome(null, "The Eclipse UI did not process the request within %d seconds." //$NON-NLS-1$
 					.formatted(Long.valueOf(timeoutSeconds)));
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			return new Outcome(null, "The request was interrupted."); //$NON-NLS-1$
-		} catch (ExecutionException e) {
-			Throwable cause = e.getCause() == null ? e : e.getCause();
-			return new Outcome(null, "The request failed: " + cause); //$NON-NLS-1$
+		} catch (InterruptedException | ExecutionException e) {
+			return new Outcome(null, failure(e));
 		}
 	}
 }

@@ -55,16 +55,6 @@ final class WorkspaceJobs {
 				.put("idle", Boolean.valueOf(Job.getJobManager().isIdle())); //$NON-NLS-1$
 	}
 
-	/** True while a build is running or queued, which is the one question a measurement needs answered. */
-	static boolean building() {
-		for (Object[] family : FAMILIES) {
-			if (((String) family[0]).endsWith("Build") && !state(family[1]).equals("none")) { //$NON-NLS-1$ //$NON-NLS-2$
-				return true;
-			}
-		}
-		return false;
-	}
-
 	/** What a wait ran into: the parts it waited for, and whether it ran out of time. */
 	record Quiet(JsonArray waitedFor, boolean timedOut) {
 	}

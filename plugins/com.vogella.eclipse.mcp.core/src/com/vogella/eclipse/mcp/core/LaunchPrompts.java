@@ -48,12 +48,6 @@ public final class LaunchPrompts {
 	private LaunchPrompts() {
 	}
 
-	/** What each setting is while this is in force, for reporting to the caller. */
-	public static Map<String, String> applied() {
-		return Map.of(SWITCH_PERSPECTIVE, NEVER, SUSPEND_ON_UNCAUGHT, "false", //$NON-NLS-1$
-				SUSPEND_ON_COMPILATION_ERRORS, "false"); //$NON-NLS-1$
-	}
-
 	/**
 	 * Silences the three settings for the duration of one launch. Every call has to
 	 * be paired with {@link #release()}.

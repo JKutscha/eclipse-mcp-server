@@ -130,16 +130,6 @@ final class FlightRecording {
 		}
 	}
 
-	/** Stops and forgets a recording without reading it. */
-	static boolean discard(String id) {
-		Recording recording = RECORDINGS.remove(id);
-		if (recording == null) {
-			return false;
-		}
-		recording.close();
-		return true;
-	}
-
 	/**
 	 * Reads one dump and aggregates it: where the bytes were allocated, where the
 	 * time was spent, and what the collector did.

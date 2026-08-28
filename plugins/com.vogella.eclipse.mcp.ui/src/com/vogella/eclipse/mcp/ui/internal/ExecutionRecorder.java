@@ -21,11 +21,6 @@ public final class ExecutionRecorder implements IExecutionListener {
 
 	private volatile String outcome;
 
-	/** The verdict the framework reported: success, failure or notHandled, null while none has fired. */
-	public String outcome() {
-		return outcome;
-	}
-
 	/** Whether the handler reached a verdict, which success and failure alone say. */
 	public boolean finished() {
 		return "success".equals(outcome) || "failure".equals(outcome); //$NON-NLS-1$ //$NON-NLS-2$

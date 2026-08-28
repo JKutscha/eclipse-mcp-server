@@ -28,7 +28,7 @@ public final class Json {
 		case JsonArray array -> writeArray(array.values(), out, indent);
 		case String string -> writeString(string, out);
 		case Boolean bool -> out.append(bool.booleanValue());
-		case Number number -> out.append(number);
+		case Number number -> writeNumber(number, out);
 		default -> writeString(String.valueOf(value), out);
 		}
 	}
@@ -71,6 +71,19 @@ public final class Json {
 		}
 		indent(out, indent);
 		out.append(']');
+	}
+
+	/**
+	 * JSON has no spelling for NaN or the infinities, so a ratio that divided by
+	 * zero would otherwise produce a document the client cannot parse at all. Null
+	 * loses that one value and keeps the rest of the answer readable.
+	 */
+	private static void writeNumber(Number number, StringBuilder out) {
+		// only the floating point types, because a BigInteger too large for a double
+		// is still an exact number JSON can spell
+		boolean broken = (number instanceof Double || number instanceof Float)
+				&& (Double.isNaN(number.doubleValue()) || Double.isInfinite(number.doubleValue()));
+		out.append(broken ? "null" : number.toString()); //$NON-NLS-1$
 	}
 
 	private static void indent(StringBuilder out, int level) {

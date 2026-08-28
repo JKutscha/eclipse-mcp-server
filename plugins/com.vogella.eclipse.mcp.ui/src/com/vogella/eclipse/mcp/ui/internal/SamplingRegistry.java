@@ -89,12 +89,6 @@ public final class SamplingRegistry {
 			return running;
 		}
 
-		public int sampleCount() {
-			synchronized (samples) {
-				return samples.size();
-			}
-		}
-
 		/** Sampling rounds. One tick produces one stack per sampled thread. */
 		public int ticks() {
 			return ticks;
