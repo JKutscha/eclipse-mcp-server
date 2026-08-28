@@ -1021,6 +1021,30 @@ Removal is unguarded for the same reason, and it will just as happily remove a s
 
 `refresh` exists because p2 caches metadata per URL. Rebuilding into the same `target/repository` leaves the path unchanged, so without a refresh the new build looks identical to the old one, which is the same invisible-stale-cache trap `eclipse_check_for_updates` guards against.
 
+### `eclipse_add_git_repository`
+
+**Registers a git repository that is already on disk with EGit**, which is what *Add an existing local Git repository* in the Git Repositories view does.
+Runs as a dry run unless `dryRun` is set to false.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `action` | string | `add` | `add`, `remove` or `list`. |
+| `directory` | string | | Working tree or `.git` directory. Required for `add` and `remove`. |
+| `connectProjects` | boolean | `false` | Also connect the open workspace projects inside the repository, which is what *Team > Share Project* does. |
+| `dryRun` | boolean | `true` | Report what would be registered without registering it. |
+
+**Nothing is cloned and nothing is fetched.**
+This reaches no network and creates no repository.
+Clone with `eclipse_run_command` and register the result here, which keeps credential handling where the user already configured it.
+
+Without this the other git tools are half blind.
+`eclipse_get_git_status` resolves a project through EGit's own mapping, so a project whose repository the IDE has never been told about resolves to nothing, and the answer is that no repository was found rather than that it was never registered.
+
+`action` `remove` unregisters a repository **without deleting anything on disk**: the working tree and its history are untouched and it can be registered again.
+`action` `list` reports what is registered.
+
+Registering a repository twice is reported as already registered rather than failing, and a path that is no repository is refused before anything is written.
+
 ### `eclipse_checkout` and `eclipse_get_git_status`
 
 **`eclipse_checkout` changes the working tree**, and is a dry run unless `dryRun` is set to `false`. Both need EGit; without it they say so rather than the bundle failing to resolve.
@@ -2171,7 +2195,7 @@ The contract for an implementation:
 | `com.vogella.eclipse.mcp.debug` | 8 | The breakpoint tools, the debug session tools and the session registry | `org.eclipse.jdt.debug`, `org.eclipse.debug.core`, `org.eclipse.jdt.core`, core |
 | `com.vogella.eclipse.mcp.p2` | 8 | The provisioning tools: update, install, uninstall, the repository tools and the operation registry | the `org.eclipse.equinox.p2.*` bundles, core |
 | `com.vogella.eclipse.mcp.pde` | 7 | The plug-in tools: bundle info, manifest editing, dependency analysis, execution environments, target platforms and resource lookup | `org.eclipse.pde.core`, `org.eclipse.jdt.core`, `org.eclipse.osgi`, core |
-| `com.vogella.eclipse.mcp.git` | 2 | The repository status and checkout tools | `org.eclipse.jgit`, `org.eclipse.egit.core`, both optional, core |
+| `com.vogella.eclipse.mcp.git` | 3 | The repository status, checkout and registration tools | `org.eclipse.jgit`, `org.eclipse.egit.core`, both optional, core |
 
 `com.vogella.eclipse.mcp.core` deliberately has no reference to the MCP SDK, to Jetty or to any UI bundle, so that the tool API stays a candidate for the Eclipse Platform.
 

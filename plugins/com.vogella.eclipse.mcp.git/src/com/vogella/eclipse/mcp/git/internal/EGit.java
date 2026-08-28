@@ -60,11 +60,16 @@ final class EGit {
 		// path that is no repository has to be rejected here. Otherwise it reaches
 		// the status as a repository with no working tree and fails there, which
 		// reads as the repository being broken rather than as the wrong path
-		return FileKey.isGitRepository(gitDir, FS.DETECTED) ? RepositoryCache.INSTANCE.lookupRepository(gitDir) : null;
+		return isRepository(gitDir) ? RepositoryCache.INSTANCE.lookupRepository(gitDir) : null;
+	}
+
+	/** Whether this really is a git directory, rather than any directory at all. */
+	static boolean isRepository(File gitDir) {
+		return FileKey.isGitRepository(gitDir, FS.DETECTED);
 	}
 
 	/** {@code .git} under the directory, or the directory itself when it already is one. */
-	private static File gitDir(File directory) {
+	static File gitDir(File directory) {
 		File candidate = new File(directory, ".git"); //$NON-NLS-1$
 		return candidate.exists() ? candidate : directory;
 	}
