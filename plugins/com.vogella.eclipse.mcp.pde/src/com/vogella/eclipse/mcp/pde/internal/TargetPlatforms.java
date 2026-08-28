@@ -156,8 +156,11 @@ final class TargetPlatforms {
 			for (ITargetLocation location : definition.getTargetLocations() == null ? new ITargetLocation[0]
 					: definition.getTargetLocations()) {
 				TargetBundle[] fromLocation = location.getBundles();
+				String xml = serialize(location);
 				locations.add(new JsonObject().put("type", location.getType()) //$NON-NLS-1$
 						.put("location", location(location)) //$NON-NLS-1$
+						.put("label", attribute(xml, "label")) //$NON-NLS-1$ //$NON-NLS-2$
+						.put("repositories", repositories(xml)) //$NON-NLS-1$
 						.put("resolved", location.isResolved()) //$NON-NLS-1$
 						.put("bundleCount", fromLocation == null ? 0 : fromLocation.length) //$NON-NLS-1$
 						.put("status", status(location.getStatus()))); //$NON-NLS-1$
@@ -206,11 +209,57 @@ final class TargetPlatforms {
 		}
 	}
 
+	/**
+	 * The path a location reads from, where it has one.
+	 * <p>
+	 * A Maven location has none, and PDE answers with the JVM's temp directory,
+	 * which reads as a target configured to load bundles out of /tmp. It is not
+	 * one, so the field is left empty and the label says which location it is.
+	 */
 	private static String location(ITargetLocation location) {
 		try {
-			return location.getLocation(false);
-		} catch (CoreException e) {
+			String path = location.getLocation(false);
+			if (path == null) {
+				return null;
+			}
+			String temporary = System.getProperty("java.io.tmpdir", "/tmp"); //$NON-NLS-1$ //$NON-NLS-2$
+			return trailing(path).equals(trailing(temporary)) ? null : path;
+		} catch (CoreException | RuntimeException e) {
 			return null;
 		}
+	}
+
+	private static String trailing(String path) {
+		return path.endsWith("/") ? path.substring(0, path.length() - 1) : path; //$NON-NLS-1$
+	}
+
+	/** The location's own XML, which carries what the API does not expose. */
+	private static String serialize(ITargetLocation location) {
+		try {
+			return location.serialize();
+		} catch (RuntimeException e) {
+			return null;
+		}
+	}
+
+	private static String attribute(String xml, String name) {
+		if (xml == null) {
+			return null;
+		}
+		var matcher = java.util.regex.Pattern.compile(name + "=\"([^\"]*)\"").matcher(xml); //$NON-NLS-1$
+		return matcher.find() ? matcher.group(1) : null;
+	}
+
+	/** The p2 repositories an installable unit location resolves against, which its path never names. */
+	private static JsonArray repositories(String xml) {
+		if (xml == null) {
+			return null;
+		}
+		JsonArray urls = new JsonArray();
+		var matcher = java.util.regex.Pattern.compile("<repository[^>]*location=\"([^\"]*)\"").matcher(xml); //$NON-NLS-1$
+		while (matcher.find()) {
+			urls.add(matcher.group(1));
+		}
+		return urls.size() == 0 ? null : urls;
 	}
 }
