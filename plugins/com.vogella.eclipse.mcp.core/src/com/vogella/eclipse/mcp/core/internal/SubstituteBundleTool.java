@@ -53,7 +53,7 @@ public final class SubstituteBundleTool implements IMcpTool {
 				  "type": "object",
 				  "properties": {
 				    "action":  {"type":"string","enum":["substitute","restore","status"],"default":"status","description":"'substitute' packs the project and points bundles.info at it, 'restore' puts the recorded original lines back, 'status' only reports."},
-				    "project": {"type":"string","description":"Plug-in project to pack, for substitute. Its output folder and the bin.includes of build.properties are what goes into the jar."},
+				    "project": {"type":"string","description":"Plug-in project to pack, for substitute. Its output folder and the bin.includes of build.properties are what goes into the jar. CHECK WHICH CLONE IT IS: the answer reports packedFrom, because a workspace project can point at one clone of a repository while the change being measured lives in another, and then this packs a tree without it."},
 				    "dryRun":  {"type":"boolean","default":true,"description":"Report the line that would change, and change nothing."}
 				  },
 				  "additionalProperties": false
@@ -189,6 +189,10 @@ public final class SubstituteBundleTool implements IMcpTool {
 
 		JsonObject result = new JsonObject().put("bundle", symbolicName) //$NON-NLS-1$
 				.put("project", projectName) //$NON-NLS-1$
+				// the path, not just the name: a workspace can hold a project from one
+				// clone while the patch being measured sits in another, and then this
+				// packs the wrong tree and everything afterwards is measured wrongly
+				.put("packedFrom", projectPath.toString()) //$NON-NLS-1$
 				.put("originalLine", original) //$NON-NLS-1$
 				.put("substitutedLine", substituted) //$NON-NLS-1$
 				.put("jar", jar.toString()); //$NON-NLS-1$

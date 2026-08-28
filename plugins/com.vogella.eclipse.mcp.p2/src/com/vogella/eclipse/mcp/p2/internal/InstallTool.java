@@ -36,7 +36,7 @@ public final class InstallTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Installs an installable unit into this IDE. MODIFIES THE INSTALLATION BY FETCHING AND RUNNING CODE FROM THE NETWORK, which is a larger step than any other tool here takes. Only repositories the IDE is already configured with may be used; an unknown URL is refused rather than added, because adding it is a decision for the person at the IDE. Runs as a job and returns an operationId to poll through eclipse_get_provisioning_status. The installed code is not active until the IDE restarts."; //$NON-NLS-1$
+		return "Installs an installable unit into this IDE. MODIFIES THE INSTALLATION BY FETCHING AND RUNNING CODE FROM THE NETWORK, which is a larger step than any other tool here takes. Only repositories the IDE is already configured with may be used; an unknown URL is refused rather than added, because adding it is a decision for the person at the IDE. Runs as a job and returns an operationId to poll through eclipse_get_provisioning_status. The installed code is not active until the IDE restarts. A BUNDLE THAT AN INSTALLED FEATURE PINS CANNOT BE REPLACED THIS WAY: a feature requires each of its bundles at one exact version, so p2 refuses a differently versioned build of it with 'Only one of the following can be installed at once', and in an SDK almost every bundle is pinned by a feature that another feature pins in turn. This path works for a unit nothing pins, and for a whole feature built and installed together; for running one changed workspace bundle instead of an installed one, eclipse_substitute_bundle is the tool, at the price of leaving p2's picture of the installation untrue."; //$NON-NLS-1$
 	}
 
 	@Override
