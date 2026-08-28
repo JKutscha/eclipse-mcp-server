@@ -43,7 +43,7 @@ public final class SubstituteBundleTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Makes the IDE run a workspace project's bundle in place of the installed one at the next restart, by packing the project and pointing this installation's bundles.info line at the packed jar. CHANGES THE INSTALLATION, not the workspace, and runs as a dry run unless dryRun is set to false; the dry run shows the exact line before and after. THIS IS THE ONLY WAY IN FOR MOST OF THE SDK: a hot install through eclipse_install_bundle is invisible to anything that reads the registry once at startup, the theme engine among them, and the dropins directory cannot replace a bundle that belongs to an installed feature, because a feature demands its bundles at an exact version, which covers nearly everything in an SDK. THE RISK IS REAL: a bundles.info that names a jar which does not resolve leaves an IDE that will not start, and then no tool here can put it back. The original line is recorded, so action restore needs nothing from the caller, and action status reports what is substituted right now, including a substitution another session made, which is what stops somebody debugging an IDE that is not running what its plugins directory holds."; //$NON-NLS-1$
+		return "Makes the IDE run a workspace project's bundle in place of the installed one at the next restart, by packing the project and pointing this installation's bundles.info line at the packed jar. CHANGES THE INSTALLATION, not the workspace, and runs as a dry run unless dryRun is set to false; the dry run shows the exact line before and after. THIS IS THE ONLY WAY IN FOR MOST OF THE SDK: a hot install through eclipse_install_bundle is invisible to anything that reads the registry once at startup, the theme engine among them, and the dropins directory cannot replace a bundle that belongs to an installed feature, because a feature demands its bundles at an exact version, which covers nearly everything in an SDK. THE RISK IS REAL: a bundles.info that names a jar which does not resolve leaves an IDE that will not start, and then no tool here can put it back. The original line is recorded, so action restore needs nothing from the caller, and action status reports what is substituted right now, checked against bundles.info rather than believed from the record, including a substitution another session made, which is what stops somebody debugging an IDE that is not running what its plugins directory holds. THE LINE DOES NOT SURVIVE A RESTART UNCHANGED: simpleconfigurator rewrites bundles.info at every start, taking the version from the substituted jar's own manifest and making the path relative to the installation, so the text written here is not the text found afterwards. Everything here therefore matches on the bundle name, which is the one stable field."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -86,7 +86,7 @@ public final class SubstituteBundleTool implements IMcpTool {
 		}
 		try {
 			return switch (action) {
-			case "status" -> McpToolResult.of(status(configuration).toString()); //$NON-NLS-1$
+			case "status" -> McpToolResult.of(status(configuration, bundlesInfo).toString()); //$NON-NLS-1$
 			case "restore" -> restore(configuration, bundlesInfo, args.getBoolean("dryRun", true)); //$NON-NLS-1$ //$NON-NLS-2$
 			case "substitute" -> substitute(configuration, bundlesInfo, args, monitor);
 			default -> McpToolResult.error("'action' is 'substitute', 'restore' or 'status'."); //$NON-NLS-1$
@@ -96,20 +96,57 @@ public final class SubstituteBundleTool implements IMcpTool {
 		}
 	}
 
-	/** What is substituted right now, read from the record rather than from memory. */
-	private static JsonObject status(Path configuration) throws IOException {
+	/**
+	 * What is substituted right now, checked against the file rather than believed
+	 * from the record.
+	 * <p>
+	 * The two can disagree, and that disagreement is what made a restore fail
+	 * silently once: simpleconfigurator rewrites bundles.info at every start, and
+	 * it normalises what it writes, taking the version from the jar's own manifest
+	 * and making the path relative to the installation. The recorded line is then
+	 * no longer in the file even though the substitution is still in force.
+	 */
+	private static JsonObject status(Path configuration, Path bundlesInfo) throws IOException {
 		List<String[]> records = records(configuration);
+		List<String> lines = Files.isRegularFile(bundlesInfo)
+				? Files.readAllLines(bundlesInfo, StandardCharsets.UTF_8)
+				: List.of();
 		JsonArray active = new JsonArray();
+		int stillSubstituted = 0;
 		for (String[] record : records) {
-			active.add(new JsonObject().put("bundle", record[0]) //$NON-NLS-1$
+			String current = lineFor(lines, record[0]);
+			String state = current == null ? "missing" //$NON-NLS-1$
+					: current.equals(record[1]) ? "restored" : "substituted"; //$NON-NLS-1$ //$NON-NLS-2$
+			if ("substituted".equals(state)) { //$NON-NLS-1$
+				stillSubstituted++;
+			}
+			JsonObject entry = new JsonObject().put("bundle", record[0]) //$NON-NLS-1$
+					.put("state", state) //$NON-NLS-1$
 					.put("originalLine", record[1]) //$NON-NLS-1$
-					.put("substitutedLine", record[2])); //$NON-NLS-1$
+					.put("recordedLine", record[2]) //$NON-NLS-1$
+					.put("currentLine", current); //$NON-NLS-1$
+			if (current != null && !current.equals(record[2]) && "substituted".equals(state)) { //$NON-NLS-1$
+				entry.put("rewritten", //$NON-NLS-1$
+						"The line differs from what was written: simpleconfigurator rewrote it at a restart, normalising the version from the jar's manifest and the path relative to the installation. It is still the substituted jar."); //$NON-NLS-1$
+			}
+			active.add(entry);
 		}
 		return new JsonObject().put("substituted", active) //$NON-NLS-1$
 				.put("count", Integer.valueOf(active.size())) //$NON-NLS-1$
-				.put("note", active.size() == 0 //$NON-NLS-1$
-						? "Nothing is substituted; this IDE runs what its plugins directory holds." //$NON-NLS-1$
-						: "These bundles are NOT the installed ones. The record survives restarts and sessions, so this is also what another session's substitution looks like. action restore puts them back, and it takes a restart either way."); //$NON-NLS-1$
+				.put("stillInForce", Integer.valueOf(stillSubstituted)) //$NON-NLS-1$
+				.put("note", stillSubstituted == 0 //$NON-NLS-1$
+						? "No substitution is in force; this IDE runs what its plugins directory holds. A record with state 'restored' is history and can be forgotten." //$NON-NLS-1$
+						: "These bundles are NOT the installed ones, checked against bundles.info rather than taken from the record. The record survives restarts and sessions, so this is also what another session's substitution looks like. action restore puts them back, and it takes a restart either way."); //$NON-NLS-1$
+	}
+
+	/** The line for a bundle, found by its name, which is the one stable field. */
+	private static String lineFor(List<String> lines, String bundle) {
+		for (String line : lines) {
+			if (line.startsWith(bundle + ",")) { //$NON-NLS-1$
+				return line;
+			}
+		}
+		return null;
 	}
 
 	private static McpToolResult restore(Path configuration, Path bundlesInfo, boolean dryRun) throws IOException {
@@ -120,26 +157,57 @@ public final class SubstituteBundleTool implements IMcpTool {
 		}
 		List<String> lines = new ArrayList<>(Files.readAllLines(bundlesInfo, StandardCharsets.UTF_8));
 		JsonArray done = new JsonArray();
+		JsonArray missed = new JsonArray();
 		for (String[] record : records) {
+			int index = -1;
 			for (int i = 0; i < lines.size(); i++) {
-				if (lines.get(i).equals(record[2])) {
-					if (!dryRun) {
-						lines.set(i, record[1]);
-					}
-					done.add(new JsonObject().put("bundle", record[0]).put("line", record[1])); //$NON-NLS-1$ //$NON-NLS-2$
+				// by bundle name, not by the whole line: simpleconfigurator rewrites
+				// the version and the path form at every start, so the line written
+				// here is not the line found later
+				if (lines.get(i).startsWith(record[0] + ",")) { //$NON-NLS-1$
+					index = i;
 					break;
 				}
 			}
+			if (index < 0) {
+				missed.add(new JsonObject().put("bundle", record[0]) //$NON-NLS-1$
+						.put("reason", "bundles.info has no line for it at all.")); //$NON-NLS-1$ //$NON-NLS-2$
+				continue;
+			}
+			String current = lines.get(index);
+			if (current.equals(record[1])) {
+				missed.add(new JsonObject().put("bundle", record[0]) //$NON-NLS-1$
+						.put("reason", "It already holds the original line; nothing to undo.")); //$NON-NLS-1$ //$NON-NLS-2$
+				continue;
+			}
+			if (!dryRun) {
+				lines.set(index, record[1]);
+			}
+			done.add(new JsonObject().put("bundle", record[0]) //$NON-NLS-1$
+					.put("was", current) //$NON-NLS-1$
+					.put("line", record[1])); //$NON-NLS-1$
 		}
-		if (!dryRun) {
+		if (!dryRun && done.size() > 0) {
 			Files.write(bundlesInfo, lines, StandardCharsets.UTF_8);
 			Files.deleteIfExists(configuration.resolve(RECORD));
 		}
-		return McpToolResult.of(new JsonObject().put("dryRun", Boolean.valueOf(dryRun)) //$NON-NLS-1$
+		JsonObject result = new JsonObject().put("dryRun", Boolean.valueOf(dryRun)) //$NON-NLS-1$
 				.put("restored", done) //$NON-NLS-1$
-				.put("restartRequired", Boolean.TRUE) //$NON-NLS-1$
+				.put("restoredCount", Integer.valueOf(done.size())); //$NON-NLS-1$
+		if (missed.size() > 0) {
+			result.put("notRestored", missed); //$NON-NLS-1$
+		}
+		if (done.size() == 0) {
+			// saying "done" over an empty list is worse than an error: a caller reads
+			// the note, stops looking, and keeps an IDE that is not what it thinks
+			return McpToolResult.error(result
+					.put("note", //$NON-NLS-1$
+							"NOTHING WAS PUT BACK. Every recorded substitution is either already restored or has no line in bundles.info, so the file was not written. Check action status and the notRestored entries before assuming this IDE runs its installed bundles.") //$NON-NLS-1$
+					.toString());
+		}
+		return McpToolResult.of(result.put("restartRequired", Boolean.TRUE) //$NON-NLS-1$
 				.put("note", dryRun ? "Nothing was changed. Pass dryRun false to put these lines back." //$NON-NLS-1$ //$NON-NLS-2$
-						: "The installed bundles are back in bundles.info; restart with eclipse_restart for the IDE to run them.") //$NON-NLS-1$
+						: "The installed bundles are back in bundles.info; restart with eclipse_restart for the IDE to run them. The packed jars under configuration/mcp-substituted are no longer referenced and can be deleted.") //$NON-NLS-1$
 				.toString());
 	}
 
