@@ -20,7 +20,7 @@ class LaunchRecordingTest {
 
 	@Test
 	void theArgumentDumpsOnExit() {
-		String argument = LaunchRecording.vmArgument("profile", Path.of("/tmp/run.jfr"));
+		String argument = LaunchRecording.vmArgument("profile", Path.of("/tmp/run.jfr"), 0);
 
 		assertTrue(argument.startsWith("-XX:StartFlightRecording="), argument);
 		assertTrue(argument.contains("settings=profile"), argument);
@@ -28,6 +28,18 @@ class LaunchRecordingTest {
 		// without this a program that ends normally takes the recording with it and
 		// there is nothing left to read, which is the whole feature
 		assertTrue(argument.contains("dumponexit=true"), argument);
+		// the name is what lets the recording be dumped from outside while the
+		// program keeps running, which is the only way to measure a startup
+		assertTrue(argument.contains("name=" + LaunchRecording.NAME), argument);
+		assertFalse(argument.contains("duration"), "no duration was asked for: " + argument);
+	}
+
+	@Test
+	void aDurationWritesTheFileWithoutEndingTheProgram() {
+		String argument = LaunchRecording.vmArgument("profile", Path.of("/tmp/run.jfr"), 90);
+
+		assertTrue(argument.contains("duration=90s"), argument);
+		assertTrue(argument.contains("dumponexit=true"), "the exit dump stays as the fallback: " + argument);
 	}
 
 	@Test
@@ -64,10 +76,14 @@ class LaunchRecordingTest {
 
 	@Test
 	void theNoteSaysWhenTheFileAppears() {
-		String note = LaunchRecording.note(Path.of("/tmp/run.jfr"));
+		String note = LaunchRecording.note(Path.of("/tmp/run.jfr"), 0);
 
 		assertTrue(note.contains("/tmp/run.jfr"), note);
-		assertTrue(note.contains("exits"), "the file is absent while the program runs, which surprises everyone once");
+		assertTrue(note.contains("EXITS"), "the file is absent while the program runs, which surprises everyone once");
 		assertTrue(note.contains("eclipse_stop_flight_recording"), note);
+		assertTrue(note.contains("jcmd"), "the way out for a program that must keep running: " + note);
+
+		String timed = LaunchRecording.note(Path.of("/tmp/run.jfr"), 90);
+		assertTrue(timed.contains("WITHOUT ending"), timed);
 	}
 }

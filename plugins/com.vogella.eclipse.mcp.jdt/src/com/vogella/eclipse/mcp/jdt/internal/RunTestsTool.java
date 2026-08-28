@@ -195,7 +195,7 @@ public final class RunTestsTool implements IMcpTool {
 						com.vogella.eclipse.mcp.core.LaunchRecording.appendTo(
 								configuration.getAttribute(IJavaLaunchConfigurationConstants.ATTR_VM_ARGUMENTS,
 										(String) null),
-								com.vogella.eclipse.mcp.core.LaunchRecording.vmArgument(recording, recordingFile)));
+								com.vogella.eclipse.mcp.core.LaunchRecording.vmArgument(recording, recordingFile, 0)));
 			}
 			String buildFirst = args.getString("buildFirst", "auto"); //$NON-NLS-1$ //$NON-NLS-2$
 			boolean autoBuilding = ResourcesPlugin.getWorkspace().isAutoBuilding();
@@ -287,7 +287,8 @@ public final class RunTestsTool implements IMcpTool {
 			}
 			if (recordingFile != null) {
 				result.put("flightRecordingFile", recordingFile.toString()) //$NON-NLS-1$
-						.put("flightRecordingNote", com.vogella.eclipse.mcp.core.LaunchRecording.note(recordingFile)); //$NON-NLS-1$
+						.put("flightRecordingNote", //$NON-NLS-1$
+								com.vogella.eclipse.mcp.core.LaunchRecording.note(recordingFile, 0));
 			}
 			if (asPlugin) {
 				result.put("descriptorGeneration", descriptorGeneration(project)); //$NON-NLS-1$

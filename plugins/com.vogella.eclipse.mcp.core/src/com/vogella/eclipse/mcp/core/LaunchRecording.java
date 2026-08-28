@@ -34,15 +34,27 @@ public final class LaunchRecording {
 				"mcp-%s-%d.jfr".formatted(safe, Long.valueOf(System.nanoTime()))); //$NON-NLS-1$
 	}
 
+	/** The recording name, which is how anything outside the JVM addresses it. */
+	public static final String NAME = "mcp"; //$NON-NLS-1$
+
 	/**
 	 * The VM argument that starts the recording.
 	 * <p>
-	 * {@code dumponexit} is what makes this usable at all: without it a program
-	 * that ends normally takes its recording with it, and there is nothing left to
-	 * read.
+	 * {@code dumponexit} is the fallback rather than the plan. It writes the file
+	 * when the program ends, and ending the program is the hard part of measuring
+	 * one: a running application cannot be asked to exit from here, and killing it
+	 * both loses the dump and spoils the next start, since the framework never
+	 * persists its state. So the recording carries a name, which is what lets it
+	 * be dumped from outside while the program keeps running, and a duration
+	 * writes the file by itself at a point the caller chooses.
+	 *
+	 * @param seconds write the file after this long without ending the program, 0
+	 *                to rely on the exit dump alone
 	 */
-	public static String vmArgument(String settings, Path file) {
-		return "-XX:StartFlightRecording=settings=%s,dumponexit=true,filename=%s".formatted(settings, file); //$NON-NLS-1$
+	public static String vmArgument(String settings, Path file, int seconds) {
+		String duration = seconds > 0 ? ",duration=%ds".formatted(Integer.valueOf(seconds)) : ""; //$NON-NLS-1$ //$NON-NLS-2$
+		return "-XX:StartFlightRecording=name=%s,settings=%s,dumponexit=true%s,filename=%s".formatted(NAME, settings, //$NON-NLS-1$
+				duration, file);
 	}
 
 	/** Appended rather than replaced, so a caller's own VM arguments survive. */
@@ -51,8 +63,12 @@ public final class LaunchRecording {
 	}
 
 	/** What the caller has to know to get anything out of it. */
-	public static String note(Path file) {
-		return "The JVM records itself into %s and writes it when it exits, so the file is not there while the program runs and a program that is killed rather than ended leaves nothing. Read it with eclipse_stop_flight_recording passing file, which aggregates it the same way it aggregates the IDE's own recordings." //$NON-NLS-1$
-				.formatted(file);
+	public static String note(Path file, int seconds) {
+		if (seconds > 0) {
+			return "The JVM records itself into %s and writes it after %d seconds WITHOUT ending the program, which is what makes a startup measurable: the application keeps running and the file is complete. Read it with eclipse_stop_flight_recording passing file. It is also written again when the program exits." //$NON-NLS-1$
+					.formatted(file, Integer.valueOf(seconds));
+		}
+		return "The JVM records itself into %s and writes it when it EXITS, so the file is not there while the program runs and a program that is killed rather than ended leaves nothing. To measure something that must keep running, pass flightRecordingSeconds, or dump it from outside with 'jcmd <pid> JFR.dump name=%s filename=...', which leaves the process running. Read the file with eclipse_stop_flight_recording passing file." //$NON-NLS-1$
+				.formatted(file, NAME);
 	}
 }

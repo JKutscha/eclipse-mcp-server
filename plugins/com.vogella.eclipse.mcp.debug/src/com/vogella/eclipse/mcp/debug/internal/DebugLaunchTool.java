@@ -75,6 +75,7 @@ public final class DebugLaunchTool implements IMcpTool {
 				    "mode":                    {"type":"string","enum":["debug","run"],"default":"debug","description":"'run' starts the program without the debugger, so no JDWP agent is attached and nothing can suspend. Use it when measuring startup or profiling, where the agent distorts the numbers and a suspend ruins them; breakpoints and eclipse_debug_get_frames need 'debug'."},
 				    "replaceExisting":         {"type":"boolean","default":true,"description":"Terminate a launch of the same configuration that THIS SERVER started and is still running, and wait for its process to be gone, before starting. Without it the second launch walks into the first one's workspace lock and opens a modal dialog inside the launched process, where no tool here can reach it. Launches a person started are never touched."},
 				    "quiet":                   {"type":"boolean","default":true,"description":"Neutralise, for as long as this launch runs, the settings that stop a program nobody is watching: suspend on uncaught exceptions, suspend on compilation errors, and the modal question about switching perspective on suspend. These are not breakpoints, so eclipse_list_breakpoints reports none of them, and OSGi startup trips the first one routinely. The previous values are restored when the launch ends."},
+				    "flightRecordingSeconds":  {"type":"integer","default":0,"minimum":0,"maximum":3600,"description":"Write the recording after this many seconds WITHOUT ending the program. This is what makes a startup or a long running application measurable: the file is complete while the application carries on. 0 relies on the exit dump alone, which needs the program to end."},
 				    "flightRecording":         {"type":"string","enum":["off","default","profile"],"default":"off","description":"Record the launched JVM with Java Flight Recorder. 'profile' includes allocation and execution samples at a few percent overhead, 'default' covers GC and threads at about one percent. The file is written when the program EXITS and is read with eclipse_stop_flight_recording by passing its path as 'file'. This is the only way to profile a launched program: the IDE's own recording tools work inside the IDE's JVM and cannot see another process."}
 				  },
 				  "additionalProperties": false
@@ -91,7 +92,9 @@ public final class DebugLaunchTool implements IMcpTool {
 		} catch (CoreException e) {
 			throw new McpToolException("Could not build the launch configuration: %s".formatted(e.getMessage()), e);
 		}
-		java.nio.file.Path recordingFile = record(configuration, args.getString("flightRecording", "off")); //$NON-NLS-1$ //$NON-NLS-2$
+		int recordingSeconds = args.getInt("flightRecordingSeconds", 0, 0, 3600); //$NON-NLS-1$
+		java.nio.file.Path recordingFile = record(configuration, args.getString("flightRecording", "off"), //$NON-NLS-1$ //$NON-NLS-2$
+				recordingSeconds);
 		String mode = "run".equals(args.getString("mode", "debug")) ? ILaunchManager.RUN_MODE //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 				: ILaunchManager.DEBUG_MODE;
 		try {
@@ -153,7 +156,8 @@ public final class DebugLaunchTool implements IMcpTool {
 			json.put("note", "The session ends with eclipse_debug_control action terminate; it also terminates by itself after autoTerminateAfterSeconds."); //$NON-NLS-1$ //$NON-NLS-2$
 			if (recordingFile != null) {
 				json.put("flightRecordingFile", recordingFile.toString()) //$NON-NLS-1$
-						.put("flightRecordingNote", com.vogella.eclipse.mcp.core.LaunchRecording.note(recordingFile)); //$NON-NLS-1$
+						.put("flightRecordingNote", //$NON-NLS-1$
+								com.vogella.eclipse.mcp.core.LaunchRecording.note(recordingFile, recordingSeconds));
 			}
 			json.put("mode", mode); //$NON-NLS-1$
 			if (replaced != null) {
@@ -201,7 +205,8 @@ public final class DebugLaunchTool implements IMcpTool {
 	 *
 	 * @return {@code null} when no recording was asked for
 	 */
-	private static java.nio.file.Path record(ILaunchConfigurationWorkingCopy configuration, String settings) {
+	private static java.nio.file.Path record(ILaunchConfigurationWorkingCopy configuration, String settings,
+			int seconds) {
 		if (!com.vogella.eclipse.mcp.core.LaunchRecording.wanted(settings)) {
 			return null;
 		}
@@ -214,7 +219,7 @@ public final class DebugLaunchTool implements IMcpTool {
 		}
 		configuration.setAttribute(IJavaLaunchConfigurationConstants.ATTR_VM_ARGUMENTS,
 				com.vogella.eclipse.mcp.core.LaunchRecording.appendTo(existing,
-						com.vogella.eclipse.mcp.core.LaunchRecording.vmArgument(settings, file)));
+						com.vogella.eclipse.mcp.core.LaunchRecording.vmArgument(settings, file, seconds)));
 		return file;
 	}
 
