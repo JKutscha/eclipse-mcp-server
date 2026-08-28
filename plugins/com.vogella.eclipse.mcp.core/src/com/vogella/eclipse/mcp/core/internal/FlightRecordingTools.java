@@ -45,7 +45,7 @@ public final class FlightRecordingTools {
 					    "settings":          {"type":"string","enum":["default","profile"],"default":"profile","description":"profile adds the allocation and execution samples this is usually started for."},
 					    "durationSeconds":   {"type":"integer","default":1800,"minimum":0,"maximum":86400,"description":"Stop on its own after this long. 0 runs until eclipse_stop_flight_recording, which then has to happen."},
 					    "maxAgeSeconds":     {"type":"integer","default":600,"minimum":0,"maximum":86400,"description":"Keep only this much history, so a problem that appears after hours can still be dumped at the moment it does. 0 keeps everything."},
-					    "maxSizeMegabytes":  {"type":"integer","default":100,"minimum":1,"maximum":4096},
+					    "maxSizeMegabytes":  {"type":"integer","default":100,"minimum":1,"maximum":4096,"description":"Ceiling on the recording buffer. Once it is full the oldest events are dropped, so a long recording keeps the end rather than the start."},
 					    "name":              {"type":"string","description":"Label for the recording, shown in JDK Mission Control."},
 				    "dumpOnExitTo":      {"type":"string","description":"Absolute path the JVM writes the recording to when it EXITS. This is what makes the IDE's own shutdown measurable: eclipse_stop_flight_recording cannot run then, because the server is going down with the workbench. Read the file afterwards with eclipse_stop_flight_recording passing file. The recording can still be stopped normally before that."}
 					  },
@@ -108,8 +108,8 @@ public final class FlightRecordingTools {
 					    "recordingId":  {"type":"string","description":"Id from eclipse_start_flight_recording. Omit for the most recent."},
 				    "file":         {"type":"string","description":"Absolute path of an existing .jfr file to read instead of a recording of this IDE, such as the one a launch made with flightRecording. Nothing is stopped and the file is left where it is."},
 					    "keepRunning":  {"type":"boolean","default":false,"description":"Report what has been recorded so far without stopping."},
-					    "topClasses":   {"type":"integer","default":15,"minimum":1,"maximum":200},
-					    "topStacks":    {"type":"integer","default":10,"minimum":1,"maximum":100},
+					    "topClasses":   {"type":"integer","default":15,"minimum":1,"maximum":200,"description":"How many of the classes that allocated most to report."},
+					    "topStacks":    {"type":"integer","default":10,"minimum":1,"maximum":100,"description":"How many of the allocation stacks that allocated most to report. Each one is many lines, so this is the field that decides how big the answer gets."},
 					    "stackDepth":   {"type":"integer","default":8,"minimum":1,"maximum":64,"description":"Frames per aggregated call chain. Deeper separates callers that share a top frame; shallower merges them."},
 					    "frameFilter":  {"type":"string","description":"Aggregate only events whose stack contains this text at ANY depth, independent of stackDepth, which cuts the rendering and not the search. Applied when reading, so one recording can be read from several angles; eventsMatched and matchedEventTypes then count what this filter kept, which is how one phase is weighed against another."},
 					    "outputPath":   {"type":"string","description":"Keep the .jfr file at this absolute path, for opening it in JDK Mission Control. Omit to delete it after reading."}

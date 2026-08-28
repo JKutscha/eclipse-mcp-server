@@ -30,7 +30,7 @@ public final class GetTestResultsTool implements IMcpTool {
 				  "type": "object",
 				  "properties": {
 				    "runId":         {"type":"string","description":"Identifier returned by eclipse_run_tests. Omit for the most recent run."},
-				    "includePassed": {"type":"boolean","default":false},
+				    "includePassed": {"type":"boolean","default":false,"description":"Also list the tests that passed. Off by default, because a green suite is thousands of lines saying nothing."},
 				    "maxResults":    {"type":"integer","default":50,"minimum":1,"maximum":2000},
 				    "abandon":       {"type":"boolean","default":false,"description":"Give up on a run that is still going, terminating its launch. Only one run may be active at a time, so a run that never reports would otherwise block every later run."}
 				  },

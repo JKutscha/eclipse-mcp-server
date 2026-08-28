@@ -55,7 +55,7 @@ public final class SearchTextTool implements IMcpTool {
 				  "required": ["pattern"],
 				  "properties": {
 				    "pattern":         {"type":"string","description":"Text to find, or a regular expression when isRegex is true."},
-				    "isRegex":         {"type":"boolean","default":false},
+				    "isRegex":         {"type":"boolean","default":false,"description":"Read pattern as a Java regular expression instead of as literal text."},
 				    "isCaseSensitive": {"type":"boolean","default":false},
 				    "projects":        {"type":"array","items":{"type":"string"},"description":"Restrict to these projects. Omit for the whole workspace."},
 				    "path":            {"type":"string","description":"Restrict to this workspace folder or file, e.g. /app/src."},

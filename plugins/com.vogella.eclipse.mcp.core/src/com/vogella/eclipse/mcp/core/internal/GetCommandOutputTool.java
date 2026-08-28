@@ -38,7 +38,7 @@ public final class GetCommandOutputTool implements IMcpTool {
 				    "tailLines": {"type":"integer","default":200,"minimum":1,"maximum":2000,"description":"How many of the last output lines to return."},
 				    "cancel":    {"type":"boolean","default":false,"description":"Stop the command if it is still running, together with any process it started."},
 				    "wait":      {"type":"boolean","default":false,"description":"Wait for it to finish first, bounded by timeoutSeconds and by the server's own call timeout."},
-				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":3600}
+				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":3600,"description":"How long to wait for the command to finish. Bounded in practice by the server's own call timeout."}
 				  },
 				  "additionalProperties": false
 				}"""; //$NON-NLS-1$

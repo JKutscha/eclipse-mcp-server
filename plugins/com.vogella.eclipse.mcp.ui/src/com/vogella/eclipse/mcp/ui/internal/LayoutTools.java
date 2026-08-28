@@ -46,10 +46,10 @@ public final class LayoutTools {
 					  "type": "object",
 					  "properties": {
 					    "shellTitle": {"type":"string","description":"Title of the shell, or a substring. Omit for the active one."},
-					    "x":          {"type":"integer"},
-					    "y":          {"type":"integer"},
-					    "width":      {"type":"integer","minimum":100},
-					    "height":     {"type":"integer","minimum":100},
+					    "x":          {"type":"integer","description":"Left edge in points, not pixels, on the display the shell is on."},
+					    "y":          {"type":"integer","description":"Top edge in points."},
+					    "width":      {"type":"integer","minimum":100,"description":"Width in points, not pixels: on a scaled display the widget covers more pixels than this."},
+					    "height":     {"type":"integer","minimum":100,"description":"Height in points."},
 					    "maximized":  {"type":"boolean","description":"Maximize, or restore when false. Applied after any bounds, so passing both restores to the bounds given."}
 					  },
 					  "additionalProperties": false

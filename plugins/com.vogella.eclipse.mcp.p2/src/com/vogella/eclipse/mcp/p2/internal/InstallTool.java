@@ -51,8 +51,8 @@ public final class InstallTool implements IMcpTool {
 				    "repository":     {"type":"string","description":"Repository URL to install from. Must already be configured in this IDE. Omit to search every configured repository."},
 				    "version":        {"type":"string","description":"Exact version. Omit for the newest available."},
 				    "trustUnsigned":  {"type":"boolean","default":true,"description":"Accept unsigned content, or content signed by a certificate this IDE does not trust. On by default, because an install performed by this server is unattended and there is nobody to answer the dialog p2 would otherwise raise. This is NOT bounded by which sites are configured, because eclipse_add_repository can configure a new one: whoever can call these tools decides what gets installed. Nothing is added to the IDE's permanent trust store, and whatever was accepted is reported. Set false to refuse unsigned content instead."},
-				    "wait":           {"type":"boolean","default":false},
-				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":3600}
+				    "wait":           {"type":"boolean","default":false,"description":"Wait for the install instead of returning an operationId to poll."},
+				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":3600,"description":"How long to wait when wait is true. Bounded in practice by the server's own call timeout."}
 				  },
 				  "additionalProperties": false
 				}"""; //$NON-NLS-1$

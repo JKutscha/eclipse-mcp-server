@@ -175,6 +175,23 @@ A closed project still reports its natures, read from `.project` on disk, and `n
 `IProject.getDescription` fails on a closed project, and reporting that as "no natures" is worse than saying nothing.
 A client classifying projects by nature otherwise gets a different answer for the same workspace depending on which projects happen to be open at the time, which is not a rule but a coin flip.
 
+### `eclipse_resolve_path`
+
+Answers where something is.
+Given project names, workspace paths or absolute paths in any mix, it reports for each the project, the workspace path, the location on disk, the repository root and the path inside that repository. Read-only.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `of` | array of string, required | | Project names, workspace paths or absolute paths, in any mix. |
+
+This is the mapping a command line cannot work out and the IDE already holds, and it is what makes git usable from outside.
+`org.eclipse.compare` becomes a repository root to run in and a path to pass after `--`, so `git log`, `blame` and `log -L` can be composed directly instead of being guessed at.
+
+It resolves in both directions, so an absolute path coming back from a build or a stack trace turns into the project it belongs to.
+
+Nothing here needs EGit.
+The repository is found by walking up for `.git`, which also resolves a linked worktree.
+
 ### `eclipse_get_problems`
 
 Returns the compilation errors and warnings computed by the incremental builder.
@@ -456,6 +473,30 @@ Non plug-in projects in the selection are ignored rather than reported as failur
 
 Note that BREE is the older mechanism: OSGi R7 replaced it with `Require-Capability: osgi.ee`. Eclipse's own bundles still use BREE almost everywhere, which is why this tool writes it, but it is not the modern spelling.
 
+### `eclipse_set_java_version`
+
+**Sets the Java version to compile for, and optionally the JDK behind it.**
+Runs as a dry run unless `dryRun` is set to false.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `version` | string, required | | The release to compile for, e.g. `21`. |
+| `project` | string | all | Restrict to one project. |
+| `compliance` | boolean | `true` | Set source, target and compliance through `JavaCore`. |
+| `release` | boolean | | Use the `--release` form. |
+| `defaultVm` | boolean | `false` | Also switch the workspace default JDK. |
+| `dryRun` | boolean | `true` | |
+
+Two different things are set here and mixing them up is the usual mistake.
+`compliance` is what the code is compiled **as**, source, target and compliance together through `JavaCore`, which is what a migration to a newer release changes.
+`defaultVm` is which installed JDK the workspace uses where a project's JRE container names no execution environment, and that one is shared: every such project follows it at once.
+
+The JDK is checked before it is chosen, because a JDK can be present and still unable to compile.
+One whose `lib/ct.sym` is missing fails every project bound to it with a message about `ct.sym` that names neither a project nor a version.
+
+Note that a target platform overwrites `defaultVm`.
+Activating a target definition that names a JRE replaces it, so setting this and then activating such a target puts the target's choice back.
+
 ### `eclipse_set_project_state`
 
 **Opens and closes projects.**
@@ -491,6 +532,52 @@ Closing a project that open projects reference does not remove errors, it gives 
 **A batch is resolved as a whole.** `getReferencingProjects()` reports the projects that are open right now, so closing a cluster used to refuse every member whose dependents were themselves in the same call: the refusal described a state that would not exist once the call returned, and closing a cluster took one pass per layer of the graph.
 The projects a call will actually close are now computed as a fixpoint first, and only dependents that will still be open afterwards block anything. Those appear in `openDependents` as before; the ones closing in the same call appear in `dependentsClosingTogether`, which is reported but never blocks.
 Removing one project from the set can block another, which is why this iterates rather than subtracting the selection once, and it resolves the same way for a dry run as for a real one.
+
+### `eclipse_import_project`
+
+**Imports projects that already exist on disk into the workspace**, which is what *File > Import > Existing Projects into Workspace* does.
+Runs as a dry run unless `dryRun` is set to false.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `location` | string, required | | Absolute directory to import from. |
+| `search` | boolean | `false` | Also look below the directory for more projects. |
+| `open` | boolean | `true` | Open the projects after importing them. |
+| `dryRun` | boolean | `true` | Report what would be imported without importing it. |
+| `maxResults` | integer | 100 | |
+
+Nothing on disk is written or moved.
+The project stays where it is and the workspace gains an entry pointing at it.
+
+It works from the `.project` file: a directory that has one is imported, and with `search` it also looks below the directory for more.
+**That is the limit and it matters here.**
+A Maven or pomless Tycho module has no `.project` until m2e has imported it once, so this cannot bring one back, which is why `eclipse_remove_project` reports `hasProjectFile` before removing rather than after.
+
+A name already taken in the workspace is reported and skipped rather than silently doing nothing, since two projects cannot share a name even when they are different directories.
+
+### `eclipse_remove_project`
+
+**Removes projects from the workspace.**
+Runs as a dry run unless `dryRun` is set to false.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `projects` | array of string | | Project names to remove. |
+| `namePattern` | string | | Remove every project whose name matches instead. |
+| `dryRun` | boolean | `true` | Report what would be removed without removing it. |
+| `force` | boolean | `false` | Remove even when open projects reference these. |
+| `maxResults` | integer | 200 | |
+
+**Nothing on disk is deleted.**
+Only the workspace entry goes and the files stay exactly where they are, which for a workspace pointing at git working trees is the only defensible behaviour, and is why deleting the content is not offered here at all.
+
+That also makes this reversible only by importing the project again.
+A project without a `.project` file on disk, such as a pomless Tycho module imported through m2e, cannot be imported back by simple means, so removing one of those is close to permanent.
+
+Open projects that reference the ones being removed are reported and the removal is refused unless `force` is set, because they will lose their build path rather than gain anything.
+
+To stop a project taking part in the build without giving up the ability to bring it back, close it with `eclipse_set_project_state` instead.
+That is reversible in one call.
 
 ### `eclipse_build`
 
@@ -578,6 +665,54 @@ A cancelled build leaves the workspace partly built, so error and warning counts
 Reports a build started through `eclipse_build`, by `buildId`, or the most recent one when that is omitted.
 The answer has the same shape as the one above.
 The last 20 builds are kept; asking for an older id is an error, while asking before anything has been built returns `{"state":"none"}` rather than an error.
+
+### `eclipse_wait_until_quiet`
+
+Waits until the auto-build, the manual build and the refresh jobs have finished and no other job is running, then answers what it waited for and how long each part took. Read-only.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `timeoutSeconds` | integer | 120 | How long to wait. `1` makes it a status query rather than a wait. |
+
+**This is the tool to call before timing anything.**
+After a restart the workspace builds for a minute or two on its own, and a measurement taken in that window measures the build.
+Watching the process from outside cannot tell the quiet before the build starts from the quiet after it, which is the mistake this exists to prevent; from inside the two are different job states.
+
+`waitedFor` is empty when nothing was running, which is itself the answer that the IDE was already idle.
+
+With `timeoutSeconds` 1 it is a status query, and unlike `eclipse_get_build_status` it belongs to no client and therefore needs no id, which makes it the way to ask whether the workspace is building while several clients are connected.
+
+It answers before the server's own call timeout runs out, with state `stillBusy` and the jobs that are still going, because a call that is abandoned mid-wait tells the caller nothing at all.
+Ask again until the state is `quiet`, which is a loop of a few calls for the build after a restart.
+
+It does **not** cover the Java index.
+JDT runs that in a queue of its own outside the job manager, and `eclipse_search_types` with a narrow pattern is what blocks until the index is ready.
+
+### `eclipse_save_workspace`
+
+**Saves the workspace**, which is what the IDE otherwise only does while shutting down.
+Runs as a dry run unless `dryRun` is set to false.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `mode` | string | `full` | `full` or `snapshot`. |
+| `timeoutSeconds` | integer | 25 | |
+| `dryRun` | boolean | `true` | |
+
+A full save is not a read-only operation.
+It writes the element tree, the markers and the sync info of every project, moves the save number on, deletes the snapshots and runs the local history pruning, which removes file states by the history policy.
+That is the same work an exit does, so it is repeatable and measurable here rather than only observable once per process.
+
+The interesting part of the answer is the status: each save participant contributes its own child status, so a plug-in that fails or complains while saving is named instead of vanishing into one number.
+
+`mode` `snapshot` writes only what changed since the last full save and skips the pruning, which is what the workspace does periodically by itself.
+
+**A series of saves does not measure a shutdown save.**
+The expensive part of the first one is the delta chain, a tree per save participant and per builder of every open project, and once those trees are unchanged the comparison short circuits, so every save after the first is systematically cheaper and stays cheap even across a restart, because the builders read their trees back from the same chain.
+Measured here at about 1.5 seconds repeated against nearly 4 seconds for the first save of a session.
+
+The duration is reported in two parts, because the save takes the workspace root rule and therefore queues behind a running build.
+`waitedForRuleMillis` is that queueing and `saveMillis` is the save, and only the second is comparable between runs.
 
 ### `eclipse_find_references`
 
@@ -723,6 +858,26 @@ A `null` computed value for a property the theme sets is the useful signal: eith
 A stylesheet declaring a two-stop `swt-unselected-tabs-color` is enough to get there: `CSSPropertyUnselectedTabsSWTHandler` branches on the value being a list rather than a primitive, takes the gradient API, and `gradientColors` then stays non-null permanently.
 
 **What these do not do.** They do not report which rule matched or which stylesheet it came from. The engine keeps the merged declaration and not its source, so finding the rule still means reading the stylesheets, or applying a candidate rule with `eclipse_apply_css` and inspecting again.
+
+### `eclipse_select_tab`
+
+**Selects a tab by its widget path**, the one `eclipse_get_widget_tree` reports with `includeItems`.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `path` | string, required | | Path of a `CTabItem` or `TabItem`, as in `0/0/0/i2`, or the path of the folder plus `index`. |
+| `index` | integer | | Which item of the folder, when `path` names the folder. |
+| `part` | string | active | Part to look in. |
+| `shellTitle` | string | | Shell to look in instead. |
+| `notify` | boolean | `true` | Notify the selection listeners as if a person had clicked. |
+
+This addresses the folder rather than the editor, which is what makes it work at all.
+A multi page editor may be a `MultiPageEditorPart`, or a `FormEditor`, or neither, and the e4 model editor for instance builds its Form, List and XMI pages into a `CTabFolder` of its own, so no editor API reaches them.
+
+A page that is not selected is not rendered.
+`eclipse_screenshot` refuses it and `eclipse_get_widget_tree` reports it with zero bounds, so selecting it first is the only way to see it.
+
+The selection listeners are notified as if a person had clicked, because `setSelection` alone moves the highlight without telling the editor to build the page.
 
 ### `eclipse_apply_css`
 
@@ -936,6 +1091,25 @@ When a session *is* already running and the breakpoint still did not install, th
 
 The breakpoint attaches to the file the workspace actually has the type in, found through the Java model, so it shows up at the right place in the editor's marker bar.
 For a type that lives in a jar there is no such file, and the breakpoint attaches to the workspace root, which is what JDT expects.
+
+### `eclipse_list_launch_configurations`
+
+Lists the launch configurations of this IDE with their type, the modes they support and whether they are stored in the workspace or in a project. Read-only.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `typeFilter` | string | | Only configurations of this type. |
+| `nameFilter` | string | | Only configurations whose name matches. |
+| `includeTypes` | boolean | `true` | Also list the launch configuration types. |
+| `includeAttributes` | boolean | `false` | Include each configuration's attributes. |
+| `maxResults` | integer | 100 | |
+
+`eclipse_debug_launch` takes a configuration by **name**, and without this the names can only be found by reading `.metadata/.plugins/org.eclipse.debug.core/.launches` from the file system, which is where this server should not send anybody.
+
+It also lists the launch configuration **types**, which is what says whether this IDE can start an Eclipse Application or a plug-in test at all.
+A runtime workbench has no main class, so `project` plus `mainType` cannot express it and an existing configuration is the only way in.
+
+Configurations this server created for its own launches are marked, since they are transient and belong to nobody's saved launches.
 
 ### `eclipse_debug_launch`
 
@@ -1350,6 +1524,28 @@ A file open in a dirty editor is written underneath that editor. Eclipse notices
 
 For Java, follow the write with `eclipse_format`, so the result matches the project's conventions rather than the model's.
 
+### `eclipse_edit_file`
+
+**Replaces one passage of a workspace file with another.**
+This is how a file is changed without resending it: `eclipse_write_file` takes the complete content, so changing one line of an 800 line file through it means reading and returning all 800.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `path` | string, required | | Workspace path of the file. |
+| `oldText` | string, required | | The exact text to replace, whitespace included. |
+| `newText` | string, required | | What to put in its place. Empty deletes the passage. |
+| `replaceAll` | boolean | `false` | Replace every occurrence instead of refusing when there is more than one. |
+| `dryRun` | boolean | `false` | Report the match count and the context without writing. |
+
+The edit is checked against what the caller believes is there.
+`oldText` that matches nothing is refused, and `oldText` that matches more than once is refused with the count unless `replaceAll` is set, so an edit made on a stale reading of the file fails instead of landing somewhere unintended.
+Give enough surrounding text to be unique rather than a bare identifier.
+
+Writing goes through the workspace, so the file keeps its charset, the resource tree sees the change at once, and the previous content goes into the local history where *Compare With > Local History* recovers it.
+The answer shows the changed lines with context, so it reports the result rather than promising it.
+
+For Java, follow the edit with `eclipse_format`.
+
 ### `eclipse_search_text`
 
 Searches the text of workspace files, including the ones the Java model cannot see: `plugin.xml`, `.exsd`, `.project`, manifests, properties. Read-only.
@@ -1375,6 +1571,36 @@ It runs through Eclipse's own `TextSearchEngine`, so **resources Eclipse marks d
 Each match reports the file, the line number and the line, capped at 500 characters.
 
 **One file on disk counts once.** In a platform workspace almost every project is nested inside another, so a single file is reachable through several workspace paths and the same match arrives once per path. Matches are deduplicated by physical location and offset, the other paths come back as `alsoVisibleAs`, and `duplicatePathsCollapsed` says how many were folded away. Without this a count is inflated by an unpredictable factor that a client cannot detect without a filesystem, which is the thing this tool exists to do without.
+
+### `eclipse_find_resources`
+
+Finds files by **name** across three places no other tool here covers together: the workspace, the bundles of the active target platform, and the bundles of the running installation. Read-only.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `namePattern` | string | | One name or glob to look for. |
+| `namePatterns` | array of string | | Several at once, which is how an inventory is taken. |
+| `extensions` | array of string | | Restrict to these file extensions. |
+| `scope` | string | `all` | `workspace`, `target`, `installation` or `all`. |
+| `bundleFilter` | string | | Only bundles whose symbolic name matches. |
+| `compact` | boolean | `false` | One line per hit instead of the full record. |
+| `countOnly` | boolean | `false` | Just the counts. |
+| `copyTo` | string | | Extract the hits into this directory. |
+| `dedupe` | boolean | `false` | Collapse the same file found through several scopes. |
+| `includeDerived` | boolean | `false` | Include derived workspace resources. |
+| `maxResults` | integer | 100 | |
+
+`eclipse_search_text` searches the **content** of workspace files, so an icon inside a jarred bundle is invisible to it.
+That is the gap this closes: "does an SVG of this name already exist anywhere in Eclipse" is answerable only by looking inside jars.
+
+Each hit says which of the three scopes it came from, the bundle and version that holds it, the path inside that bundle, and a location the bytes can be read from.
+`copyTo` extracts the hits, which is what makes a found icon usable rather than only known about.
+
+For an inventory, ask several names at once with `namePatterns` and cut the answer down with `compact` or `countOnly`, rather than one call per name.
+Use `scope` `installation` for that, because `all` returns the same picture three or four times over when the repositories are also in the workspace.
+
+A name match is not a match in meaning.
+An icon called `remove` upstream may be a red cross where yours is a minus, so look at what you found before replacing anything with it.
 
 ### `eclipse_list_editors` and `eclipse_close_editor`
 
@@ -1589,6 +1815,28 @@ The IDE keeps running while hidden. Builds, searches, tests and every other tool
 Hiding a window is easy to make unrecoverable, and that is the whole risk here: a hidden window has no menu and no taskbar entry, so the only way back is this tool. Two things make it safe. Calling it with `visible: true` restores it, and the plug-in restores every window it hid when it stops, so disabling or uninstalling the server cannot leave an IDE nobody can see and nothing can bring back.
 
 While hidden, dialogs are still raised and are still invisible. `eclipse_list_ui_targets` and `eclipse_dismiss_dialog` remain the way to see and answer them, and they are worth more than usual in this state.
+
+### `eclipse_set_model_visibility`
+
+**Shows or hides an element of the e4 application model by its id**, which is what reaches the things no other tool here can: the status line and other trim bars, the main menu, and one window out of several.
+Runs as a dry run unless `dryRun` is set to false.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `elementId` | string, required | | Id of the model element. |
+| `visible` | boolean | | Take the element out of the layout while the renderer keeps it. |
+| `toBeRendered` | boolean | | Throw the widget away entirely. Refused for a window. |
+| `dryRun` | boolean | `true` | Lists what the id matches. |
+| `maxResults` | integer | 20 | |
+
+**This is remembered.**
+Unlike `eclipse_set_ide_visibility`, which only calls `Shell.setVisible` for the session, this writes the model, and the workbench saves the model on exit, so an element hidden here is still hidden after a restart and there is no menu entry to undo it with.
+
+Two flags exist and they are not the same.
+`visible` takes the element out of the layout while the renderer keeps it, and `toBeRendered` throws the widget away entirely, which is harder to reason about and is refused for a window.
+
+Hiding the only window this way is a trap: it persists, so the IDE starts invisible next time.
+Use `eclipse_set_ide_visibility` for that, which forgets.
 
 ### `eclipse_manage_window`
 
@@ -1838,6 +2086,36 @@ And replacing a bundle whose refresh would stop this server's own bundles is ref
 With `allowSelf` the install happens at once, the answer names what is about to happen, and the refresh follows two seconds later in a job, so the response is on the wire before the server goes down; reconnecting afterwards is the caller's job, and the effect of the refresh cannot be reported, because nothing will be left to report it.
 This tool never uninstalls anything.
 
+### `eclipse_substitute_bundle`
+
+**Makes the IDE run a workspace project's bundle in place of the installed one at the next restart**, by packing the project and pointing this installation's `bundles.info` line at the packed jar.
+Changes the installation, not the workspace, and runs as a dry run unless `dryRun` is set to false.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `action` | string | `status` | `substitute`, `restore`, `status`, `cleanup` or `repair`. |
+| `project` | string | | Workspace project to pack, for `substitute`. |
+| `jar` | string | | A packed jar to act on instead. |
+| `dryRun` | boolean | `true` | Shows the exact line before and after. |
+
+**This is the only way in for most of the SDK.**
+A hot install through `eclipse_install_bundle` is invisible to anything that reads the registry once at startup, the theme engine among them, and the dropins directory cannot replace a bundle that belongs to an installed feature, because a feature demands its bundles at an exact version, which covers nearly everything in an SDK.
+
+**The risk is real.**
+A `bundles.info` that names a jar which is not there leaves the bundles that need it unresolvable, and if that bundle is one the framework itself needs, the IDE does not start and no tool here can reach it.
+Short of that the IDE still runs, and `action` `repair` points such a line back at the installed jar.
+
+Never delete a packed jar by hand.
+`action` `cleanup` does it and re-reads `bundles.info` first, because that file is rewritten at every start and by other sessions, so a jar that looks unreferenced can be the one the next start loads.
+
+The original line is recorded, so `action` `restore` needs nothing from the caller.
+`action` `status` reports what is substituted right now, checked against `bundles.info` rather than believed from the record, including a substitution another session made, and under `referencingSubstitutedJars` every line that points at a packed jar even when nothing here recorded it, which is what stops somebody debugging an IDE that is not running what its `plugins` directory holds.
+
+**The version field is what makes it take effect.**
+`simpleconfigurator` matches a bundle on symbolic name plus version, so a line that keeps the installed version and only changes the path is read as a bundle already installed and the path is never looked at, which is a substitution that does nothing while every check on the file says it is in force.
+The version of the substituted jar is therefore written into the line.
+Ask `action` `status` for the `running` field, which reports what the framework has actually loaded rather than what the file says, and believe that one.
+
 ## Contributing a tool
 
 Tools are contributed through the `com.vogella.eclipse.mcp.core.tools` extension point:
@@ -1858,13 +2136,16 @@ The contract for an implementation:
 
 ## Bundles
 
-| Bundle | Contains | Depends on |
-|---|---|---|
-| `com.vogella.eclipse.mcp.core` | `IMcpTool`, the registry, the extension point, and the two workspace tools | `org.eclipse.core.runtime`, `org.eclipse.core.resources` |
-| `com.vogella.eclipse.mcp.server` | The MCP protocol handling, the embedded Jetty and the bearer token filter | MCP SDK, Jetty, core |
-| `com.vogella.eclipse.mcp.jdt` | The two Java model tools | `org.eclipse.jdt.core`, core |
-| `com.vogella.eclipse.mcp.ui` | The editor context tool, the preference page and the startup hook | `org.eclipse.ui`, core, server |
-| `com.vogella.eclipse.mcp.debug` | The breakpoint tools, the debug session tools and the session registry | `org.eclipse.jdt.debug`, `org.eclipse.debug.core`, `org.eclipse.jdt.core`, core |
+| Bundle | Tools | Contains | Depends on |
+|---|---|---|---|
+| `com.vogella.eclipse.mcp.core` | 30 | `IMcpTool`, the registry and the extension point, plus the workspace, file, build, preference, log, command and flight recording tools | `org.eclipse.core.runtime`, `org.eclipse.core.resources`, `org.eclipse.search.core` |
+| `com.vogella.eclipse.mcp.server` | 0 | The MCP protocol handling, the embedded Jetty, the bearer token filter and the endpoint file | MCP SDK, Jetty, core |
+| `com.vogella.eclipse.mcp.ui` | 31 | The workbench tools: editor context, commands, views, perspectives, themes and CSS, screenshots, widget inspection, sampling and restart, plus the preference page and the startup hook | `org.eclipse.ui`, `org.eclipse.swt`, `org.eclipse.jface`, the e4 workbench and CSS bundles, `org.eclipse.compare`, core, server |
+| `com.vogella.eclipse.mcp.jdt` | 16 | The Java model tools: declarations, references, hierarchies, source, search, and the refactoring, clean up, format and test running tools | `org.eclipse.jdt.core`, `org.eclipse.jdt.core.manipulation`, `org.eclipse.jdt.launching`, `org.eclipse.jdt.junit.core`, `org.eclipse.ltk.core.refactoring`, core |
+| `com.vogella.eclipse.mcp.debug` | 8 | The breakpoint tools, the debug session tools and the session registry | `org.eclipse.jdt.debug`, `org.eclipse.debug.core`, `org.eclipse.jdt.core`, core |
+| `com.vogella.eclipse.mcp.p2` | 8 | The provisioning tools: update, install, uninstall, the repository tools and the operation registry | the `org.eclipse.equinox.p2.*` bundles, core |
+| `com.vogella.eclipse.mcp.pde` | 7 | The plug-in tools: bundle info, manifest editing, dependency analysis, execution environments, target platforms and resource lookup | `org.eclipse.pde.core`, `org.eclipse.jdt.core`, `org.eclipse.osgi`, core |
+| `com.vogella.eclipse.mcp.git` | 2 | The repository status and checkout tools | `org.eclipse.jgit`, `org.eclipse.egit.core`, both optional, core |
 
 `com.vogella.eclipse.mcp.core` deliberately has no reference to the MCP SDK, to Jetty or to any UI bundle, so that the tool API stays a candidate for the Eclipse Platform.
 

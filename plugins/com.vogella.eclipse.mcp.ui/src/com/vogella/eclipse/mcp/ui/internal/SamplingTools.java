@@ -68,7 +68,7 @@ public final class SamplingTools {
 					  "properties": {
 					    "threads":        {"type":"string","enum":["ui","all"],"default":"ui","description":"Which threads to sample. 'ui' is the workbench display thread."},
 					    "threadNames":    {"type":"array","items":{"type":"string"},"description":"Sample threads whose name contains one of these, instead of 'threads'."},
-					    "intervalMillis": {"type":"integer","default":100,"minimum":10,"maximum":10000},
+					    "intervalMillis": {"type":"integer","default":100,"minimum":10,"maximum":10000,"description":"How long to wait between samples. Shorter catches briefer stalls and costs more, and below about 20 the sampling starts to show up in its own answer."},
 					    "maxSamples":     {"type":"integer","default":300,"minimum":1,"maximum":5000,"description":"Sampling stops on its own after this many ticks. One tick samples every selected thread once, so with threads all this is rounds, not stacks."},
 					    "maxDepth":       {"type":"integer","default":80,"minimum":1,"maximum":512,"description":"Frames per sample."}
 					  },
@@ -115,7 +115,7 @@ public final class SamplingTools {
 					  "type": "object",
 					  "properties": {
 					    "sessionId":   {"type":"string","description":"Session returned by eclipse_start_sampling. Omit for the most recent."},
-					    "topMethods":  {"type":"integer","default":15,"minimum":1,"maximum":200},
+					    "topMethods":  {"type":"integer","default":15,"minimum":1,"maximum":200,"description":"How many of the most frequently sampled methods to report."},
 					    "minSamples":  {"type":"integer","default":2,"minimum":1,"description":"Prune call tree branches seen fewer times than this."},
 					    "includeRawSamples": {"type":"boolean","default":false,"description":"Also return every sample. Large."},
 					    "frameFilter":        {"type":"string","description":"Aggregate only the stacks containing this text in a frame, e.g. a package prefix or one class. Applied when reading, not when sampling, so one session can be re-read from several angles with keepRunning."},

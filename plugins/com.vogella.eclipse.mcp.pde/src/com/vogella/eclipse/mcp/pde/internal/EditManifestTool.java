@@ -62,22 +62,22 @@ public final class EditManifestTool implements IMcpTool {
 				  "required": ["project"],
 				  "properties": {
 				    "project": {"type":"string","description":"Plug-in project whose manifest to edit."},
-				    "addExportPackage": {"type":"array","items":{"type":"object","properties":{
+				    "addExportPackage": {"type":"array","description":"Packages to export, each an object with package and optionally version, internal and friends.","items":{"type":"object","properties":{
 				        "package":{"type":"string"},"version":{"type":"string"},
 				        "internal":{"type":"boolean","description":"Write x-internal:=true."},
 				        "friends":{"type":"array","items":{"type":"string"},"description":"Write x-friends."}},
 				        "required":["package"],"additionalProperties":false}},
-				    "removeExportPackage": {"type":"array","items":{"type":"string"}},
-				    "addRequireBundle": {"type":"array","items":{"type":"object","properties":{
+				    "removeExportPackage": {"type":"array","items":{"type":"string"},"description":"Package names to stop exporting."},
+				    "addRequireBundle": {"type":"array","description":"Bundles to require, each an object with bundle and optionally versionRange, optional and reexport.","items":{"type":"object","properties":{
 				        "bundle":{"type":"string"},"versionRange":{"type":"string"},
 				        "optional":{"type":"boolean"},"reexport":{"type":"boolean"}},
 				        "required":["bundle"],"additionalProperties":false}},
-				    "removeRequireBundle": {"type":"array","items":{"type":"string"}},
-				    "addImportPackage": {"type":"array","items":{"type":"object","properties":{
+				    "removeRequireBundle": {"type":"array","items":{"type":"string"},"description":"Bundle symbolic names to stop requiring."},
+				    "addImportPackage": {"type":"array","description":"Packages to import, each an object with package and optionally versionRange and optional.","items":{"type":"object","properties":{
 				        "package":{"type":"string"},"versionRange":{"type":"string"},"optional":{"type":"boolean"}},
 				        "required":["package"],"additionalProperties":false}},
-				    "removeImportPackage": {"type":"array","items":{"type":"string"}},
-				    "dryRun": {"type":"boolean","default":true},
+				    "removeImportPackage": {"type":"array","items":{"type":"string"},"description":"Package names to stop importing."},
+				    "dryRun": {"type":"boolean","default":true,"description":"Report the resulting headers without writing the manifest."},
 				    "includeFullHeaders": {"type":"boolean","default":false,"description":"Also return every entry of the resulting headers. Off by default: on a platform bundle that is tens of kilobytes describing one changed line."},
 				    "force":  {"type":"boolean","default":false,"description":"Remove an export or a required bundle that workspace bundles still consume."}
 				  },
