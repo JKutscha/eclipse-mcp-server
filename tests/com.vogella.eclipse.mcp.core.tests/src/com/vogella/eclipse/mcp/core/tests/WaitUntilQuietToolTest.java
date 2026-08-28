@@ -29,14 +29,30 @@ class WaitUntilQuietToolTest {
 	}
 
 	@Test
+	@SuppressWarnings("unchecked")
 	void reportsQuietWhenNothingRuns() throws Exception {
+		// the first call is what makes the workspace quiet, the second is the measurement
 		TestFixture.callAndParse(TOOL, Map.of("timeoutSeconds", 60));
 
 		Map<String, Object> result = TestFixture.callAndParse(TOOL, Map.of("timeoutSeconds", 60));
 
 		assertEquals("quiet", result.get("state"), "got " + result);
-		assertEquals(List.of(), result.get("waitedFor"), "got " + result);
-		assertNotNull(result.get("jobsAfter"), "got " + result);
+		Map<String, Object> after = (Map<String, Object>) result.get("jobsAfter");
+		assertNotNull(after, "got " + result);
+		assertEquals(Boolean.FALSE, after.get("building"), "got " + result);
+		List<Map<String, Object>> waitedFor = (List<Map<String, Object>>) result.get("waitedFor");
+		assertNotNull(waitedFor, "got " + result);
+		for (Map<String, Object> entry : waitedFor) {
+			assertEquals("done", entry.get("outcome"), "quiet must mean every wait finished, got " + result);
+		}
+		// emptiness only holds when nothing was pending at the start, and asserting it
+		// unconditionally is what made this flaky: another test's teardown schedules an
+		// auto-build that sits in sleeping between the two calls, which counts as busy,
+		// gets waited for and is then reported rather than dropped
+		Map<String, Object> before = (Map<String, Object>) result.get("jobsBefore");
+		if (Boolean.FALSE.equals(before.get("building")) && ((List<?>) before.get("otherJobs")).isEmpty()) {
+			assertEquals(List.of(), waitedFor, "got " + result);
+		}
 	}
 
 	@Test
