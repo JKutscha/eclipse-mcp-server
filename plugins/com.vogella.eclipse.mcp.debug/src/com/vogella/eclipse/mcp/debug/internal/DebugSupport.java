@@ -197,7 +197,6 @@ final class DebugSupport {
 		}
 	}
 
-	/** One entry per session, the shape status, launch and control answers carry. */
 	/**
 	 * The operating system process id of the launched JVM, or {@code null}.
 	 * <p>
@@ -218,6 +217,78 @@ final class DebugSupport {
 		return null;
 	}
 
+	/** Longest slice of a launched program's output carried in an answer. */
+	private static final int OUTPUT_TAIL = 2000;
+
+	/**
+	 * Describes the processes of a launch, and quotes their output when there is
+	 * reason to think something went wrong.
+	 * <p>
+	 * A launch that meets another instance's workspace lock reports no threads, no
+	 * pid and terminated false, which reads as "still starting" for as long as
+	 * anyone cares to wait. The reason is printed on the process's own console,
+	 * where the IDE has it and the caller does not.
+	 */
+	static void describeProcesses(JsonObject json, Session session) {
+		ILaunch launchValue = session.launch();
+		if (launchValue == null) {
+			return;
+		}
+		JsonArray processes = new JsonArray();
+		boolean anyLive = false;
+		for (org.eclipse.debug.core.model.IProcess process : launchValue.getProcesses()) {
+			JsonObject entry = new JsonObject().put("label", process.getLabel()) //$NON-NLS-1$
+					.put("pid", process.getAttribute(org.eclipse.debug.core.model.IProcess.ATTR_PROCESS_ID)) //$NON-NLS-1$
+					.put("terminated", Boolean.valueOf(process.isTerminated())); //$NON-NLS-1$
+			if (process.isTerminated()) {
+				try {
+					entry.put("exitValue", Integer.valueOf(process.getExitValue())); //$NON-NLS-1$
+				} catch (org.eclipse.debug.core.DebugException e) {
+					// a process that cannot say how it ended still ended
+				}
+			} else {
+				anyLive = true;
+			}
+			processes.add(entry);
+		}
+		if (processes.size() == 0) {
+			json.put("processes", processes).put("processNote", //$NON-NLS-1$ //$NON-NLS-2$
+					"The launch produced no process at all, so nothing was started. That is not the same as a program that is still coming up."); //$NON-NLS-1$
+			return;
+		}
+		json.put("processes", processes); //$NON-NLS-1$
+		// output is worth quoting exactly when the picture is otherwise empty: no
+		// threads to report, or everything already dead
+		if (!anyLive || launchValue.getDebugTargets().length == 0) {
+			String output = output(launchValue);
+			if (output != null && !output.isBlank()) {
+				json.put("processOutputTail", output); //$NON-NLS-1$
+			}
+		}
+	}
+
+	/** The tail of what the processes printed, which is where a refusal to start says why. */
+	private static String output(ILaunch launchValue) {
+		StringBuilder text = new StringBuilder();
+		for (org.eclipse.debug.core.model.IProcess process : launchValue.getProcesses()) {
+			org.eclipse.debug.core.model.IStreamsProxy streams = process.getStreamsProxy();
+			if (streams == null) {
+				continue;
+			}
+			append(text, streams.getOutputStreamMonitor());
+			append(text, streams.getErrorStreamMonitor());
+		}
+		String all = text.toString();
+		return all.length() <= OUTPUT_TAIL ? all : "..." + all.substring(all.length() - OUTPUT_TAIL); //$NON-NLS-1$
+	}
+
+	private static void append(StringBuilder text, org.eclipse.debug.core.model.IStreamMonitor monitor) {
+		if (monitor != null && monitor.getContents() != null) {
+			text.append(monitor.getContents());
+		}
+	}
+
+	/** One entry per session, the shape status, launch and control answers carry. */
 	static JsonObject sessionJson(Session session, int maxThreads) {
 		JsonObject json = new JsonObject().put("sessionId", session.id()) //$NON-NLS-1$
 				.put("startedByMcp", Boolean.valueOf(session.startedByMcp())) //$NON-NLS-1$

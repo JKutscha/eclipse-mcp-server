@@ -72,6 +72,9 @@ public final class DebugLaunchTool implements IMcpTool {
 				    "autoTerminateAfterSeconds":{"type":"integer","default":900,"minimum":0,"maximum":86400,"description":"Terminate the program after this long, whether it finished or not. Only sessions this tool started are ever terminated."},
 				    "waitForSuspendSeconds":   {"type":"integer","default":20,"minimum":0,"maximum":25,"description":"Wait for the first suspend (a breakpoint or stopInMain) before answering."},
 				    "maxResults":              {"type":"integer","default":50,"minimum":1,"maximum":500,"description":"Threads reported per answer."},
+				    "mode":                    {"type":"string","enum":["debug","run"],"default":"debug","description":"'run' starts the program without the debugger, so no JDWP agent is attached and nothing can suspend. Use it when measuring startup or profiling, where the agent distorts the numbers and a suspend ruins them; breakpoints and eclipse_debug_get_frames need 'debug'."},
+				    "replaceExisting":         {"type":"boolean","default":true,"description":"Terminate a launch of the same configuration that THIS SERVER started and is still running, and wait for its process to be gone, before starting. Without it the second launch walks into the first one's workspace lock and opens a modal dialog inside the launched process, where no tool here can reach it. Launches a person started are never touched."},
+				    "quiet":                   {"type":"boolean","default":true,"description":"Neutralise, for as long as this launch runs, the settings that stop a program nobody is watching: suspend on uncaught exceptions, suspend on compilation errors, and the modal question about switching perspective on suspend. These are not breakpoints, so eclipse_list_breakpoints reports none of them, and OSGi startup trips the first one routinely. The previous values are restored when the launch ends."},
 				    "flightRecording":         {"type":"string","enum":["off","default","profile"],"default":"off","description":"Record the launched JVM with Java Flight Recorder. 'profile' includes allocation and execution samples at a few percent overhead, 'default' covers GC and threads at about one percent. The file is written when the program EXITS and is read with eclipse_stop_flight_recording by passing its path as 'file'. This is the only way to profile a launched program: the IDE's own recording tools work inside the IDE's JVM and cannot see another process."}
 				  },
 				  "additionalProperties": false
@@ -89,9 +92,17 @@ public final class DebugLaunchTool implements IMcpTool {
 			throw new McpToolException("Could not build the launch configuration: %s".formatted(e.getMessage()), e);
 		}
 		java.nio.file.Path recordingFile = record(configuration, args.getString("flightRecording", "off")); //$NON-NLS-1$ //$NON-NLS-2$
+		String mode = "run".equals(args.getString("mode", "debug")) ? ILaunchManager.RUN_MODE //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+				: ILaunchManager.DEBUG_MODE;
 		try {
 			DebugSessionRegistry registry = DebugSessionRegistry.getInstance();
+			JsonObject replaced = args.getBoolean("replaceExisting", true) //$NON-NLS-1$
+					? replaceExisting(registry, configuration.getName())
+					: null;
 			DebugSessionRegistry.Session session = registry.prepare(configuration.getName());
+			if (args.getBoolean("quiet", true)) { //$NON-NLS-1$
+				session.holdQuiet();
+			}
 			int idle = args.getInt("autoTerminateAfterSeconds", 900, 0, 86_400); //$NON-NLS-1$
 			if (idle > 0) {
 				registry.scheduleAutoTerminate(session, idle);
@@ -104,7 +115,7 @@ public final class DebugLaunchTool implements IMcpTool {
 				// a person who does not know they are being asked
 				String promptWas = com.vogella.eclipse.mcp.core.CompileErrorPrompt.suppress();
 				try {
-					org.eclipse.debug.core.ILaunch launched = configuration.launch(ILaunchManager.DEBUG_MODE, progress);
+					org.eclipse.debug.core.ILaunch launched = configuration.launch(mode, progress);
 					if (!session.registered()) {
 						// belt and braces for a launch event lost to timing
 						session.attach(launched);
@@ -144,11 +155,44 @@ public final class DebugLaunchTool implements IMcpTool {
 				json.put("flightRecordingFile", recordingFile.toString()) //$NON-NLS-1$
 						.put("flightRecordingNote", com.vogella.eclipse.mcp.core.LaunchRecording.note(recordingFile)); //$NON-NLS-1$
 			}
+			json.put("mode", mode); //$NON-NLS-1$
+			if (replaced != null) {
+				json.put("replaced", replaced); //$NON-NLS-1$
+			}
+			if (args.getBoolean("quiet", true)) { //$NON-NLS-1$
+				json.put("quiet", new JsonObject().put("applied", Boolean.TRUE) //$NON-NLS-1$ //$NON-NLS-2$
+						.put("note", //$NON-NLS-1$
+								"Suspend on uncaught exceptions, suspend on compilation errors and the perspective switch question are off while this launch runs, and go back to their previous values when it ends. They are not breakpoints, so eclipse_list_breakpoints never showed them.")); //$NON-NLS-1$
+			}
+			DebugSupport.describeProcesses(json, session);
 			return McpToolResult.of(json.toString());
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new McpToolException("Interrupted while waiting for the debug session to start.", e);
 		}
+	}
+
+	/**
+	 * Ends a still running launch of the same configuration that this server
+	 * started, so the new one does not meet the old one's workspace lock.
+	 */
+	private static JsonObject replaceExisting(DebugSessionRegistry registry, String configName) {
+		com.vogella.eclipse.mcp.core.json.JsonArray ended = new com.vogella.eclipse.mcp.core.json.JsonArray();
+		boolean allGone = true;
+		for (DebugSessionRegistry.Session previous : registry.liveStartedByMcp(configName)) {
+			boolean gone = DebugSessionRegistry.terminateAndWait(previous, 10);
+			allGone &= gone;
+			ended.add(new JsonObject().put("sessionId", previous.id()).put("processGone", Boolean.valueOf(gone))); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		if (ended.size() == 0) {
+			return null;
+		}
+		JsonObject json = new JsonObject().put("sessions", ended); //$NON-NLS-1$
+		if (!allGone) {
+			json.put("warning", //$NON-NLS-1$
+					"One of them had not actually ended within ten seconds. It may still hold the workspace lock, in which case this launch stops inside its own process with a dialog no tool here can reach."); //$NON-NLS-1$
+		}
+		return json;
 	}
 
 	/**

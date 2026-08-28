@@ -166,6 +166,11 @@ public final class RestartTool implements IMcpTool {
 					.put("openModalDialogs", modal) //$NON-NLS-1$
 					.put("reason", reason.toString()); //$NON-NLS-1$
 		}
+		// before the restart, and deliberately not by waiting for either of them. A
+		// build has nothing worth saving across a restart, and a launched JVM that
+		// outlives the IDE keeps its workspace lock with nobody left who knows where
+		// it came from
+		JsonObject cleared = clearTheWay();
 		// before the restart is scheduled: Workbench.buildCommandLine reads this
 		// property and appends the workspace to whatever is already in it, so adding
 		// the argument here is the same channel the platform uses for -data
@@ -178,6 +183,7 @@ public final class RestartTool implements IMcpTool {
 		display.timerExec(RESTART_DELAY_MILLIS, () -> PlatformUI.getWorkbench().restart(true));
 		return new JsonObject().put("restarting", Boolean.TRUE) //$NON-NLS-1$
 				.put("inMillis", RESTART_DELAY_MILLIS) //$NON-NLS-1$
+				.put("cleared", cleared) //$NON-NLS-1$
 				.put("splashSuppressed", Boolean.valueOf(splashSuppressed)) //$NON-NLS-1$
 				.put("workspace", workspaceLocation()) //$NON-NLS-1$
 				.put("savedEditors", save) //$NON-NLS-1$
@@ -185,6 +191,68 @@ public final class RestartTool implements IMcpTool {
 						"Read startedAt from the discovery file before and after; it changes only when a new server process comes up.") //$NON-NLS-1$
 				.put("note", //$NON-NLS-1$
 						"The connection will drop when the IDE goes down. IMPORTANT: this answer is sent BEFORE the restart, so the old server keeps answering for a couple of seconds and a reachability check will succeed against the process that is about to die. Wait for the connection to drop and then return, or compare startedAt in the discovery file. Reconnect with the same bearer token, which survives restarts and updates. The IDE is relaunched into the workspace named above; if it comes back asking which workspace to use, the relaunch lost its arguments and a human has to answer the chooser."); //$NON-NLS-1$
+	}
+
+	/**
+	 * Cancels what is building and ends the launches this server started.
+	 * <p>
+	 * Neither is waited for beyond a short bound. A build interrupted by a restart
+	 * costs another build and nothing else, so waiting minutes for one would be
+	 * pure delay. A launched JVM is the opposite case: it survives the restart,
+	 * keeps holding the workspace lock and the ports it took, and the next launch
+	 * then fails inside its own process with a dialog no tool here can reach,
+	 * hours after anybody could connect it to a restart.
+	 */
+	private static JsonObject clearTheWay() {
+		JsonObject cleared = new JsonObject();
+		org.eclipse.core.runtime.jobs.IJobManager jobs = org.eclipse.core.runtime.jobs.Job.getJobManager();
+		int builds = jobs.find(org.eclipse.core.resources.ResourcesPlugin.FAMILY_MANUAL_BUILD).length
+				+ jobs.find(org.eclipse.core.resources.ResourcesPlugin.FAMILY_AUTO_BUILD).length;
+		if (builds > 0) {
+			jobs.cancel(org.eclipse.core.resources.ResourcesPlugin.FAMILY_MANUAL_BUILD);
+			jobs.cancel(org.eclipse.core.resources.ResourcesPlugin.FAMILY_AUTO_BUILD);
+			cleared.put("buildsCancelled", Integer.valueOf(builds)) //$NON-NLS-1$
+					.put("buildNote", //$NON-NLS-1$
+							"Cancelled rather than waited for: a build has no state worth carrying across a restart, and the workspace rebuilds afterwards."); //$NON-NLS-1$
+		}
+		JsonArray terminated = new JsonArray();
+		JsonArray leftRunning = new JsonArray();
+		for (org.eclipse.debug.core.ILaunch launch : org.eclipse.debug.core.DebugPlugin.getDefault()
+				.getLaunchManager().getLaunches()) {
+			if (!startedByMcp(launch) || launch.isTerminated() || !launch.canTerminate()) {
+				continue;
+			}
+			try {
+				launch.terminate();
+				terminated.add(nameOf(launch));
+			} catch (org.eclipse.core.runtime.CoreException e) {
+				leftRunning.add(nameOf(launch));
+			}
+		}
+		if (terminated.size() > 0 || leftRunning.size() > 0) {
+			cleared.put("launchesTerminated", terminated) //$NON-NLS-1$
+					.put("launchNote", //$NON-NLS-1$
+							"Only launches this server started. A launch the person at the IDE started is left alone, and it will outlive the restart."); //$NON-NLS-1$
+		}
+		if (leftRunning.size() > 0) {
+			cleared.put("launchesLeftRunning", leftRunning) //$NON-NLS-1$
+					.put("launchWarning", //$NON-NLS-1$
+							"These refused to terminate and will survive the restart, still holding whatever workspace or port they took."); //$NON-NLS-1$
+		}
+		return cleared;
+	}
+
+	private static boolean startedByMcp(org.eclipse.debug.core.ILaunch launch) {
+		try {
+			return launch.getLaunchConfiguration() != null && launch.getLaunchConfiguration()
+					.getAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.STARTED_BY_MCP, false);
+		} catch (org.eclipse.core.runtime.CoreException e) {
+			return false;
+		}
+	}
+
+	private static String nameOf(org.eclipse.debug.core.ILaunch launch) {
+		return launch.getLaunchConfiguration() == null ? "unnamed" : launch.getLaunchConfiguration().getName(); //$NON-NLS-1$
 	}
 
 	/** The workspace the IDE is expected to come back into. */

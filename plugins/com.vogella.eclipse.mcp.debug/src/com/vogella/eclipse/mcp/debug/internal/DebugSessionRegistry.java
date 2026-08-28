@@ -98,6 +98,7 @@ public final class DebugSessionRegistry {
 		private volatile String failure;
 
 		private ScheduledFuture<?> autoTerminate;
+		private volatile boolean quietHeld;
 
 		Session(String id, boolean startedByMcp, String expectedConfigName) {
 			this.id = id;
@@ -131,7 +132,29 @@ public final class DebugSessionRegistry {
 
 		void failed(String message) {
 			failure = message;
+			releaseQuiet();
 			registered.countDown();
+		}
+
+		/**
+		 * Holds the launch prompts quiet for as long as this session runs.
+		 * <p>
+		 * The suspend settings this silences are consulted while the program runs,
+		 * not while it starts, so putting them back when the launch call returns
+		 * would restore them before the exception that would trip them.
+		 */
+		void holdQuiet() {
+			if (!quietHeld) {
+				quietHeld = true;
+				com.vogella.eclipse.mcp.core.LaunchPrompts.quiet();
+			}
+		}
+
+		private void releaseQuiet() {
+			if (quietHeld) {
+				quietHeld = false;
+				com.vogella.eclipse.mcp.core.LaunchPrompts.release();
+			}
 		}
 
 		String failure() {
@@ -151,6 +174,8 @@ public final class DebugSessionRegistry {
 			if (terminatedAt == 0 && current != null && current.isTerminated()) {
 				terminatedAt = System.currentTimeMillis();
 				cancelAutoTerminate();
+				// the one transition point, so the settings go back exactly once
+				releaseQuiet();
 			}
 			return terminatedAt > 0 || (current != null && current.isTerminated());
 		}
@@ -330,6 +355,75 @@ public final class DebugSessionRegistry {
 		}
 		session.terminated();
 		return true;
+	}
+
+	/**
+	 * Terminates a session and waits for the process to actually be gone.
+	 * <p>
+	 * {@code ILaunch.terminate} returns once it has asked, and a JVM that is asked
+	 * still holds its workspace lock for a moment afterwards. Reporting it as
+	 * terminated at that point is what makes the next launch of the same
+	 * configuration walk into a "Workspace in use" dialog inside the launched
+	 * process, where nothing here can reach it.
+	 *
+	 * @return whether the process had really ended within the wait
+	 */
+	static boolean terminateAndWait(Session session, int seconds) {
+		terminateQuietly(session);
+		ILaunch launchValue = session.launch();
+		if (launchValue == null) {
+			return true;
+		}
+		long deadline = System.currentTimeMillis() + seconds * 1000L;
+		while (System.currentTimeMillis() < deadline) {
+			if (allGone(launchValue)) {
+				return true;
+			}
+			try {
+				Thread.sleep(100);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return allGone(launchValue);
+			}
+		}
+		return allGone(launchValue);
+	}
+
+	/** The launch and every process of it, since the launch can outlive its processes and the reverse. */
+	private static boolean allGone(ILaunch launchValue) {
+		if (!launchValue.isTerminated()) {
+			return false;
+		}
+		for (org.eclipse.debug.core.model.IProcess process : launchValue.getProcesses()) {
+			if (!process.isTerminated()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * The sessions this server started for a launch configuration that are still
+	 * running. A launch the person at the IDE started is never included: it is
+	 * theirs, and terminating it under them would be the worse surprise.
+	 */
+	public synchronized List<Session> liveStartedByMcp(String configName) {
+		List<Session> found = new java.util.ArrayList<>();
+		for (Session session : sessions.values()) {
+			if (session.startedByMcp() && !session.terminated() && configName != null
+					&& configName.equals(nameOf(session))) {
+				found.add(session);
+			}
+		}
+		return found;
+	}
+
+	private static String nameOf(Session session) {
+		ILaunch launchValue = session.launch();
+		if (launchValue != null && launchValue.getLaunchConfiguration() != null) {
+			return launchValue.getLaunchConfiguration().getName();
+		}
+		return session.expectedConfigName();
 	}
 
 	/** Terminates the MCP-started sessions still running, on bundle stop. */

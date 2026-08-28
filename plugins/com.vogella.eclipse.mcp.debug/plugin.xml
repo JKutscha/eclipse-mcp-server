@@ -6,6 +6,7 @@
       <tool class="com.vogella.eclipse.mcp.debug.internal.ListBreakpointsTool"/>
       <tool class="com.vogella.eclipse.mcp.debug.internal.SetBreakpointTool"/>
       <tool class="com.vogella.eclipse.mcp.debug.internal.DebugLaunchTool"/>
+      <tool class="com.vogella.eclipse.mcp.debug.internal.ListLaunchConfigurationsTool"/>
       <tool class="com.vogella.eclipse.mcp.debug.internal.DebugStatusTool"/>
       <tool class="com.vogella.eclipse.mcp.debug.internal.GetFramesTool"/>
       <tool class="com.vogella.eclipse.mcp.debug.internal.EvaluateTool"/>
