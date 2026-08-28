@@ -325,6 +325,10 @@ class McpServerServiceTest {
 		case "eclipse_organize_imports", "eclipse_format" -> Map.of("path", SAMPLE);
 		case "eclipse_read_file" -> Map.of("path", SAMPLE);
 		case "eclipse_resolve_path" -> Map.of("of", List.of(PROJECT));
+		// a name nothing matches, so the smoke test removes nothing even by accident
+		case "eclipse_remove_project" -> Map.of("namePattern", "no-such-project-*");
+		// a dry run against the fixture, so no compliance is actually written
+		case "eclipse_set_java_version" -> Map.of("version", "21", "project", PROJECT);
 		// a command that does nothing, in the temporary directory the setup allows
 		case "eclipse_run_command" -> Map.of("args", List.of("true"), "directory",
 				System.getProperty("java.io.tmpdir"), "wait", Boolean.TRUE);
