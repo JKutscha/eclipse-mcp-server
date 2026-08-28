@@ -1758,6 +1758,7 @@ The tool answers first and restarts two seconds later, so a dropped connection i
 | `save` | boolean | `false` | Save dirty editors first. |
 | `force` | boolean | `false` | Restart anyway, discarding unsaved work. |
 | `splash` | boolean | `true` | `false` comes back without the splash screen. |
+| `workspace` | string | current one | Absolute path of the workspace to start into. Created when it does not exist. |
 
 `splash: false` appends `-nosplash` to the arguments the workbench hands the launcher for the next start, which is the same channel `Workbench.buildCommandLine` uses to pass `-data`.
 `splashSuppressed` in the answer reports whether the argument was added, and deliberately not whether the splash then stayed away: the splash is painted by the native launcher before the JVM exists, so nothing inside the IDE can observe the result.
@@ -1767,6 +1768,24 @@ When the argument cannot be added the restart still happens, with `splashSuppres
 It refuses when editors have unsaved changes or a modal dialog is open, listing them, since restarting under an open dialog loses whatever is in it.
 
 The answer names the `workspace` the IDE will return to. If it comes back asking which workspace to use, the relaunch lost its arguments, which is what `IWorkbench.restart()` does; `restart(true)` is what preserves `-data`.
+
+**Switching workspaces.**
+`workspace` sends the IDE into another workspace instead of back into the current one, which is what gives a measurement a workspace of its own rather than the one somebody works in.
+The answer reports `workspace`, `previousWorkspace` and `workspaceChanged`, so a caller that switches can find its way back.
+The path has to be absolute, because the launcher would resolve a relative one against a working directory nobody here knows, and it is created when it is missing, because a path that is not there opens the workspace chooser and waits for a person.
+
+A directory is not enough on its own, and this is the part that is easy to get wrong.
+Whether the server runs at all is an *instance* preference, so it belongs to the workspace rather than to the installation.
+Switching into a workspace that has never had the server switched on would bring the IDE up with nothing listening and no way left to ask why, so the enabled flag, the port and the call timeout are written into the target workspace before the relaunch.
+The answer reports that under `server`, with `carriedOver` false when the workspace already had settings of its own, which are then left alone.
+The bearer token is not copied because it does not need to be: it lives in user scope and is the same in every workspace.
+The directories `eclipse_run_command` may use are deliberately not carried over, since that permission was given for one workspace.
+
+The discovery file is per workspace too, so a client that reads `endpoint.json` has to read the one under the new workspace's `.metadata` after the switch.
+The port does not change, which means reaching `8642` proves nothing on its own: compare `startedAt`, and compare it against the *target's* previous value, since a workspace switched into twice still holds the file from the first visit.
+
+In development mode the switch is refused rather than attempted.
+The workbench forces a plain restart there and keeps the command line of the launch it came from, so the relaunch arguments are dropped and the IDE would come back into the old workspace with nothing reporting that the switch did not happen.
 
 ### `eclipse_install_bundle`
 

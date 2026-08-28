@@ -20,6 +20,7 @@ import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.ToolArguments;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
+import com.vogella.eclipse.mcp.server.McpPreferences;
 
 /**
  * Restarts the IDE, after answering.
@@ -43,7 +44,7 @@ public final class RestartTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Restarts the Eclipse IDE, into the same workspace or into another one, which is what makes an installed or updated feature active. The answer names the workspace it will return to and the one it is leaving, so a caller that switches can find its way back. PASS workspace TO SWITCH: an absolute path, created when it is not there, which is how a measurement gets a workspace of its own instead of sharing the one somebody works in. The IDE that comes up is this same installation with this same server in it, reachable at the same port with the same token, but everything workspace-shaped is different: other projects, other preferences, a build from nothing, and the local history and the element tree of the old workspace stay behind. THE CONNECTION WILL DROP BY DESIGN: this tool answers first and restarts a couple of seconds later, so a dropped connection right after a successful result is the expected outcome and not a failure. Reconnect with the same bearer token, which survives restarts and updates. Refuses when editors have unsaved changes or a modal dialog is open, naming which of the two fired, unless save or force is passed. A blocking dialog is better cleared with eclipse_dismiss_dialog than forced past. It works independently of eclipse_update, so a half applied update can still be recovered by restarting. Pass splash false to come back without the splash screen: this appends -nosplash to the arguments the workbench hands the launcher, the same channel it uses to pass the workspace, and splashSuppressed reports whether that argument was added, not what the launcher then did with it."; //$NON-NLS-1$
+		return "Restarts the Eclipse IDE, into the same workspace or into another one, which is what makes an installed or updated feature active. The answer names the workspace it will return to and the one it is leaving, so a caller that switches can find its way back. PASS workspace TO SWITCH: an absolute path, created when it is not there, which is how a measurement gets a workspace of its own instead of sharing the one somebody works in. The IDE that comes up is this same installation with this same server in it, reachable at the same port with the same token, but everything workspace-shaped is different: other projects, other preferences, a build from nothing, and the local history and the element tree of the old workspace stay behind. WHETHER THE SERVER RUNS IS ITSELF A WORKSPACE PREFERENCE, so it is written into the target workspace before the relaunch, which the answer reports under server; without that the IDE comes up in a workspace that has never had the server switched on and nothing can reach it. The discovery file is per workspace too, so a client that reads it has to read the new one. THE CONNECTION WILL DROP BY DESIGN: this tool answers first and restarts a couple of seconds later, so a dropped connection right after a successful result is the expected outcome and not a failure. Reconnect with the same bearer token, which survives restarts and updates. Refuses when editors have unsaved changes or a modal dialog is open, naming which of the two fired, unless save or force is passed. A blocking dialog is better cleared with eclipse_dismiss_dialog than forced past. It works independently of eclipse_update, so a half applied update can still be recovered by restarting. Pass splash false to come back without the splash screen: this appends -nosplash to the arguments the workbench hands the launcher, the same channel it uses to pass the workspace, and splashSuppressed reports whether that argument was added, not what the launcher then did with it."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -138,7 +139,7 @@ public final class RestartTool implements IMcpTool {
 	 *
 	 * @return the refusal, or null when it can
 	 */
-	private static McpToolResult checkWorkspace(String workspace) {
+	public static McpToolResult checkWorkspace(String workspace) {
 		java.nio.file.Path path = pathOf(workspace);
 		if (path == null) {
 			return McpToolResult.error("'%s' is not a usable path.".formatted(workspace)); //$NON-NLS-1$
@@ -166,12 +167,61 @@ public final class RestartTool implements IMcpTool {
 	}
 
 	/**
+	 * Switches the server on in the workspace the IDE is going to.
+	 * <p>
+	 * Whether the server runs is an instance preference, so it belongs to the
+	 * workspace and not to the installation: an untouched workspace has no server
+	 * in it, and the IDE would come up unreachable with nothing left to ask why.
+	 * The bearer token is not copied because it does not have to be, living under
+	 * the user location rather than in a workspace, and the directories commands
+	 * may run in are deliberately left behind: that permission was given for one
+	 * workspace.
+	 */
+	public static JsonObject carryTheServerOver(java.nio.file.Path workspace) {
+		java.nio.file.Path settings = settingsFile(workspace);
+		JsonObject json = new JsonObject().put("preferences", settings.toString()); //$NON-NLS-1$
+		if (java.nio.file.Files.exists(settings)) {
+			return json.put("carriedOver", Boolean.FALSE) //$NON-NLS-1$
+					.put("note", //$NON-NLS-1$
+							"That workspace has settings of its own for the server and they were left alone, so it comes up with whatever they say."); //$NON-NLS-1$
+		}
+		var node = org.eclipse.core.runtime.preferences.InstanceScope.INSTANCE.getNode(McpPreferences.QUALIFIER);
+		StringBuilder content = new StringBuilder("eclipse.preferences.version=1\n"); //$NON-NLS-1$
+		content.append(McpPreferences.KEY_ENABLED).append('=')
+				.append(node.getBoolean(McpPreferences.KEY_ENABLED, McpPreferences.DEFAULT_ENABLED)).append('\n');
+		for (String key : new String[] { McpPreferences.KEY_PORT, McpPreferences.KEY_CALL_TIMEOUT_SECONDS }) {
+			String value = node.get(key, null);
+			if (value != null) {
+				content.append(key).append('=').append(value).append('\n');
+			}
+		}
+		try {
+			java.nio.file.Files.createDirectories(settings.getParent());
+			java.nio.file.Files.writeString(settings, content.toString());
+		} catch (java.io.IOException e) {
+			return json.put("carriedOver", Boolean.FALSE) //$NON-NLS-1$
+					.put("note", //$NON-NLS-1$
+							"The server settings could not be written to that workspace (%s), so the IDE will come up there WITHOUT this server and has to be switched on by hand in Preferences > General > MCP Server." //$NON-NLS-1$
+									.formatted(e.getMessage()));
+		}
+		return json.put("carriedOver", Boolean.TRUE) //$NON-NLS-1$
+				.put("note", //$NON-NLS-1$
+						"The server is switched on for that workspace with the same port. The bearer token is the same, it belongs to the user rather than to a workspace, but the discovery file is per workspace and the new one is written under its .metadata. The directories eclipse_run_command may use are NOT carried over."); //$NON-NLS-1$
+	}
+
+	/** Where the instance scope keeps the server's preferences inside a workspace. */
+	public static java.nio.file.Path settingsFile(java.nio.file.Path workspace) {
+		return workspace.resolve(".metadata/.plugins/org.eclipse.core.runtime/.settings") //$NON-NLS-1$
+				.resolve(McpPreferences.QUALIFIER + ".prefs"); //$NON-NLS-1$
+	}
+
+	/**
 	 * A filesystem path from what a caller passed, a file URI included.
 	 * <p>
 	 * The URI form is what this tool used to report as the workspace, so a caller
 	 * that hands back what it was given would otherwise be refused.
 	 */
-	private static java.nio.file.Path pathOf(String workspace) {
+	public static java.nio.file.Path pathOf(String workspace) {
 		try {
 			if (workspace.startsWith("file:")) { //$NON-NLS-1$
 				return java.nio.file.Path.of(java.net.URI.create(workspace).getPath());
@@ -249,7 +299,9 @@ public final class RestartTool implements IMcpTool {
 		// the argument here is the same channel the platform uses for -data
 		boolean splashSuppressed = splash ? false : appendNoSplash();
 		String target = workspace == null ? null : String.valueOf(pathOf(workspace));
+		JsonObject server = null;
 		if (target != null) {
+			server = carryTheServerOver(java.nio.file.Path.of(target));
 			relaunchInto(target);
 		}
 		// answer first, restart after: the server dies with the IDE, so restarting
@@ -268,6 +320,7 @@ public final class RestartTool implements IMcpTool {
 				.put("workspace", target == null ? workspaceLocation() : target) //$NON-NLS-1$
 				.put("previousWorkspace", workspaceLocation()) //$NON-NLS-1$
 				.put("workspaceChanged", Boolean.valueOf(workspace != null)) //$NON-NLS-1$
+				.put("server", server) //$NON-NLS-1$
 				.put("savedEditors", save) //$NON-NLS-1$
 				.put("verifyRestartWith", //$NON-NLS-1$
 						"Read startedAt from the discovery file before and after; it changes only when a new server process comes up.") //$NON-NLS-1$

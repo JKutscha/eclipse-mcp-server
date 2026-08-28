@@ -2,13 +2,22 @@ package com.vogella.eclipse.mcp.core.tests;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 
+import org.eclipse.core.runtime.Platform;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import com.vogella.eclipse.mcp.core.McpToolResult;
+import com.vogella.eclipse.mcp.server.McpPreferences;
 import com.vogella.eclipse.mcp.ui.internal.RestartTool;
 
 /**
@@ -65,5 +74,88 @@ class RestartToolTest {
 				System.setProperty(RestartTool.EXIT_DATA_PROPERTY, previous);
 			}
 		}
+	}
+
+	@Test
+	void aFileUriIsAcceptedBecauseThatIsWhatTheToolUsedToReport() {
+		// a caller handing back the workspace it was given would otherwise be refused
+		assertEquals(Path.of("/tmp/ws"), RestartTool.pathOf("file:/tmp/ws"));
+		assertEquals(Path.of("/tmp/ws"), RestartTool.pathOf("/tmp/ws"));
+	}
+
+	@Test
+	void aRelativeWorkspaceIsRefused() {
+		// the launcher would resolve it against a working directory nobody here knows
+		McpToolResult refusal = RestartTool.checkWorkspace("some/workspace");
+
+		assertNotNull(refusal);
+		assertTrue(refusal.text().contains("absolute path"), refusal.text());
+	}
+
+	@Test
+	void aWorkspaceThatIsAFileIsRefused(@TempDir Path dir) throws Exception {
+		Path file = Files.createFile(dir.resolve("not-a-directory"));
+
+		McpToolResult refusal = RestartTool.checkWorkspace(file.toString());
+
+		assertNotNull(refusal);
+		assertTrue(refusal.text().contains("not a directory"), refusal.text());
+	}
+
+	@Test
+	void aWorkspaceThatIsNotThereIsCreated(@TempDir Path dir) {
+		// a path that does not exist opens the workspace chooser and waits for a person
+		assumeFalse(Platform.inDevelopmentMode(), "development mode refuses any switch");
+		Path workspace = dir.resolve("fresh");
+
+		assertNull(RestartTool.checkWorkspace(workspace.toString()));
+		assertTrue(Files.isDirectory(workspace));
+	}
+
+	@Test
+	void developmentModeRefusesTheSwitchInsteadOfSilentlyNotDoingIt(@TempDir Path dir) {
+		// the workbench keeps the command line it was launched with, so the relaunch
+		// arguments are dropped and the IDE would come back where it already was
+		assumeTrue(Platform.inDevelopmentMode(), "only a development mode IDE refuses this");
+
+		McpToolResult refusal = RestartTool.checkWorkspace(dir.resolve("elsewhere").toString());
+
+		assertNotNull(refusal);
+		assertTrue(refusal.text().contains("-data"), refusal.text());
+	}
+
+	@Test
+	void theServerIsSwitchedOnInAWorkspaceThatNeverHadIt(@TempDir Path workspace) throws Exception {
+		String answer = RestartTool.carryTheServerOver(workspace).toString();
+
+		assertTrue(answer.contains("\"carriedOver\": true"), answer);
+		Path settings = RestartTool.settingsFile(workspace);
+		assertTrue(Files.isRegularFile(settings), "no preferences written to " + settings);
+		String written = Files.readString(settings);
+		assertTrue(written.contains(McpPreferences.KEY_ENABLED + "="), written);
+	}
+
+	@Test
+	void settingsAWorkspaceAlreadyHasAreLeftAlone(@TempDir Path workspace) throws Exception {
+		Path settings = RestartTool.settingsFile(workspace);
+		Files.createDirectories(settings.getParent());
+		Files.writeString(settings, "eclipse.preferences.version=1\nenabled=false\n");
+
+		String answer = RestartTool.carryTheServerOver(workspace).toString();
+
+		assertTrue(answer.contains("\"carriedOver\": false"), answer);
+		assertEquals("eclipse.preferences.version=1\nenabled=false\n", Files.readString(settings));
+	}
+
+	@Test
+	void aWorkspaceThatCannotTakeTheSettingsSaysSoInsteadOfClaimingSuccess(@TempDir Path workspace)
+			throws Exception {
+		// .metadata as a file makes creating the settings directory below it fail
+		Files.createFile(workspace.resolve(".metadata"));
+
+		String answer = RestartTool.carryTheServerOver(workspace).toString();
+
+		assertTrue(answer.contains("\"carriedOver\": false"), answer);
+		assertTrue(answer.contains("WITHOUT this server"), answer);
 	}
 }
