@@ -7,6 +7,8 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.egit.core.RepositoryCache;
 import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.lib.RepositoryCache.FileKey;
+import org.eclipse.jgit.util.FS;
 
 /**
  * Finds the repository a request is about.
@@ -50,7 +52,15 @@ final class EGit {
 		}
 		File file = new File(directory.strip());
 		Repository known = RepositoryCache.INSTANCE.getRepository(new org.eclipse.core.runtime.Path(file.getPath()));
-		return known == null ? RepositoryCache.INSTANCE.lookupRepository(gitDir(file)) : known;
+		if (known != null) {
+			return known;
+		}
+		File gitDir = gitDir(file);
+		// lookupRepository hands back a bare handle for any directory at all, so a
+		// path that is no repository has to be rejected here. Otherwise it reaches
+		// the status as a repository with no working tree and fails there, which
+		// reads as the repository being broken rather than as the wrong path
+		return FileKey.isGitRepository(gitDir, FS.DETECTED) ? RepositoryCache.INSTANCE.lookupRepository(gitDir) : null;
 	}
 
 	/** {@code .git} under the directory, or the directory itself when it already is one. */
