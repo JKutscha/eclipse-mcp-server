@@ -118,10 +118,9 @@ final class Provisioning {
 			@Override
 			public void done(IJobChangeEvent event) {
 				IStatus status = event.getResult();
-				operation.state = status == null || status.isOK() ? "done" //$NON-NLS-1$
-						: status.getSeverity() == IStatus.CANCEL ? "cancelled" : "failed"; //$NON-NLS-1$ //$NON-NLS-2$
-				if (status != null && !status.isOK()) {
-					operation.message = status.getMessage();
+				operation.state = ProvisioningStatus.stateOf(status);
+				if (status != null && status.getSeverity() != IStatus.OK) {
+					operation.message = ProvisioningStatus.describe(status);
 				}
 				operation.endedAt = System.currentTimeMillis();
 				operation.running = false;
