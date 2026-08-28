@@ -60,10 +60,20 @@ final class ThemeDefinitions {
 		List<JsonObject> colors = query.colors() ? read(registry, COLOR, theme, query, categories) : List.of();
 		List<JsonObject> fonts = query.fonts() ? read(registry, FONT, theme, query, categories) : List.of();
 
+		// two theme systems sit on top of each other and they disagree: the workbench
+		// ITheme is what the registries below belong to, while the e4 CSS theme is
+		// what actually repaints the IDE. Reporting only the first says
+		// "org.eclipse.ui.defaultTheme" at an IDE that is plainly dark
+		String cssTheme = CssStyling.activeCssThemeId();
 		JsonObject result = new JsonObject()
 				.put("activeThemeId", theme == null ? null : theme.getId()) //$NON-NLS-1$
+				.put("activeCssThemeId", cssTheme) //$NON-NLS-1$
 				.put("colorDefinitions", Integer.valueOf(colors.size())) //$NON-NLS-1$
 				.put("fontDefinitions", Integer.valueOf(fonts.size())); //$NON-NLS-1$
+		if (cssTheme != null && theme != null && !cssTheme.equals(theme.getId())) {
+			result.put("themeNote", //$NON-NLS-1$
+					"activeThemeId is the workbench theme the colour and font registries belong to, and activeCssThemeId is the e4 CSS theme that repaints the IDE. They are separate systems and they differ here, which is normal: a dark IDE usually still reports org.eclipse.ui.defaultTheme as its workbench theme. resolvedValue is what the registries hold, so it is what an editor asking the registry gets."); //$NON-NLS-1$
+		}
 		if (query.countOnly()) {
 			return result.put("countOnly", Boolean.TRUE); //$NON-NLS-1$
 		}

@@ -961,6 +961,10 @@ Lists the `org.eclipse.ui.themes` `colorDefinition` and `fontDefinition` entries
 
 Each entry carries the id, the label, the category id and label, the value the declaration asks for, the value the active theme resolves it to, `isEditable` and the contributing bundle.
 
+The answer names two themes, because two theme systems sit on top of each other and they disagree.
+`activeThemeId` is the workbench `ITheme` the colour and font registries belong to, and `activeCssThemeId` is the e4 CSS theme that repaints the IDE.
+A visibly dark IDE normally still reports `org.eclipse.ui.defaultTheme` as its workbench theme, so reporting only the first would describe a light IDE that is not there.
+
 Two of those cannot be answered by grepping a source tree, which is the reason this exists.
 Definitions contributed by installed bundles that are in no workspace project are invisible to a grep, and the resolved value is a property of the active theme rather than of any file.
 

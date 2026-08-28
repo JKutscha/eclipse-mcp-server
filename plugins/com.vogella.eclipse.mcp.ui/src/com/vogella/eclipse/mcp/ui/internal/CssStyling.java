@@ -363,6 +363,11 @@ final class CssStyling {
 		}
 	}
 
+	/** The id of the CSS theme in force, which is a different thing from the workbench ITheme. */
+	static String activeCssThemeId() {
+		return activeThemeId(themeEngine());
+	}
+
 	private static String activeThemeId(Object themeEngine) {
 		if (themeEngine == null) {
 			return null;
