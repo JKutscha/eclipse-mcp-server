@@ -39,7 +39,8 @@ public final class SaveWorkspaceTool implements IMcpTool {
 				  "type": "object",
 				  "properties": {
 				    "mode":           {"type":"string","enum":["full","snapshot"],"default":"full","description":"'full' is the exit-time save: whole tree, all markers and sync info, snapshots reset, local history pruned. 'snapshot' only appends what changed and prunes nothing."},
-				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":600,"description":"How long to wait before answering with state 'running'. The save keeps going either way; it holds the workspace rule until it is done."}
+				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":600,"description":"How long to wait before answering with state 'running'. The save keeps going either way; it holds the workspace rule until it is done."},
+				    "dryRun":         {"type":"boolean","default":true,"description":"Report what would be saved and change nothing. On by default like every other changing tool here, because a full save prunes local history and moves the save number on; pass false to actually save."}
 				  },
 				  "additionalProperties": false
 				}"""; //$NON-NLS-1$
@@ -50,6 +51,14 @@ public final class SaveWorkspaceTool implements IMcpTool {
 		ToolArguments args = ToolArguments.of(arguments);
 		boolean full = !"snapshot".equals(args.getString("mode", "full")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 		int timeoutSeconds = args.getInt("timeoutSeconds", 25, 1, 600); //$NON-NLS-1$
+		if (args.getBoolean("dryRun", true)) { //$NON-NLS-1$
+			return McpToolResult.of(new JsonObject().put("mode", full ? "full" : "snapshot") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+					.put("dryRun", Boolean.TRUE) //$NON-NLS-1$
+					.put("projects", //$NON-NLS-1$
+							Integer.valueOf(ResourcesPlugin.getWorkspace().getRoot().getProjects().length))
+					.put("note", "Nothing was saved. " + note(full) + " Pass dryRun false to carry it out.") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+					.toString());
+		}
 
 		CountDownLatch done = new CountDownLatch(1);
 		IStatus[] outcome = new IStatus[1];

@@ -111,7 +111,7 @@ public final class ListLaunchConfigurationsTool implements IMcpTool {
 		if (withAttributes) {
 			JsonObject attributes = new JsonObject();
 			for (String key : INTERESTING) {
-				String value = configuration.getAttribute(key, (String) null);
+				String value = attribute(configuration, key);
 				if (value != null) {
 					attributes.put(key, value);
 				}
@@ -119,6 +119,31 @@ public final class ListLaunchConfigurationsTool implements IMcpTool {
 			json.put("attributes", attributes); //$NON-NLS-1$
 		}
 		return json;
+	}
+
+	/**
+	 * One attribute as text, whatever it is stored as.
+	 * <p>
+	 * A launch attribute is typed, and asking for the wrong type throws rather than
+	 * answering null: useProduct on a PDE runtime workbench is a Boolean, and
+	 * reading every attribute as a String failed the whole call over it.
+	 */
+	private static String attribute(ILaunchConfiguration configuration, String key) {
+		try {
+			return configuration.getAttribute(key, (String) null);
+		} catch (CoreException e) {
+			// stored under another type; fall through and try the ones that occur
+		}
+		try {
+			return String.valueOf(configuration.getAttribute(key, false));
+		} catch (CoreException e) {
+			// not a boolean either
+		}
+		try {
+			return String.valueOf(configuration.getAttribute(key, 0));
+		} catch (CoreException e) {
+			return null;
+		}
 	}
 
 	private static JsonArray modes(ILaunchConfigurationType type) {

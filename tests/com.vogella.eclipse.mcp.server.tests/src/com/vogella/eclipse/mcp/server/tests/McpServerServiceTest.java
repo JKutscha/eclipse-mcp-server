@@ -327,11 +327,15 @@ class McpServerServiceTest {
 		case "eclipse_resolve_path" -> Map.of("of", List.of(PROJECT));
 		// a name nothing matches, so the smoke test removes nothing even by accident
 		case "eclipse_remove_project" -> Map.of("namePattern", "no-such-project-*");
+		// the fixture's own directory: it has a .project and its name is already taken,
+		// so the tool reports that rather than importing anything
+		case "eclipse_import_project" -> Map.of("location", org.eclipse.core.resources.ResourcesPlugin.getWorkspace()
+				.getRoot().getLocation().append(PROJECT).toOSString());
 		// an id nothing matches, so the smoke test hides nothing persistently
 		case "eclipse_set_model_visibility" -> Map.of("elementId", "no.such.model.element", "visible", Boolean.TRUE);
-		// a snapshot rather than the full save: the smoke test must not prune the
-		// local history of the workspace it happens to run in
-		case "eclipse_save_workspace" -> Map.of("mode", "snapshot", "timeoutSeconds", 60);
+		// a dry run: a real save in the test runtime runs every save participant, and
+		// one of them failing left later tests in this same runtime failing too
+		case "eclipse_save_workspace" -> Map.of("mode", "snapshot");
 		// headless, so there is no folder to select in; a named path keeps the refusal specific
 		case "eclipse_select_tab" -> Map.of("part", "org.eclipse.ui.views.ProblemView", "path", "0/i0");
 		// a dry run against the fixture, so no compliance is actually written

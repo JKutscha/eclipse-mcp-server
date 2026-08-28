@@ -149,6 +149,8 @@ final class FlightRecording {
 		Map<String, long[]> byStack = new HashMap<>();
 		Map<String, long[]> hotMethods = new HashMap<>();
 		Map<String, Integer> eventCounts = new HashMap<>();
+		Map<String, Integer> matchedCounts = new HashMap<>();
+		int matched = 0;
 		long gcCount = 0;
 		long longestPauseNanos = 0;
 		int read = 0;
@@ -164,10 +166,15 @@ final class FlightRecording {
 				read++;
 				String type = event.getEventType().getName();
 				eventCounts.merge(type, Integer.valueOf(1), (a, b) -> Integer.valueOf(a.intValue() + b.intValue()));
-				String stack = render(event.getStackTrace(), options.stackDepth());
-				if (options.frameFilter() != null && (stack == null || !stack.contains(options.frameFilter()))) {
+				// filter on the WHOLE stack and render afterwards: matching the rendered
+				// text made stackDepth silently narrow what the filter could see, so a
+				// deep frame that was being searched for could not be found at all
+				if (!matches(event.getStackTrace(), options.frameFilter())) {
 					continue;
 				}
+				matched++;
+				matchedCounts.merge(type, Integer.valueOf(1), (a, b) -> Integer.valueOf(a.intValue() + b.intValue()));
+				String stack = render(event.getStackTrace(), options.stackDepth());
 				if (ALLOCATION_SAMPLE.equals(type)) {
 					long weight = event.hasField("weight") ? event.getLong("weight") : 0; //$NON-NLS-1$ //$NON-NLS-2$
 					add(byClass, className(event), weight);
@@ -184,6 +191,7 @@ final class FlightRecording {
 		}
 
 		JsonObject result = new JsonObject().put("eventsRead", Integer.valueOf(read)) //$NON-NLS-1$
+				.put("eventsMatched", Integer.valueOf(matched)) //$NON-NLS-1$
 				.put("eventsTruncated", Boolean.valueOf(truncated)) //$NON-NLS-1$
 				.put("allocationByClass", top(byClass, options.topClasses(), "class")) //$NON-NLS-1$ //$NON-NLS-2$
 				.put("allocationByStack", top(byStack, options.topStacks(), "stack")) //$NON-NLS-1$ //$NON-NLS-2$
@@ -192,7 +200,14 @@ final class FlightRecording {
 		eventCounts.entrySet().stream().sorted(Map.Entry.<String, Integer>comparingByValue().reversed()).limit(15)
 				.forEach(entry -> events.add(new JsonObject().put("type", entry.getKey()) //$NON-NLS-1$
 						.put("count", entry.getValue()))); //$NON-NLS-1$
+		JsonArray matchedEvents = new JsonArray();
+		matchedCounts.entrySet().stream().sorted(Map.Entry.<String, Integer>comparingByValue().reversed()).limit(15)
+				.forEach(entry -> matchedEvents.add(new JsonObject().put("type", entry.getKey()) //$NON-NLS-1$
+						.put("count", entry.getValue()))); //$NON-NLS-1$
 		return result.put("eventTypes", events) //$NON-NLS-1$
+				.put("matchedEventTypes", matchedEvents) //$NON-NLS-1$
+				.put("counting", //$NON-NLS-1$
+						"eventTypes counts everything in the file, which grows with the recording and is the same for every frameFilter. matchedEventTypes counts only what this call's filter kept, which is what one phase can be weighed against another with.") //$NON-NLS-1$
 				.put("gc", new JsonObject().put("events", Long.valueOf(gcCount)) //$NON-NLS-1$ //$NON-NLS-2$
 						.put("longestPauseMillis", Long.valueOf(longestPauseNanos / 1_000_000L))); //$NON-NLS-1$
 	}
@@ -248,6 +263,29 @@ final class FlightRecording {
 			return null;
 		}
 		return frame(stack.getFrames().get(0));
+	}
+
+	/**
+	 * Whether the filter appears anywhere in the stack, at any depth.
+	 * <p>
+	 * Deliberately not on the rendered text: rendering cuts at stackDepth, so a
+	 * caller who narrowed the display was also narrowing the search without being
+	 * told, and asking for a deep frame with a shallow depth returned nothing.
+	 */
+	private static boolean matches(RecordedStackTrace stack, String filter) {
+		if (filter == null) {
+			return true;
+		}
+		if (stack == null) {
+			return false;
+		}
+		for (RecordedFrame frame : stack.getFrames()) {
+			String rendered = frame(frame);
+			if (rendered != null && rendered.contains(filter)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static String render(RecordedStackTrace stack, int depth) {

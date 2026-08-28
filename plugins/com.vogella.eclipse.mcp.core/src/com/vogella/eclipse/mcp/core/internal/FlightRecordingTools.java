@@ -111,7 +111,7 @@ public final class FlightRecordingTools {
 					    "topClasses":   {"type":"integer","default":15,"minimum":1,"maximum":200},
 					    "topStacks":    {"type":"integer","default":10,"minimum":1,"maximum":100},
 					    "stackDepth":   {"type":"integer","default":8,"minimum":1,"maximum":64,"description":"Frames per aggregated call chain. Deeper separates callers that share a top frame; shallower merges them."},
-					    "frameFilter":  {"type":"string","description":"Aggregate only events whose stack contains this text, e.g. a package prefix. Applied when reading, so one recording can be read from several angles."},
+					    "frameFilter":  {"type":"string","description":"Aggregate only events whose stack contains this text at ANY depth, independent of stackDepth, which cuts the rendering and not the search. Applied when reading, so one recording can be read from several angles; eventsMatched and matchedEventTypes then count what this filter kept, which is how one phase is weighed against another."},
 					    "outputPath":   {"type":"string","description":"Keep the .jfr file at this absolute path, for opening it in JDK Mission Control. Omit to delete it after reading."}
 					  },
 					  "additionalProperties": false

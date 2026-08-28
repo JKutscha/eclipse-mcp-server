@@ -37,6 +37,18 @@ import com.vogella.eclipse.mcp.core.json.JsonObject;
  */
 final class GracefulClose {
 
+	/**
+	 * Where the UI thread is stopped so that a method can be invoked in it.
+	 * <p>
+	 * The method's own javadoc says that calling {@code IWorkbench.close()} from
+	 * here is allowed, so this is not a convenient accident. It is a named public
+	 * class in org.eclipse.ui.application, so the expression compiles and JDT
+	 * accepts the lambda, and every workbench application passes through it
+	 * whenever its event loop goes idle. The line is the {@code display.sleep()}
+	 * in the body, and it is the one thing here that a platform version can move.
+	 */
+	private static final String DEFAULT_BREAKPOINT = "org.eclipse.ui.application.WorkbenchAdvisor:339"; //$NON-NLS-1$
+
 	/** Queued rather than called: the evaluation is not on the target's UI thread. */
 	private static final String CLOSE_WORKBENCH = "org.eclipse.swt.widgets.Display.getDefault().asyncExec(() -> org.eclipse.ui.PlatformUI.getWorkbench().close())"; //$NON-NLS-1$
 
@@ -48,8 +60,8 @@ final class GracefulClose {
 	 *
 	 * @param fallback terminate when the application is still there at the end
 	 */
-	static JsonObject close(DebugSessionRegistry.Session session, int waitSeconds, boolean fallback)
-			throws DebugException, InterruptedException {
+	static JsonObject close(DebugSessionRegistry.Session session, int waitSeconds, boolean fallback, String breakpointSpec,
+			int breakpointWaitSeconds) throws DebugException, InterruptedException {
 		JsonObject json = new JsonObject().put("sessionId", session.id()); //$NON-NLS-1$
 		ILaunch launchValue = session.launch();
 		IDebugTarget target = DebugSupport.target(session);
@@ -57,23 +69,40 @@ final class GracefulClose {
 			return refuse(json, "This is not a Java debug target, so nothing can be evaluated in it."); //$NON-NLS-1$
 		}
 
-		IJavaThread thread = suspendedThread(target);
-		if (thread == null) {
-			return refuse(json,
-					"No thread of this session could be suspended with Java frames, so there is nowhere to evaluate the close from. Terminate it instead, and expect an unsaved workspace."); //$NON-NLS-1$
+		IJavaThread thread = breakpointSuspendedThread(target);
+		org.eclipse.jdt.debug.core.IJavaLineBreakpoint ours = null;
+		try {
+			if (thread == null && !"none".equals(breakpointSpec)) { //$NON-NLS-1$
+				String spec = breakpointSpec == null ? DEFAULT_BREAKPOINT : breakpointSpec;
+				ours = install(spec, json);
+				if (ours == null) {
+					return json;
+				}
+				thread = awaitBreakpoint(target, breakpointWaitSeconds);
+				if (thread == null) {
+					return refuse(json.put("breakpoint", spec) //$NON-NLS-1$
+							.put("breakpointHit", Boolean.FALSE), //$NON-NLS-1$
+							"The breakpoint was never reached within %d seconds, so nothing could be evaluated and nothing was killed. A workbench passes through it whenever its event loop goes idle, so either the application is still starting, or it is an RCP application whose advisor overrides eventLoopIdle without calling super, or this platform version has moved the line. Name another place with 'breakpoint' as typeName:line." //$NON-NLS-1$
+									.formatted(Integer.valueOf(breakpointWaitSeconds)));
+				}
+				json.put("breakpoint", spec).put("breakpointHit", Boolean.TRUE); //$NON-NLS-1$ //$NON-NLS-2$
+			}
+			if (thread == null) {
+				return refuse(json,
+						"No thread of this session is suspended at a breakpoint, and none was to be set. A method cannot be invoked in a thread that was merely suspended: JDI allows it only for a thread stopped BY A BREAKPOINT OR A STEP, and eclipse_debug_control action suspend does not qualify."); //$NON-NLS-1$
+			}
+			return withThread(session, json, launchValue, target, thread, waitSeconds, fallback);
+		} finally {
+			// a breakpoint this call set is this call's to remove, or the person at the
+			// IDE keeps one they never asked for
+			remove(ours);
 		}
-		if (!thread.isSuspended()) {
-			return refuse(json,
-					"No thread of this session is suspended at a breakpoint. A method cannot be invoked in a thread that was merely suspended: JDI allows it only for a thread stopped BY A BREAKPOINT OR A STEP, and eclipse_debug_control action suspend does not qualify. Set a breakpoint with eclipse_set_breakpoint in a NAMED class of org.eclipse.ui that the UI thread reaches regularly, wait for it with eclipse_debug_status, then call close."); //$NON-NLS-1$
-		}
-		if (thread.getBreakpoints().length == 0 && !thread.isPerformingEvaluation()) {
-			// the same JDI rule, seen from the other side: a thread suspended by the VM
-			// carries no breakpoint, and the invocation would fail with "Thread must be
-			// suspended by step or breakpoint to perform method invocation"
-			json.put("suspendedByBreakpoint", Boolean.FALSE); //$NON-NLS-1$
-		} else {
-			json.put("suspendedByBreakpoint", Boolean.TRUE); //$NON-NLS-1$
-		}
+	}
+
+	private static JsonObject withThread(DebugSessionRegistry.Session session, JsonObject json, ILaunch launchValue,
+			IDebugTarget target, IJavaThread thread, int waitSeconds, boolean fallback)
+			throws DebugException, InterruptedException {
+		json.put("suspendedByBreakpoint", Boolean.valueOf(thread.getBreakpoints().length > 0)); //$NON-NLS-1$
 		json.put("suspendedThread", DebugSupport.name(thread)); //$NON-NLS-1$
 
 		try {
@@ -143,20 +172,70 @@ final class GracefulClose {
 		}
 	}
 
-	/** A suspended thread if there is one, otherwise any thread that could be suspended. */
-	private static IJavaThread suspendedThread(IDebugTarget target) {
-		IJavaThread candidate = null;
+	/**
+	 * A thread stopped AT A BREAKPOINT, which is the only kind a method can be
+	 * invoked in. A thread suspended by the VM looks the same and is not.
+	 */
+	private static IJavaThread breakpointSuspendedThread(IDebugTarget target) {
 		for (IThread thread : DebugSupport.threads(target)) {
-			if (thread instanceof IJavaThread java) {
-				if (java.isSuspended()) {
-					return java;
-				}
-				if (candidate == null && java.canSuspend()) {
-					candidate = java;
-				}
+			if (thread instanceof IJavaThread java && java.isSuspended() && java.getBreakpoints().length > 0) {
+				return java;
 			}
 		}
-		return candidate;
+		return null;
+	}
+
+	/** Sets the temporary breakpoint, reporting into {@code json} when it cannot. */
+	private static org.eclipse.jdt.debug.core.IJavaLineBreakpoint install(String spec, JsonObject json) {
+		int colon = spec.lastIndexOf(':');
+		if (colon <= 0) {
+			refuse(json, "'breakpoint' is typeName:line, such as %s, or 'none'.".formatted(DEFAULT_BREAKPOINT)); //$NON-NLS-1$
+			return null;
+		}
+		String typeName = spec.substring(0, colon);
+		int line;
+		try {
+			line = Integer.parseInt(spec.substring(colon + 1).strip());
+		} catch (NumberFormatException e) {
+			refuse(json, "'%s' has no line number after the colon.".formatted(spec)); //$NON-NLS-1$
+			return null;
+		}
+		try {
+			org.eclipse.jdt.debug.core.IJavaLineBreakpoint breakpoint = org.eclipse.jdt.debug.core.JDIDebugModel
+					.createLineBreakpoint(SetBreakpointTool.resourceForType(typeName), typeName, line, -1, -1, 0, true,
+							null);
+			// the UI thread alone: closing needs the other threads to keep running
+			breakpoint.setSuspendPolicy(org.eclipse.jdt.debug.core.IJavaBreakpoint.SUSPEND_THREAD);
+			return breakpoint;
+		} catch (org.eclipse.core.runtime.CoreException e) {
+			refuse(json, "Could not set the breakpoint at %s: %s".formatted(spec, e.getMessage())); //$NON-NLS-1$
+			return null;
+		}
+	}
+
+	private static void remove(org.eclipse.jdt.debug.core.IJavaLineBreakpoint breakpoint) {
+		if (breakpoint != null) {
+			try {
+				breakpoint.delete();
+			} catch (org.eclipse.core.runtime.CoreException e) {
+				// leaving it is untidy; failing the close over it would be worse
+			}
+		}
+	}
+
+	private static IJavaThread awaitBreakpoint(IDebugTarget target, int seconds) throws InterruptedException {
+		long deadline = System.currentTimeMillis() + seconds * 1000L;
+		while (System.currentTimeMillis() < deadline) {
+			IJavaThread thread = breakpointSuspendedThread(target);
+			if (thread != null) {
+				return thread;
+			}
+			if (target.isTerminated()) {
+				return null;
+			}
+			Thread.sleep(200);
+		}
+		return breakpointSuspendedThread(target);
 	}
 
 	/**
