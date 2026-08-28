@@ -331,6 +331,8 @@ class McpServerServiceTest {
 		// so the tool reports that rather than importing anything
 		case "eclipse_import_project" -> Map.of("location", org.eclipse.core.resources.ResourcesPlugin.getWorkspace()
 				.getRoot().getLocation().append(PROJECT).toOSString());
+		// status only: the smoke test must not rewrite the bundles.info it runs on
+		case "eclipse_substitute_bundle" -> Map.of("action", "status");
 		// an id nothing matches, so the smoke test hides nothing persistently
 		case "eclipse_set_model_visibility" -> Map.of("elementId", "no.such.model.element", "visible", Boolean.TRUE);
 		// a dry run: a real save in the test runtime runs every save participant, and

@@ -20,6 +20,7 @@
       <tool class="com.vogella.eclipse.mcp.core.internal.SetProjectStateTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.RemoveProjectTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.ImportProjectTool"/>
+      <tool class="com.vogella.eclipse.mcp.core.internal.SubstituteBundleTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.GetProjectDependenciesTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.ReadFileTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.WriteFileTool"/>
