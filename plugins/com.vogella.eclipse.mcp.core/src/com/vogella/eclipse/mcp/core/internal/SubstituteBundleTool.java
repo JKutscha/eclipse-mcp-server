@@ -153,13 +153,19 @@ public final class SubstituteBundleTool implements IMcpTool {
 	private static JsonObject running(String symbolicName) {
 		org.osgi.framework.Bundle self = org.osgi.framework.FrameworkUtil.getBundle(SubstituteBundleTool.class);
 		if (self == null || self.getBundleContext() == null) {
-			return null;
+			// never a bare null: an empty field reads as "nothing to report" when it
+			// means "could not look", and this is the field a caller is meant to trust
+			// over the file
+			return new JsonObject().put("known", Boolean.FALSE) //$NON-NLS-1$
+					.put("reason", //$NON-NLS-1$
+							"This bundle has no framework context right now, which happens while the server is still starting, so what the IDE has loaded could not be read. Ask again in a moment."); //$NON-NLS-1$
 		}
 		for (org.osgi.framework.Bundle bundle : self.getBundleContext().getBundles()) {
 			if (symbolicName.equals(bundle.getSymbolicName())) {
 				String location = bundle.getLocation();
 				boolean substituted = location != null && location.contains(JARS);
-				return new JsonObject().put("version", String.valueOf(bundle.getVersion())) //$NON-NLS-1$
+				return new JsonObject().put("known", Boolean.TRUE) //$NON-NLS-1$
+						.put("version", String.valueOf(bundle.getVersion())) //$NON-NLS-1$
 						.put("location", location) //$NON-NLS-1$
 						.put("isSubstitutedJar", Boolean.valueOf(substituted)) //$NON-NLS-1$
 						.put("note", substituted //$NON-NLS-1$
@@ -167,7 +173,10 @@ public final class SubstituteBundleTool implements IMcpTool {
 								: "THE FRAMEWORK HOLDS THE ORIGINAL. Whatever bundles.info says, this IDE is running the installed bundle, so anything measured here describes unchanged code. A restart is needed, and if one has already happened the substitution did not take."); //$NON-NLS-1$
 			}
 		}
-		return null;
+		return new JsonObject().put("known", Boolean.FALSE) //$NON-NLS-1$
+				.put("reason", //$NON-NLS-1$
+						"The framework has no bundle called '%s' at all, so nothing of that name is running, substituted or otherwise." //$NON-NLS-1$
+								.formatted(symbolicName));
 	}
 
 	/** The line for a bundle, found by its name, which is the one stable field. */
