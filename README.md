@@ -954,6 +954,7 @@ Lists the `org.eclipse.ui.themes` `colorDefinition` and `fontDefinition` entries
 | `kind` | string | `all` | `colors`, `fonts` or `all`. |
 | `idPattern` | string | | Regular expression matched anywhere in the id, e.g. `tag|comment|string`. |
 | `categoryId` | string | | Only definitions hanging under this theme element category. |
+| `bundleFilter` | string | | Regular expression matched anywhere in the contributing bundle's symbolic name, e.g. `pde|jdt`. |
 | `onlyOverridden` | boolean | `false` | Only definitions the active theme resolves differently from their declared literal. |
 | `countOnly` | boolean | `false` | The totals per kind and no entries. |
 | `maxResults` | integer | 200 | Applied to each kind separately. |

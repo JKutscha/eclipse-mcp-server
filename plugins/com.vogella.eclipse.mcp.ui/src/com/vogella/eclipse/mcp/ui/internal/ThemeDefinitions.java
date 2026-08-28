@@ -44,8 +44,8 @@ final class ThemeDefinitions {
 	}
 
 	/** What the caller asked to see. */
-	record Query(boolean colors, boolean fonts, Pattern id, String categoryId, boolean onlyOverridden,
-			boolean countOnly, int maxResults) {
+	record Query(boolean colors, boolean fonts, Pattern id, String categoryId, Pattern bundle,
+			boolean onlyOverridden, boolean countOnly, int maxResults) {
 	}
 
 	static JsonObject list(Query query) {
@@ -120,19 +120,23 @@ final class ThemeDefinitions {
 			if (query.categoryId() != null && !query.categoryId().equals(categoryId)) {
 				continue;
 			}
+			String bundle = element.getContributor().getName();
+			if (query.bundle() != null && !query.bundle().matcher(bundle).find()) {
+				continue;
+			}
 			String declared = element.getAttribute("value"); //$NON-NLS-1$
 			String resolved = COLOR.equals(kind) ? resolvedColor(theme, id) : resolvedFont(theme, id);
 			Boolean overridden = overridden(declared, resolved, kind);
 			if (query.onlyOverridden() && !Boolean.TRUE.equals(overridden)) {
 				continue;
 			}
-			entries.add(describe(element, id, categoryId, categories, declared, resolved, overridden));
+			entries.add(describe(element, id, categoryId, categories, bundle, declared, resolved, overridden));
 		}
 		return entries;
 	}
 
 	private static JsonObject describe(IConfigurationElement element, String id, String categoryId,
-			Map<String, String> categories, String declared, String resolved, Boolean overridden) {
+			Map<String, String> categories, String bundle, String declared, String resolved, Boolean overridden) {
 		JsonObject entry = new JsonObject().put("id", id) //$NON-NLS-1$
 				.put("label", element.getAttribute("label")) //$NON-NLS-1$ //$NON-NLS-2$
 				.put("categoryId", categoryId) //$NON-NLS-1$
@@ -142,7 +146,7 @@ final class ThemeDefinitions {
 				.put("resolvedValue", resolved) //$NON-NLS-1$
 				// absent means editable: the attribute only ever turns it off
 				.put("isEditable", Boolean.valueOf(!"false".equals(element.getAttribute("isEditable")))) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-				.put("bundle", element.getContributor().getName()); //$NON-NLS-1$
+				.put("bundle", bundle); //$NON-NLS-1$
 		if (element.getAttribute("colorFactory") != null) { //$NON-NLS-1$
 			entry.put("colorFactory", element.getAttribute("colorFactory")); //$NON-NLS-1$ //$NON-NLS-2$
 		}

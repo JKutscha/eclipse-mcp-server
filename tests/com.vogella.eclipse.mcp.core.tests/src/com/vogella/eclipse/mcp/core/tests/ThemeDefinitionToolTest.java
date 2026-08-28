@@ -42,8 +42,8 @@ class ThemeDefinitionToolTest {
 		@SuppressWarnings("unchecked")
 		Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
 		assertEquals(Boolean.FALSE, schema.get("additionalProperties"), "got " + schema);
-		for (String field : new String[] { "kind", "idPattern", "categoryId", "onlyOverridden", "countOnly",
-				"maxResults" }) {
+		for (String field : new String[] { "kind", "idPattern", "categoryId", "bundleFilter", "onlyOverridden",
+				"countOnly", "maxResults" }) {
 			assertTrue(properties.containsKey(field), field + " is missing, got " + properties.keySet());
 		}
 	}
@@ -65,6 +65,17 @@ class ThemeDefinitionToolTest {
 
 		assertTrue(result.isError(), "got " + result.text());
 		assertTrue(result.text().contains("idPattern"), "got " + result.text());
+	}
+
+	@Test
+	void aBrokenBundleFilterIsRefusedByItsOwnName() throws Exception {
+		// both filters are regular expressions, and a refusal naming the wrong one
+		// sends the caller to fix an argument that was never the problem
+		McpToolResult result = TestFixture.call(NAME, Map.of("bundleFilter", "pde("));
+
+		assertTrue(result.isError(), "got " + result.text());
+		assertTrue(result.text().contains("bundleFilter"), "got " + result.text());
+		assertFalse(result.text().contains("idPattern"), "the wrong argument was blamed, got " + result.text());
 	}
 
 	@Test
