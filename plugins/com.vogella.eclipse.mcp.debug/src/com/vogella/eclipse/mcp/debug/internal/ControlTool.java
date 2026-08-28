@@ -22,7 +22,7 @@ import com.vogella.eclipse.mcp.core.json.JsonObject;
 public final class ControlTool implements IMcpTool {
 
 	private static final Set<String> ACTIONS = Set.of("resume", "stepOver", "stepInto", "stepReturn", "suspend", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
-			"terminate", "disconnect"); //$NON-NLS-1$ //$NON-NLS-2$
+			"terminate", "disconnect", "close"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 
 	@Override
 	public String getName() {
@@ -31,7 +31,7 @@ public final class ControlTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Drives a suspended or running debug session: resume, stepOver, stepInto, stepReturn, suspend, terminate or disconnect. CHANGES THE STATE OF THE DEBUGGED PROGRAM, and terminate KILLS THE PROCESS. After a step or a resume it waits for the next suspend (waitForSuspendSeconds) and reports the new location in the same answer, so stepping costs one call; timedOut on resume normally just means the program kept running. Stepping needs a suspended thread: name one with 'thread' or leave it to the only suspended thread, which is refused when several are stopped. Use eclipse_debug_launch to start something first."; //$NON-NLS-1$
+		return "Drives a suspended or running debug session: resume, stepOver, stepInto, stepReturn, suspend, terminate, disconnect or close. CHANGES THE STATE OF THE DEBUGGED PROGRAM, and terminate KILLS THE PROCESS: that is Process.destroy, SIGTERM on Linux, where Equinox's shutdown hook still runs, and an immediate kill on Windows, and in neither case does the workbench save its workspace. 'close' is the orderly alternative for a debugged application that HAS a workbench: it suspends a thread, evaluates an asyncExec of IWorkbench.close in the target and resumes so the target's UI thread runs it, which is a real shutdown with a workspace save, and it falls back to terminate only if that does not finish in time. The answer says which of the two actually happened, because a measurement taken afterwards depends on it. After a step or a resume it waits for the next suspend (waitForSuspendSeconds) and reports the new location in the same answer, so stepping costs one call; timedOut on resume normally just means the program kept running. Stepping needs a suspended thread: name one with 'thread' or leave it to the only suspended thread, which is refused when several are stopped. Use eclipse_debug_launch to start something first."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -42,7 +42,9 @@ public final class ControlTool implements IMcpTool {
 				  "required": ["action"],
 				  "properties": {
 				    "sessionId":            {"type":"string","description":"The session to drive. Omitted means the only live one."},
-				    "action":               {"type":"string","enum":["resume","stepOver","stepInto","stepReturn","suspend","terminate","disconnect"],"description":"What to do."},
+				    "action":               {"type":"string","enum":["resume","stepOver","stepInto","stepReturn","suspend","terminate","disconnect","close"],"description":"What to do. 'terminate' kills the process; 'close' asks the application to shut itself down first and only kills it if that does not work."},
+				    "closeWaitSeconds":     {"type":"integer","default":20,"minimum":1,"maximum":120,"description":"For 'close': how long to wait for the application to be gone before falling back."},
+				    "fallbackToTerminate":  {"type":"boolean","default":true,"description":"For 'close': kill the process when it has not closed within closeWaitSeconds. False leaves it running and says so."},
 				    "thread":               {"type":"string","description":"Thread to act on. Defaults to the single suspended thread for the stepping actions."},
 				    "waitForSuspendSeconds":{"type":"integer","default":20,"minimum":0,"maximum":25,"description":"How long to wait for the next suspend after resume and the steps. 0 answers immediately."}
 				  },
@@ -65,6 +67,12 @@ public final class ControlTool implements IMcpTool {
 			DebugSessionRegistry.Session session = DebugSupport.requireSession(args.getString("sessionId")); //$NON-NLS-1$
 			IDebugTarget target = DebugSupport.target(session);
 			IThread thread = null;
+			if (action.equals("close")) { //$NON-NLS-1$
+				return McpToolResult.of(GracefulClose
+						.close(session, args.getInt("closeWaitSeconds", 20, 1, 120), //$NON-NLS-1$
+								args.getBoolean("fallbackToTerminate", true)) //$NON-NLS-1$
+						.toString());
+			}
 			if (!action.equals("terminate") && !action.equals("disconnect")) { //$NON-NLS-1$ //$NON-NLS-2$
 				thread = DebugSupport.requireThread(target, args.getString("thread")); //$NON-NLS-1$
 			}

@@ -158,7 +158,7 @@ public final class EvaluateTool implements IMcpTool {
 	 * caller launched and answers without touching the workspace. The scan is the
 	 * fallback for a session this server did not start.
 	 */
-	private IJavaProject projectOf(IJavaStackFrame frame, DebugSessionRegistry.Session session) {
+	static IJavaProject projectOf(IJavaStackFrame frame, DebugSessionRegistry.Session session) {
 		IJavaProject fromLaunch = launchProject(session);
 		if (fromLaunch != null) {
 			return fromLaunch;
