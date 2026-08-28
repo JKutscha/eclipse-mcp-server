@@ -1,6 +1,8 @@
 package com.vogella.eclipse.mcp.git.internal;
 
+import java.io.IOException;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jgit.api.Git;
@@ -56,7 +58,7 @@ public final class GetGitStatusTool implements IMcpTool {
 		Repository repository;
 		try {
 			repository = EGit.lookup(args.getString("project"), args.getString("directory")); //$NON-NLS-1$ //$NON-NLS-2$
-		} catch (java.io.IOException e) {
+		} catch (IOException e) {
 			throw new McpToolException("Could not open the repository", e); //$NON-NLS-1$
 		}
 		if (repository == null) {
@@ -82,7 +84,7 @@ public final class GetGitStatusTool implements IMcpTool {
 		}
 	}
 
-	private static JsonObject paths(java.util.Set<String> values, int maxFiles) {
+	private static JsonObject paths(Set<String> values, int maxFiles) {
 		JsonArray listed = new JsonArray();
 		for (String value : values) {
 			if (listed.size() >= maxFiles) {

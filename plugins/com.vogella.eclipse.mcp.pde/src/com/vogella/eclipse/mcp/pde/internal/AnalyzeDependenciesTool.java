@@ -1,6 +1,7 @@
 package com.vogella.eclipse.mcp.pde.internal;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -379,7 +380,7 @@ public final class AnalyzeDependenciesTool implements IMcpTool {
 		}
 	}
 
-	private static JsonArray array(java.util.Collection<String> values) {
+	private static JsonArray array(Collection<String> values) {
 		JsonArray array = new JsonArray();
 		values.forEach(array::add);
 		return array;

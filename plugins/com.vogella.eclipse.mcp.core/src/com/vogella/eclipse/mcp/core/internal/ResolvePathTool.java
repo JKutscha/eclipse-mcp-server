@@ -1,6 +1,8 @@
 package com.vogella.eclipse.mcp.core.internal;
 
 import java.io.File;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.eclipse.core.resources.IProject;
@@ -48,7 +50,7 @@ public final class ResolvePathTool implements IMcpTool {
 	@Override
 	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
 		Object raw = arguments == null ? null : arguments.get("of"); //$NON-NLS-1$
-		if (!(raw instanceof java.util.List<?> requested) || requested.isEmpty()) {
+		if (!(raw instanceof List<?> requested) || requested.isEmpty()) {
 			return McpToolResult.error("The argument 'of' is required and must be a non-empty array of names or paths."); //$NON-NLS-1$
 		}
 		JsonArray resolved = new JsonArray();
@@ -155,9 +157,9 @@ public final class ResolvePathTool implements IMcpTool {
 	/** Project names containing the query, so a near miss says what was meant. */
 	private static JsonArray nearbyProjects(String query) {
 		JsonArray nearby = new JsonArray();
-		String needle = query.toLowerCase(java.util.Locale.ROOT);
+		String needle = query.toLowerCase(Locale.ROOT);
 		for (IProject project : ResourcesPlugin.getWorkspace().getRoot().getProjects()) {
-			if (nearby.size() < 10 && project.getName().toLowerCase(java.util.Locale.ROOT).contains(needle)) {
+			if (nearby.size() < 10 && project.getName().toLowerCase(Locale.ROOT).contains(needle)) {
 				nearby.add(project.getName());
 			}
 		}

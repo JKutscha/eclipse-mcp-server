@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -404,7 +405,7 @@ public final class FindResourcesTool implements IMcpTool {
 					text.append("%02x".formatted(Byte.valueOf(result[i]))); //$NON-NLS-1$
 				}
 				return text.toString();
-			} catch (IOException | CoreException | RuntimeException | java.security.NoSuchAlgorithmException e) {
+			} catch (IOException | CoreException | RuntimeException | NoSuchAlgorithmException e) {
 				return null;
 			}
 		}

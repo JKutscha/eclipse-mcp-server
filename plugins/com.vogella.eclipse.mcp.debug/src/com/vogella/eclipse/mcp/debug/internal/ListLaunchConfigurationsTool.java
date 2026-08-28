@@ -1,5 +1,7 @@
 package com.vogella.eclipse.mcp.debug.internal;
 
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.eclipse.core.runtime.CoreException;
@@ -10,6 +12,7 @@ import org.eclipse.debug.core.ILaunchConfigurationType;
 import org.eclipse.debug.core.ILaunchManager;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
+import com.vogella.eclipse.mcp.core.LaunchAttributes;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.ToolArguments;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
@@ -104,7 +107,7 @@ public final class ListLaunchConfigurationsTool implements IMcpTool {
 				.put("storage", configuration.isLocal() ? "workspace metadata" : "project file") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 				.put("file", configuration.getFile() == null ? null //$NON-NLS-1$
 						: configuration.getFile().getFullPath().toString());
-		if (configuration.getAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.STARTED_BY_MCP, false)) {
+		if (configuration.getAttribute(LaunchAttributes.STARTED_BY_MCP, false)) {
 			json.put("startedByMcp", Boolean.TRUE).put("note", //$NON-NLS-1$ //$NON-NLS-2$
 					"Created by this server for one of its own launches, not by the person at the IDE."); //$NON-NLS-1$
 		}
@@ -148,7 +151,7 @@ public final class ListLaunchConfigurationsTool implements IMcpTool {
 
 	private static JsonArray modes(ILaunchConfigurationType type) {
 		JsonArray modes = new JsonArray();
-		for (String mode : java.util.List.of(ILaunchManager.RUN_MODE, ILaunchManager.DEBUG_MODE,
+		for (String mode : List.of(ILaunchManager.RUN_MODE, ILaunchManager.DEBUG_MODE,
 				ILaunchManager.PROFILE_MODE)) {
 			if (type.supportsMode(mode)) {
 				modes.add(mode);
@@ -172,10 +175,10 @@ public final class ListLaunchConfigurationsTool implements IMcpTool {
 	}
 
 	private static boolean matches(String filter, String value) {
-		return filter == null || (value != null && value.toLowerCase(java.util.Locale.ROOT).contains(filter));
+		return filter == null || (value != null && value.toLowerCase(Locale.ROOT).contains(filter));
 	}
 
 	private static String lower(String value) {
-		return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
+		return value == null ? null : value.toLowerCase(Locale.ROOT);
 	}
 }

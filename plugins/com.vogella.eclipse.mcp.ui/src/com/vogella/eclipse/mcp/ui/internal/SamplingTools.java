@@ -7,6 +7,7 @@ import java.util.Map;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.ui.PlatformUI;
 
+import com.vogella.eclipse.mcp.core.ClientSessions;
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.ToolArguments;
@@ -129,8 +130,8 @@ public final class SamplingTools {
 		public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
 			ToolArguments args = ToolArguments.of(arguments);
 			String sessionId = args.getString("sessionId"); //$NON-NLS-1$
-			if (sessionId == null && !com.vogella.eclipse.mcp.core.ClientSessions.canAssumeASingleClient()) {
-				return McpToolResult.error(com.vogella.eclipse.mcp.core.ClientSessions
+			if (sessionId == null && !ClientSessions.canAssumeASingleClient()) {
+				return McpToolResult.error(ClientSessions
 						.ambiguousDefault("sampling session", "sessionId", SamplingRegistry.getInstance().ids())); //$NON-NLS-1$ //$NON-NLS-2$
 			}
 			SamplingRegistry.Session session = sessionId == null ? SamplingRegistry.getInstance().findLatest()

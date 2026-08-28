@@ -1,6 +1,7 @@
 package com.vogella.eclipse.mcp.core.internal;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.Map;
 
@@ -17,6 +18,7 @@ import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.ToolArguments;
 import com.vogella.eclipse.mcp.core.WorkspaceSync;
+import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
 /**
@@ -99,7 +101,7 @@ public final class EditFileTool implements IMcpTool {
 		try {
 			charset = Charset.forName(file.getCharset());
 			content = new String(file.getContents(true).readAllBytes(), charset);
-		} catch (CoreException | java.io.IOException | RuntimeException e) {
+		} catch (CoreException | IOException | RuntimeException e) {
 			return McpToolResult.error("Could not read '%s': %s".formatted(path, e)); //$NON-NLS-1$
 		}
 
@@ -141,8 +143,8 @@ public final class EditFileTool implements IMcpTool {
 	}
 
 	/** Every line an occurrence starts on, since one number cannot describe a replaceAll. */
-	private static com.vogella.eclipse.mcp.core.json.JsonArray changedLines(String content, String oldText) {
-		var lines = new com.vogella.eclipse.mcp.core.json.JsonArray();
+	private static JsonArray changedLines(String content, String oldText) {
+		var lines = new JsonArray();
 		for (int at = content.indexOf(oldText); at >= 0; at = content.indexOf(oldText, at + oldText.length())) {
 			lines.add(Integer.valueOf(lineOf(content, at)));
 		}

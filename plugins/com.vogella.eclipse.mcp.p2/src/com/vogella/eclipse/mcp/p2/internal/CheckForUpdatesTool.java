@@ -1,5 +1,7 @@
 package com.vogella.eclipse.mcp.p2.internal;
 
+import java.net.URI;
+import java.util.List;
 import java.util.Map;
 
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -11,6 +13,7 @@ import org.eclipse.equinox.p2.operations.UpdateOperation;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolResult;
+import com.vogella.eclipse.mcp.core.ToolArguments;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
@@ -47,15 +50,15 @@ public final class CheckForUpdatesTool implements IMcpTool {
 			return McpToolResult.error(
 					"No p2 provisioning agent is available. This IDE was probably not installed through p2, so it cannot update itself."); //$NON-NLS-1$
 		}
-		boolean refresh = com.vogella.eclipse.mcp.core.ToolArguments.of(arguments).getBoolean("refresh", true); //$NON-NLS-1$
-		java.util.List<String> unitIds = Provisioning.stringList(arguments, "units"); //$NON-NLS-1$
+		boolean refresh = ToolArguments.of(arguments).getBoolean("refresh", true); //$NON-NLS-1$
+		List<String> unitIds = Provisioning.stringList(arguments, "units"); //$NON-NLS-1$
 		var units = Provisioning.installedUnits(agent, unitIds);
 		if (!unitIds.isEmpty() && units.isEmpty()) {
 			return McpToolResult.error("None of %s is installed, so there is nothing to check.".formatted(unitIds)); //$NON-NLS-1$
 		}
 		// scoped only when units were named: narrowing a broad question silently would
 		// be the same class of mistake as reporting a stale cache as up to date
-		java.net.URI[] locations = units.isEmpty() ? null : Provisioning.sourcesFor(agent, units, monitor);
+		URI[] locations = units.isEmpty() ? null : Provisioning.sourcesFor(agent, units, monitor);
 		JsonArray repositories = Provisioning.describeRepositories(agent, refresh, locations, monitor);
 		UpdateOperation operation = units.isEmpty() ? new UpdateOperation(new ProvisioningSession(agent))
 				: new UpdateOperation(new ProvisioningSession(agent), units);

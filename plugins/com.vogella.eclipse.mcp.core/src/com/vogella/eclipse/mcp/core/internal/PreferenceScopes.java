@@ -1,6 +1,7 @@
 package com.vogella.eclipse.mcp.core.internal;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.eclipse.core.resources.IProject;
@@ -18,7 +19,7 @@ import org.eclipse.core.runtime.preferences.InstanceScope;
 public final class PreferenceScopes {
 
 	/** Scope names in lookup order, which is also the order a value overrides the one below it. */
-	public static final java.util.List<String> LOOKUP_ORDER = java.util.List.of("project", "instance", //$NON-NLS-1$ //$NON-NLS-2$
+	public static final List<String> LOOKUP_ORDER = List.of("project", "instance", //$NON-NLS-1$ //$NON-NLS-2$
 			"configuration", "default"); //$NON-NLS-1$ //$NON-NLS-2$
 
 	private PreferenceScopes() {

@@ -17,6 +17,7 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolException;
 import com.vogella.eclipse.mcp.core.McpToolResult;
+import com.vogella.eclipse.mcp.core.ToolArguments;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
@@ -52,7 +53,7 @@ public final class ListProjectsTool implements IMcpTool {
 
 	@Override
 	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) throws McpToolException {
-		int maxResults = com.vogella.eclipse.mcp.core.ToolArguments.of(arguments).getInt("maxResults", 500, 1, 5000); //$NON-NLS-1$
+		int maxResults = ToolArguments.of(arguments).getInt("maxResults", 500, 1, 5000); //$NON-NLS-1$
 		JsonArray projects = new JsonArray();
 		int total = 0;
 		for (IProject project : ResourcesPlugin.getWorkspace().getRoot().getProjects()) {

@@ -1,5 +1,6 @@
 package com.vogella.eclipse.mcp.jdt.internal;
 
+import java.util.Hashtable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -130,7 +131,7 @@ public final class SetJavaVersionTool implements IMcpTool {
 		}
 		if (!dryRun) {
 			if (javaProject == null) {
-				java.util.Hashtable<String, String> options = JavaCore.getOptions();
+				Hashtable<String, String> options = JavaCore.getOptions();
 				options.putAll(after);
 				JavaCore.setOptions(options);
 			} else {

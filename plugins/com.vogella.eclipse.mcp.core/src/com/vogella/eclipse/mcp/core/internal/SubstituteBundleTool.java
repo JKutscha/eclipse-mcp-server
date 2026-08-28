@@ -2,13 +2,22 @@ package com.vogella.eclipse.mcp.core.internal;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 
 import org.eclipse.core.resources.IProject;
@@ -186,11 +195,11 @@ public final class SubstituteBundleTool implements IMcpTool {
 		String path = fields[2];
 		try {
 			if (path.startsWith("file:")) { //$NON-NLS-1$
-				return Path.of(java.net.URI.create(path));
+				return Path.of(URI.create(path));
 			}
 			Path installation = configuration.getParent();
 			return installation == null ? null : installation.resolve(path);
-		} catch (IllegalArgumentException | java.nio.file.FileSystemNotFoundException e) {
+		} catch (IllegalArgumentException | FileSystemNotFoundException e) {
 			return null;
 		}
 	}
@@ -540,8 +549,8 @@ public final class SubstituteBundleTool implements IMcpTool {
 		}
 		String symbolicName;
 		String version;
-		try (java.util.jar.JarFile jarFile = new java.util.jar.JarFile(source.toFile())) {
-			java.util.jar.Manifest manifest = jarFile.getManifest();
+		try (JarFile jarFile = new JarFile(source.toFile())) {
+			Manifest manifest = jarFile.getManifest();
 			if (manifest == null) {
 				return McpToolResult.error("'%s' has no manifest, so it is not an OSGi bundle.".formatted(source)); //$NON-NLS-1$
 			}
@@ -595,7 +604,7 @@ public final class SubstituteBundleTool implements IMcpTool {
 		Files.createDirectories(jars);
 		// copied rather than referenced in place: a later rebuild of the source jar
 		// would otherwise change what this IDE runs without anybody saying so
-		Files.copy(source, copy, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+		Files.copy(source, copy, StandardCopyOption.REPLACE_EXISTING);
 		lines.set(index, substituted);
 		Files.write(bundlesInfo, lines, StandardCharsets.UTF_8);
 		record(configuration, symbolicName, original, substituted);
@@ -687,7 +696,7 @@ public final class SubstituteBundleTool implements IMcpTool {
 		Path classpath = projectPath.resolve(".classpath"); //$NON-NLS-1$
 		if (Files.isRegularFile(classpath)) {
 			try {
-				java.util.regex.Matcher matcher = java.util.regex.Pattern
+				Matcher matcher = Pattern
 						.compile("kind=\"output\"\\s+path=\"([^\"]+)\"") //$NON-NLS-1$
 						.matcher(Files.readString(classpath));
 				if (matcher.find()) {
@@ -734,8 +743,8 @@ public final class SubstituteBundleTool implements IMcpTool {
 		Path record = configuration.resolve(RECORD);
 		Files.createDirectories(record.getParent());
 		String line = "%s\t%s\t%s%n".formatted(bundle, original, substituted); //$NON-NLS-1$
-		Files.writeString(record, line, StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.CREATE,
-				java.nio.file.StandardOpenOption.APPEND);
+		Files.writeString(record, line, StandardCharsets.UTF_8, StandardOpenOption.CREATE,
+				StandardOpenOption.APPEND);
 	}
 
 	private static Path configurationDirectory() {
@@ -745,7 +754,7 @@ public final class SubstituteBundleTool implements IMcpTool {
 		}
 		try {
 			return Path.of(location.getURL().toURI());
-		} catch (java.net.URISyntaxException | RuntimeException e) {
+		} catch (URISyntaxException | RuntimeException e) {
 			return null;
 		}
 	}

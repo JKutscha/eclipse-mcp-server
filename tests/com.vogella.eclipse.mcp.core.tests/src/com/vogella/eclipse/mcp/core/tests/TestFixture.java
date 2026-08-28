@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -114,7 +115,7 @@ final class TestFixture {
 	 * platform workspace nests projects inside one another and how one file on disk
 	 * becomes reachable through several workspace paths.
 	 */
-	IProject createProjectAt(String name, java.nio.file.Path location) throws CoreException {
+	IProject createProjectAt(String name, Path location) throws CoreException {
 		IProject project = ResourcesPlugin.getWorkspace().getRoot().getProject(name);
 		removeLeftover(project);
 		IProjectDescription description = ResourcesPlugin.getWorkspace().newProjectDescription(name);

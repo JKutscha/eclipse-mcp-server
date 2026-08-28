@@ -4,6 +4,7 @@ import java.util.Map;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 
+import com.vogella.eclipse.mcp.core.ClientSessions;
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.ToolArguments;
@@ -38,8 +39,8 @@ public final class GetProvisioningStatusTool implements IMcpTool {
 	@Override
 	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
 		String id = ToolArguments.of(arguments).getString("operationId"); //$NON-NLS-1$
-		if (id == null && !com.vogella.eclipse.mcp.core.ClientSessions.canAssumeASingleClient()) {
-			return McpToolResult.error(com.vogella.eclipse.mcp.core.ClientSessions
+		if (id == null && !ClientSessions.canAssumeASingleClient()) {
+			return McpToolResult.error(ClientSessions
 					.ambiguousDefault("provisioning operation", "operationId", Provisioning.ids())); //$NON-NLS-1$ //$NON-NLS-2$
 		}
 		Provisioning.Operation operation = id == null ? Provisioning.findLatest() : Provisioning.find(id);

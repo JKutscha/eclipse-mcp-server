@@ -3,6 +3,7 @@ package com.vogella.eclipse.mcp.core.tests;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -49,7 +50,7 @@ class UninstallToolTest {
 		Map<String, Object> dryRun = (Map<String, Object>) properties.get("dryRun");
 		assertTrue(Boolean.TRUE.equals(dryRun.get("default")), "eclipse_uninstall must default to a dry run");
 		@SuppressWarnings("unchecked")
-		var required = (java.util.List<Object>) schema.get("required");
+		var required = (List<Object>) schema.get("required");
 		assertTrue(required.contains("unit"), "got " + schema);
 	}
 

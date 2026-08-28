@@ -3,6 +3,7 @@ package com.vogella.eclipse.mcp.core.internal;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.text.ParseException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -51,7 +52,7 @@ final class FlightRecording {
 
 	/** Starts a recording and returns its id. */
 	static String start(String settings, long maxAgeSeconds, long maxSizeBytes, long durationSeconds, String name,
-			java.nio.file.Path dumpOnExitTo) throws IOException, ParseFailure {
+			Path dumpOnExitTo) throws IOException, ParseFailure {
 		Configuration configuration = configuration(settings);
 		Recording recording = new Recording(configuration);
 		recording.setName(name == null ? "MCP flight recording" : name); //$NON-NLS-1$
@@ -84,7 +85,7 @@ final class FlightRecording {
 	private static Configuration configuration(String settings) throws IOException, ParseFailure {
 		try {
 			return Configuration.getConfiguration(settings);
-		} catch (java.text.ParseException e) {
+		} catch (ParseException e) {
 			throw new ParseFailure(e.getMessage());
 		}
 	}

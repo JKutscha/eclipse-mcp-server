@@ -1,7 +1,9 @@
 package com.vogella.eclipse.mcp.jdt.internal;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.jdt.core.IAnnotatable;
 import org.eclipse.jdt.core.IAnnotation;
@@ -43,7 +45,7 @@ final class InjectionAnnotations {
 			return List.of();
 		}
 		try {
-			return java.util.Arrays.stream(annotatable.getAnnotations()).map(IAnnotation::getElementName)
+			return Arrays.stream(annotatable.getAnnotations()).map(IAnnotation::getElementName)
 					.map(InjectionAnnotations::simpleName).filter(SIMPLE_NAMES::contains).distinct().toList();
 		} catch (JavaModelException e) {
 			return List.of();
@@ -58,6 +60,6 @@ final class InjectionAnnotations {
 	/** What to tell a caller who is about to read a zero reference count as "dead". */
 	static String warning(List<String> annotations) {
 		return "This member declares %s, which means a framework reads or writes it from outside any compilation unit. A reference count of zero therefore does NOT mean it is unused: JDT cannot see the injection, and neither can a text search. Check what wires it before removing it." //$NON-NLS-1$
-				.formatted(annotations.stream().map(name -> "@" + name).collect(java.util.stream.Collectors.joining(", "))); //$NON-NLS-1$ //$NON-NLS-2$
+				.formatted(annotations.stream().map(name -> "@" + name).collect(Collectors.joining(", "))); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 }

@@ -1,6 +1,9 @@
 package com.vogella.eclipse.mcp.server.internal;
 
+import java.io.File;
 import java.io.IOException;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.file.Path;
 
 import org.eclipse.core.runtime.ILog;
@@ -78,13 +81,13 @@ public final class EndpointFile {
 	 */
 	static String workspace() {
 		var location = Platform.getInstanceLocation();
-		java.net.URL url = location == null ? null : location.getURL();
+		URL url = location == null ? null : location.getURL();
 		if (url == null) {
 			return null;
 		}
 		try {
-			return new java.io.File(url.toURI()).getAbsolutePath();
-		} catch (java.net.URISyntaxException | IllegalArgumentException e) {
+			return new File(url.toURI()).getAbsolutePath();
+		} catch (URISyntaxException | IllegalArgumentException e) {
 			return url.getPath();
 		}
 	}

@@ -1,6 +1,7 @@
 package com.vogella.eclipse.mcp.core.internal;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -121,7 +122,7 @@ public final class GetPreferencesTool implements IMcpTool {
 
 	private static Map<String, Set<String>> keysByScope(Map<String, IEclipsePreferences> nodes)
 			throws BackingStoreException {
-		Map<String, Set<String>> keys = new java.util.LinkedHashMap<>();
+		Map<String, Set<String>> keys = new LinkedHashMap<>();
 		for (Map.Entry<String, IEclipsePreferences> entry : nodes.entrySet()) {
 			keys.put(entry.getKey(), Set.of(entry.getValue().keys()));
 		}

@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -396,7 +397,7 @@ class ListDeclarationsToolTest {
 	}
 
 	private static List<String> strings(Map<String, Object> result, String key) {
-		List<String> values = new java.util.ArrayList<>();
+		List<String> values = new ArrayList<>();
 		for (Object value : (List<?>) result.get(key)) {
 			values.add(String.valueOf(value));
 		}

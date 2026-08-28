@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 import org.eclipse.core.runtime.preferences.InstanceScope;
@@ -59,7 +60,7 @@ class RunCommandToolTest {
 		allow(directory.toString());
 
 		Map<String, Object> result = TestFixture.callAndParse("eclipse_run_command",
-				Map.of("args", java.util.List.of("echo", "from the command"), "directory", directory.toString(),
+				Map.of("args", List.of("echo", "from the command"), "directory", directory.toString(),
 						"wait", Boolean.TRUE, "timeoutSeconds", Integer.valueOf(20)));
 
 		assertEquals("done", result.get("state"), "got " + result);
@@ -78,7 +79,7 @@ class RunCommandToolTest {
 		allow(directory.toString());
 
 		Map<String, Object> result = TestFixture.callAndParse("eclipse_run_command",
-				Map.of("args", java.util.List.of("sh", "-c", "echo broken >&2; exit 3"), "directory",
+				Map.of("args", List.of("sh", "-c", "echo broken >&2; exit 3"), "directory",
 						directory.toString(), "wait", Boolean.TRUE, "timeoutSeconds", Integer.valueOf(20)));
 
 		assertEquals("failed", result.get("state"), "got " + result);

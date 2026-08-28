@@ -1,6 +1,7 @@
 package com.vogella.eclipse.mcp.p2.internal;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -106,7 +107,7 @@ public final class GetInstallationTool implements IMcpTool {
 			if (values != null) {
 				for (int i = values.length - 1; i >= 0; i--) {
 					stamps.add(new JsonObject().put("timestamp", Long.valueOf(values[i])) //$NON-NLS-1$
-							.put("when", new java.util.Date(values[i]).toString())); //$NON-NLS-1$
+							.put("when", new Date(values[i]).toString())); //$NON-NLS-1$
 				}
 			}
 			result.put("revertPoints", stamps); //$NON-NLS-1$

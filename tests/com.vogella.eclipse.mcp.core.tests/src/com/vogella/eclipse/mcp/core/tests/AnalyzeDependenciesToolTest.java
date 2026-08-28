@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -124,7 +125,7 @@ class AnalyzeDependenciesToolTest {
 		// a plug-in project resolves its types through PDE's container, not through
 		// the build path a plain Java project gets: without it nothing in
 		// Require-Bundle resolves and every dependency looks unused
-		List<org.eclipse.jdt.core.IClasspathEntry> entries = new java.util.ArrayList<>(
+		List<org.eclipse.jdt.core.IClasspathEntry> entries = new ArrayList<>(
 				List.of(javaProject.getRawClasspath()));
 		entries.add(JavaCore.newContainerEntry(
 				org.eclipse.core.runtime.IPath.fromPortableString("org.eclipse.pde.core.requiredPlugins")));

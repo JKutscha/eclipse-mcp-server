@@ -264,7 +264,7 @@ final class CssStyling {
 							.put("current", actual)); //$NON-NLS-1$
 				}
 			}
-		} catch (java.lang.reflect.InvocationTargetException e) {
+		} catch (InvocationTargetException e) {
 			return new PreferenceOutcome(
 					outcome.put("error", "Styling the preferences failed: " + e.getCause()), false); //$NON-NLS-1$ //$NON-NLS-2$
 		} catch (ReflectiveOperationException | RuntimeException e) {
@@ -544,7 +544,7 @@ final class CssStyling {
 		try {
 			engine.getClass().getMethod("registerTheme", String.class, String.class, String.class).invoke(engine, id, //$NON-NLS-1$
 					label, stylesheetUri);
-		} catch (java.lang.reflect.InvocationTargetException e) {
+		} catch (InvocationTargetException e) {
 			return new JsonObject().put("registered", Boolean.FALSE).put("id", id) //$NON-NLS-1$ //$NON-NLS-2$
 					.put("reason", "Registering the theme failed: " + e.getCause()); //$NON-NLS-1$ //$NON-NLS-2$
 		} catch (ReflectiveOperationException | RuntimeException e) {

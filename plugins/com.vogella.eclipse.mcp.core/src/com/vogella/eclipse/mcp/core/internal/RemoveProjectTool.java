@@ -5,6 +5,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
@@ -55,7 +56,7 @@ public final class RemoveProjectTool implements IMcpTool {
 		ToolArguments args = ToolArguments.of(arguments);
 		Set<String> named = new LinkedHashSet<>(strings(arguments));
 		String namePatternArg = args.getString("namePattern"); //$NON-NLS-1$
-		java.util.regex.Pattern namePattern = namePatternArg == null ? null : Globs.compile(namePatternArg);
+		Pattern namePattern = namePatternArg == null ? null : Globs.compile(namePatternArg);
 		if (named.isEmpty() && namePattern == null) {
 			return McpToolResult.error("Name what to remove with 'projects' or 'namePattern'."); //$NON-NLS-1$
 		}

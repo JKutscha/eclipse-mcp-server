@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.UUID;
 
 import org.eclipse.core.runtime.ILog;
@@ -95,7 +96,7 @@ public final class TokenStore {
 	private static void retire(Path path) {
 		try {
 			Files.move(path, path.resolveSibling(FILE_NAME + ".migrated"), //$NON-NLS-1$
-					java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+					StandardCopyOption.REPLACE_EXISTING);
 		} catch (IOException e) {
 			ILog.get().warn("Could not rename the migrated workspace token %s".formatted(path), e); //$NON-NLS-1$
 		}

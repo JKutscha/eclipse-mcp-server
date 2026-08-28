@@ -1,6 +1,7 @@
 package com.vogella.eclipse.mcp.core.internal;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -68,7 +69,7 @@ public final class PlatformLogFile {
 				.onUnmappableCharacter(CodingErrorAction.REPLACE);
 		byte[] bytes = Files.readAllBytes(file);
 		int from = (int) Math.clamp(fromByte, 0, bytes.length);
-		String text = decoder.decode(java.nio.ByteBuffer.wrap(bytes, from, bytes.length - from)).toString();
+		String text = decoder.decode(ByteBuffer.wrap(bytes, from, bytes.length - from)).toString();
 		return List.of(text.split("\r\n|\n|\r", -1)); //$NON-NLS-1$
 	}
 

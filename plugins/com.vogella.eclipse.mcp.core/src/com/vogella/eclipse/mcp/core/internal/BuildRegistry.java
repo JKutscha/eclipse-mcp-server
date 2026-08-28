@@ -1,6 +1,11 @@
 package com.vogella.eclipse.mcp.core.internal;
 
+import java.io.IOException;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -239,13 +244,13 @@ public final class BuildRegistry {
 
 	/** The builds this server started that have not ended, newest first. */
 	public synchronized List<Build> running() {
-		List<Build> found = new java.util.ArrayList<>();
+		List<Build> found = new ArrayList<>();
 		for (Build build : builds.values()) {
 			if ("running".equals(build.state())) { //$NON-NLS-1$
 				found.add(build);
 			}
 		}
-		java.util.Collections.reverse(found);
+		Collections.reverse(found);
 		return found;
 	}
 
@@ -359,8 +364,8 @@ public final class BuildRegistry {
 		if (location == null) {
 			return;
 		}
-		java.time.LocalDateTime since = java.time.Instant.ofEpochMilli(build.startedAt)
-				.atZone(java.time.ZoneId.systemDefault()).toLocalDateTime();
+		LocalDateTime since = Instant.ofEpochMilli(build.startedAt)
+				.atZone(ZoneId.systemDefault()).toLocalDateTime();
 		try {
 			for (PlatformLogFile.Entry entry : PlatformLogFile.read(location.toFile().toPath())) {
 				if (entry.time() == null || entry.time().isBefore(since)) {
@@ -370,7 +375,7 @@ public final class BuildRegistry {
 					into.add("%s logged: %s".formatted(entry.plugin(), entry.message())); //$NON-NLS-1$
 				}
 			}
-		} catch (java.io.IOException e) {
+		} catch (IOException e) {
 			// the log is a diagnostic aid here, not the result; a build that ran still ran
 		}
 	}
@@ -437,7 +442,7 @@ public final class BuildRegistry {
 	}
 
 	/** The ids still held, oldest first, for a caller that has to name one. */
-	public synchronized java.util.List<String> ids() {
-		return java.util.List.copyOf(builds.keySet());
+	public synchronized List<String> ids() {
+		return List.copyOf(builds.keySet());
 	}
 }

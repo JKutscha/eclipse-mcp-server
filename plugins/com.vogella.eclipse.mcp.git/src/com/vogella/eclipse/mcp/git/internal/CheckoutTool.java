@@ -1,5 +1,6 @@
 package com.vogella.eclipse.mcp.git.internal;
 
+import java.io.IOException;
 import java.util.Map;
 
 import org.eclipse.core.runtime.CoreException;
@@ -62,7 +63,7 @@ public final class CheckoutTool implements IMcpTool {
 		Repository repository;
 		try {
 			repository = EGit.lookup(args.getString("project"), args.getString("directory")); //$NON-NLS-1$ //$NON-NLS-2$
-		} catch (java.io.IOException e) {
+		} catch (IOException e) {
 			throw new McpToolException("Could not open the repository", e); //$NON-NLS-1$
 		}
 		if (repository == null) {
@@ -122,7 +123,7 @@ public final class CheckoutTool implements IMcpTool {
 		try {
 			result.put("toBranch", repository.getBranch()) //$NON-NLS-1$
 					.put("toHead", String.valueOf(repository.resolve("HEAD"))); //$NON-NLS-1$ //$NON-NLS-2$
-		} catch (java.io.IOException e) {
+		} catch (IOException e) {
 			// the switch already happened; not being able to read it back afterwards
 			// is worth reporting as unknown rather than as a failure
 		}

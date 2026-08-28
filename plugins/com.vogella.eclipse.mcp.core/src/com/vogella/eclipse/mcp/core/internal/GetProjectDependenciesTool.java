@@ -1,6 +1,7 @@
 package com.vogella.eclipse.mcp.core.internal;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -112,7 +113,7 @@ public final class GetProjectDependenciesTool implements IMcpTool {
 	private static List<IProject> walk(IProject start, boolean forward, boolean transitive) throws CoreException {
 		List<IProject> found = new ArrayList<>();
 		List<IProject> queue = new ArrayList<>(List.of(start));
-		Set<String> seen = new java.util.LinkedHashSet<>(Set.of(start.getName()));
+		Set<String> seen = new LinkedHashSet<>(Set.of(start.getName()));
 		while (!queue.isEmpty()) {
 			IProject current = queue.remove(0);
 			IProject[] neighbours;

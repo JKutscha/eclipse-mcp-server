@@ -437,7 +437,7 @@ public final class FindReferencesTool implements IMcpTool {
 
 	/** Where the fields themselves are declared, as match locations. */
 	private static Set<String> declarationsOf(List<? extends org.eclipse.jdt.core.IMember> fields) {
-		Set<String> locations = new java.util.LinkedHashSet<>();
+		Set<String> locations = new LinkedHashSet<>();
 		for (org.eclipse.jdt.core.IMember field : fields) {
 			try {
 				org.eclipse.jdt.core.ISourceRange range = field.getNameRange();

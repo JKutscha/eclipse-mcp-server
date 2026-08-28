@@ -2,12 +2,17 @@ package com.vogella.eclipse.mcp.p2.internal;
 
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
@@ -106,7 +111,7 @@ final class Provisioning {
 		}
 	}
 
-	static synchronized Operation start(String kind, java.util.function.Function<Operation, Job> jobFactory) {
+	static synchronized Operation start(String kind, Function<Operation, Job> jobFactory) {
 		String id = "provisioning-" + IDS.incrementAndGet(); //$NON-NLS-1$
 		Operation operation = new Operation(id, kind);
 		operation.previousConfiguration = currentConfiguration();
@@ -181,8 +186,8 @@ final class Provisioning {
 	}
 
 	/** The ids still held, oldest first, for a caller that has to name one. */
-	static synchronized java.util.List<String> ids() {
-		return java.util.List.copyOf(OPERATIONS.keySet());
+	static synchronized List<String> ids() {
+		return List.copyOf(OPERATIONS.keySet());
 	}
 
 	static void setChanges(Operation operation, JsonArray changes) {
@@ -270,7 +275,7 @@ final class Provisioning {
 
 	private static String stamp(String millis) {
 		try {
-			return millis + " (" + new java.util.Date(Long.parseLong(millis)) + ")"; //$NON-NLS-1$ //$NON-NLS-2$
+			return millis + " (" + new Date(Long.parseLong(millis)) + ")"; //$NON-NLS-1$ //$NON-NLS-2$
 		} catch (NumberFormatException e) {
 			return millis;
 		}
@@ -290,11 +295,11 @@ final class Provisioning {
 	}
 
 	/** The installed units matching {@code ids}, for scoping an update to named things. */
-	static java.util.Set<org.eclipse.equinox.p2.metadata.IInstallableUnit> installedUnits(IProvisioningAgent agent,
+	static Set<org.eclipse.equinox.p2.metadata.IInstallableUnit> installedUnits(IProvisioningAgent agent,
 			List<String> ids) {
 		IProfileRegistry registry = agent.getService(IProfileRegistry.class);
 		var profile = registry == null ? null : registry.getProfile(IProfileRegistry.SELF);
-		java.util.Set<org.eclipse.equinox.p2.metadata.IInstallableUnit> units = new java.util.LinkedHashSet<>();
+		Set<org.eclipse.equinox.p2.metadata.IInstallableUnit> units = new LinkedHashSet<>();
 		if (profile == null) {
 			return units;
 		}
@@ -336,12 +341,12 @@ final class Provisioning {
 	}
 
 	static URI[] sourcesFor(IProvisioningAgent agent,
-			java.util.Collection<org.eclipse.equinox.p2.metadata.IInstallableUnit> units, IProgressMonitor monitor) {
+			Collection<org.eclipse.equinox.p2.metadata.IInstallableUnit> units, IProgressMonitor monitor) {
 		if (units.isEmpty()) {
 			return null;
 		}
 		ProvisioningContext context = new ProvisioningContext(agent);
-		Map<URI, java.util.Set<org.eclipse.equinox.p2.metadata.IInstallableUnit>> sources = context
+		Map<URI, Set<org.eclipse.equinox.p2.metadata.IInstallableUnit>> sources = context
 				.getInstallableUnitSources(units, monitor);
 		return sources == null || sources.isEmpty() ? null : sources.keySet().toArray(URI[]::new);
 	}
@@ -403,6 +408,6 @@ final class Provisioning {
 			return null;
 		}
 		long latest = timestamps[timestamps.length - 1];
-		return latest + " (" + new java.util.Date(latest) + ")"; //$NON-NLS-1$ //$NON-NLS-2$
+		return latest + " (" + new Date(latest) + ")"; //$NON-NLS-1$ //$NON-NLS-2$
 	}
 }

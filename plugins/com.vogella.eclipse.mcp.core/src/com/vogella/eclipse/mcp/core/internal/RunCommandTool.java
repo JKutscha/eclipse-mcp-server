@@ -14,6 +14,7 @@ import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolException;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.ToolArguments;
+import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
 /**
@@ -121,7 +122,7 @@ public final class RunCommandTool implements IMcpTool {
 		}
 
 		static JsonObject describe(CommandRegistry.Execution execution, int tailLines) {
-			com.vogella.eclipse.mcp.core.json.JsonArray command = new com.vogella.eclipse.mcp.core.json.JsonArray();
+			JsonArray command = new JsonArray();
 			execution.command().forEach(command::add);
 			List<String> tail = execution.tail(tailLines);
 			return new JsonObject().put("commandId", execution.id()) //$NON-NLS-1$

@@ -1,5 +1,9 @@
 package com.vogella.eclipse.mcp.ui.internal;
 
+import java.io.IOException;
+import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -16,6 +20,7 @@ import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PlatformUI;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
+import com.vogella.eclipse.mcp.core.LaunchAttributes;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.ToolArguments;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
@@ -140,7 +145,7 @@ public final class RestartTool implements IMcpTool {
 	 * @return the refusal, or null when it can
 	 */
 	public static McpToolResult checkWorkspace(String workspace) {
-		java.nio.file.Path path = pathOf(workspace);
+		Path path = pathOf(workspace);
 		if (path == null) {
 			return McpToolResult.error("'%s' is not a usable path.".formatted(workspace)); //$NON-NLS-1$
 		}
@@ -148,7 +153,7 @@ public final class RestartTool implements IMcpTool {
 			return McpToolResult.error(
 					"'workspace' has to be an absolute path; the launcher resolves a relative one against a working directory nobody here knows."); //$NON-NLS-1$
 		}
-		if (java.nio.file.Files.exists(path) && !java.nio.file.Files.isDirectory(path)) {
+		if (Files.exists(path) && !Files.isDirectory(path)) {
 			return McpToolResult.error("'%s' exists and is not a directory.".formatted(path)); //$NON-NLS-1$
 		}
 		if (org.eclipse.core.runtime.Platform.inDevelopmentMode()) {
@@ -159,8 +164,8 @@ public final class RestartTool implements IMcpTool {
 							.formatted(path));
 		}
 		try {
-			java.nio.file.Files.createDirectories(path);
-		} catch (java.io.IOException e) {
+			Files.createDirectories(path);
+		} catch (IOException e) {
 			return McpToolResult.error("Could not create '%s': %s".formatted(path, e.getMessage())); //$NON-NLS-1$
 		}
 		return null;
@@ -177,10 +182,10 @@ public final class RestartTool implements IMcpTool {
 	 * may run in are deliberately left behind: that permission was given for one
 	 * workspace.
 	 */
-	public static JsonObject carryTheServerOver(java.nio.file.Path workspace) {
-		java.nio.file.Path settings = settingsFile(workspace);
+	public static JsonObject carryTheServerOver(Path workspace) {
+		Path settings = settingsFile(workspace);
 		JsonObject json = new JsonObject().put("preferences", settings.toString()); //$NON-NLS-1$
-		if (java.nio.file.Files.exists(settings)) {
+		if (Files.exists(settings)) {
 			return json.put("carriedOver", Boolean.FALSE) //$NON-NLS-1$
 					.put("note", //$NON-NLS-1$
 							"That workspace has settings of its own for the server and they were left alone, so it comes up with whatever they say."); //$NON-NLS-1$
@@ -196,9 +201,9 @@ public final class RestartTool implements IMcpTool {
 			}
 		}
 		try {
-			java.nio.file.Files.createDirectories(settings.getParent());
-			java.nio.file.Files.writeString(settings, content.toString());
-		} catch (java.io.IOException e) {
+			Files.createDirectories(settings.getParent());
+			Files.writeString(settings, content.toString());
+		} catch (IOException e) {
 			return json.put("carriedOver", Boolean.FALSE) //$NON-NLS-1$
 					.put("note", //$NON-NLS-1$
 							"The server settings could not be written to that workspace (%s), so the IDE will come up there WITHOUT this server and has to be switched on by hand in Preferences > General > MCP Server." //$NON-NLS-1$
@@ -210,7 +215,7 @@ public final class RestartTool implements IMcpTool {
 	}
 
 	/** Where the instance scope keeps the server's preferences inside a workspace. */
-	public static java.nio.file.Path settingsFile(java.nio.file.Path workspace) {
+	public static Path settingsFile(Path workspace) {
 		return workspace.resolve(".metadata/.plugins/org.eclipse.core.runtime/.settings") //$NON-NLS-1$
 				.resolve(McpPreferences.QUALIFIER + ".prefs"); //$NON-NLS-1$
 	}
@@ -221,12 +226,12 @@ public final class RestartTool implements IMcpTool {
 	 * The URI form is what this tool used to report as the workspace, so a caller
 	 * that hands back what it was given would otherwise be refused.
 	 */
-	public static java.nio.file.Path pathOf(String workspace) {
+	public static Path pathOf(String workspace) {
 		try {
 			if (workspace.startsWith("file:")) { //$NON-NLS-1$
-				return java.nio.file.Path.of(java.net.URI.create(workspace).getPath());
+				return Path.of(URI.create(workspace).getPath());
 			}
-			return java.nio.file.Path.of(workspace);
+			return Path.of(workspace);
 		} catch (RuntimeException e) {
 			return null;
 		}
@@ -301,7 +306,7 @@ public final class RestartTool implements IMcpTool {
 		String target = workspace == null ? null : String.valueOf(pathOf(workspace));
 		JsonObject server = null;
 		if (target != null) {
-			server = carryTheServerOver(java.nio.file.Path.of(target));
+			server = carryTheServerOver(Path.of(target));
 			relaunchInto(target);
 		}
 		// answer first, restart after: the server dies with the IDE, so restarting
@@ -382,7 +387,7 @@ public final class RestartTool implements IMcpTool {
 	private static boolean startedByMcp(org.eclipse.debug.core.ILaunch launch) {
 		try {
 			return launch.getLaunchConfiguration() != null && launch.getLaunchConfiguration()
-					.getAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.STARTED_BY_MCP, false);
+					.getAttribute(LaunchAttributes.STARTED_BY_MCP, false);
 		} catch (org.eclipse.core.runtime.CoreException e) {
 			return false;
 		}
@@ -403,7 +408,7 @@ public final class RestartTool implements IMcpTool {
 		if (location == null || location.getURL() == null) {
 			return null;
 		}
-		java.nio.file.Path path = pathOf(location.getURL().toString());
+		Path path = pathOf(location.getURL().toString());
 		return path == null ? location.getURL().toString() : path.toString();
 	}
 }

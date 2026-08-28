@@ -1,6 +1,7 @@
 package com.vogella.eclipse.mcp.server.internal;
 
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -26,7 +27,7 @@ import io.modelcontextprotocol.spec.McpSchema.Tool;
 public final class McpToolAdapter {
 
 	/** Calls that outlived their timeout and are still holding a thread. */
-	private static final java.util.Map<String, Future<McpToolResult>> ABANDONED = new java.util.LinkedHashMap<>();
+	private static final Map<String, Future<McpToolResult>> ABANDONED = new LinkedHashMap<>();
 
 	private McpToolAdapter() {
 	}

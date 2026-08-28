@@ -2,9 +2,12 @@ package com.vogella.eclipse.mcp.core.internal;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 import org.eclipse.core.resources.IMarker;
 import org.eclipse.core.resources.IProject;
@@ -78,7 +81,7 @@ public final class GetProblemsTool implements IMcpTool {
 		boolean refresh = args.getBoolean("refresh", true); //$NON-NLS-1$
 		String messageFilter = args.getString("messageFilter"); //$NON-NLS-1$
 		String problemMarker = args.getString("marker"); //$NON-NLS-1$
-		java.util.Set<String> baseline = null;
+		Set<String> baseline = null;
 		if (problemMarker != null) {
 			baseline = ProblemBaselines.of(problemMarker);
 			if (baseline == null) {
@@ -122,7 +125,7 @@ public final class GetProblemsTool implements IMcpTool {
 			}
 			Problem problem = toProblem(marker, severity, projectName, pathPrefix);
 			if (problem != null && (messageFilter == null || problem.message()
-					.toLowerCase(java.util.Locale.ROOT).contains(messageFilter.toLowerCase(java.util.Locale.ROOT)))) {
+					.toLowerCase(Locale.ROOT).contains(messageFilter.toLowerCase(Locale.ROOT)))) {
 				problems.add(problem);
 			}
 		}
@@ -136,7 +139,7 @@ public final class GetProblemsTool implements IMcpTool {
 		JsonArray resolved = new JsonArray();
 		int resolvedTotal = 0;
 		if (baseline != null) {
-			java.util.Set<String> now = new java.util.LinkedHashSet<>();
+			Set<String> now = new LinkedHashSet<>();
 			problems.forEach(problem -> now.add(key(problem)));
 			for (String gone : baseline) {
 				// the diff has to be taken over the scope the caller asked about, not
@@ -149,7 +152,7 @@ public final class GetProblemsTool implements IMcpTool {
 					resolved.add(gone);
 				}
 			}
-			java.util.Set<String> was = baseline;
+			Set<String> was = baseline;
 			problems = new ArrayList<>(problems.stream().filter(problem -> !was.contains(key(problem))).toList());
 		}
 		problems.sort(Comparator.comparingInt(Problem::severity).reversed().thenComparing(Problem::path)
@@ -166,7 +169,7 @@ public final class GetProblemsTool implements IMcpTool {
 		}
 		// which builders contribute, so that a set flickering across rebuilds can be
 		// narrowed without a second call to find out what to exclude
-		java.util.Map<String, Integer> perType = new java.util.TreeMap<>();
+		Map<String, Integer> perType = new TreeMap<>();
 		problems.forEach(problem -> perType.merge(problem.type(), Integer.valueOf(1),
 				(left, right) -> Integer.valueOf(left.intValue() + right.intValue())));
 		JsonObject byType = new JsonObject();
@@ -236,12 +239,12 @@ public final class GetProblemsTool implements IMcpTool {
 		if (wanted != null && !String.valueOf(wanted).equals(parts[2])) {
 			return false;
 		}
-		return messageFilter == null || parts[3].toLowerCase(java.util.Locale.ROOT).contains(messageFilter.toLowerCase(java.util.Locale.ROOT));
+		return messageFilter == null || parts[3].toLowerCase(Locale.ROOT).contains(messageFilter.toLowerCase(Locale.ROOT));
 	}
 
 	/** Every problem in the workspace, as keys, for a baseline. */
-	static java.util.Set<String> allProblemKeys() {
-		java.util.Set<String> keys = new java.util.LinkedHashSet<>();
+	static Set<String> allProblemKeys() {
+		Set<String> keys = new LinkedHashSet<>();
 		try {
 			for (IMarker marker : ResourcesPlugin.getWorkspace().getRoot().findMarkers(IMarker.PROBLEM, true,
 					IResource.DEPTH_INFINITE)) {
@@ -285,7 +288,7 @@ public final class GetProblemsTool implements IMcpTool {
 		}
 	}
 
-	private static List<String> stringList(java.util.Map<String, Object> arguments, String name) {
+	private static List<String> stringList(Map<String, Object> arguments, String name) {
 		if (arguments == null || !(arguments.get(name) instanceof List<?> list)) {
 			return List.of();
 		}

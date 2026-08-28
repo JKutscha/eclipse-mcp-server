@@ -23,6 +23,9 @@ import org.eclipse.debug.core.model.IBreakpoint;
 import org.eclipse.debug.core.model.IDebugElement;
 import org.eclipse.debug.core.model.IThread;
 
+import com.vogella.eclipse.mcp.core.LaunchAttributes;
+import com.vogella.eclipse.mcp.core.LaunchPrompts;
+
 /**
  * Owns the mapping from {@link ILaunch} to debug session id and the last suspend
  * event per target, in the way {@code TestRunRegistry} owns test runs.
@@ -146,14 +149,14 @@ public final class DebugSessionRegistry {
 		void holdQuiet() {
 			if (!quietHeld) {
 				quietHeld = true;
-				com.vogella.eclipse.mcp.core.LaunchPrompts.quiet();
+				LaunchPrompts.quiet();
 			}
 		}
 
 		private void releaseQuiet() {
 			if (quietHeld) {
 				quietHeld = false;
-				com.vogella.eclipse.mcp.core.LaunchPrompts.release();
+				LaunchPrompts.release();
 			}
 		}
 
@@ -408,7 +411,7 @@ public final class DebugSessionRegistry {
 	 * theirs, and terminating it under them would be the worse surprise.
 	 */
 	public synchronized List<Session> liveStartedByMcp(String configName) {
-		List<Session> found = new java.util.ArrayList<>();
+		List<Session> found = new ArrayList<>();
 		for (Session session : sessions.values()) {
 			if (session.startedByMcp() && !session.terminated() && configName != null
 					&& configName.equals(nameOf(session))) {
@@ -488,7 +491,7 @@ public final class DebugSessionRegistry {
 		try {
 			var configuration = launchValue.getLaunchConfiguration();
 			return configuration != null && configuration
-					.getAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.STARTED_BY_MCP, false);
+					.getAttribute(LaunchAttributes.STARTED_BY_MCP, false);
 		} catch (org.eclipse.core.runtime.CoreException | RuntimeException e) {
 			return false;
 		}

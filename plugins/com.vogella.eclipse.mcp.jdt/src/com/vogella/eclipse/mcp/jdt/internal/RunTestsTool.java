@@ -1,7 +1,15 @@
 package com.vogella.eclipse.mcp.jdt.internal;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.jar.Manifest;
 
 import org.eclipse.core.resources.IMarker;
 import org.eclipse.core.resources.IProject;
@@ -27,7 +35,10 @@ import org.eclipse.jdt.junit.JUnitCore;
 import org.eclipse.jdt.launching.IJavaLaunchConfigurationConstants;
 import org.eclipse.pde.launching.IPDELauncherConstants;
 
+import com.vogella.eclipse.mcp.core.CompileErrorPrompt;
 import com.vogella.eclipse.mcp.core.IMcpTool;
+import com.vogella.eclipse.mcp.core.LaunchAttributes;
+import com.vogella.eclipse.mcp.core.LaunchRecording;
 import com.vogella.eclipse.mcp.core.McpToolException;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.ToolArguments;
@@ -152,7 +163,7 @@ public final class RunTestsTool implements IMcpTool {
 			String launchedAs = launchedAs(project, args);
 			// what the person's own launches would have done, since this run answers the
 			// prompt for itself and puts the setting back
-			String compileErrorPromptWas = com.vogella.eclipse.mcp.core.CompileErrorPrompt.effectiveValue();
+			String compileErrorPromptWas = CompileErrorPrompt.effectiveValue();
 			TestRunRegistry.Run run = TestRunRegistry.getInstance()
 					.create(testClass == null ? projectName : testClass + (testMethod == null ? "" : "#" + testMethod)); //$NON-NLS-1$ //$NON-NLS-2$
 
@@ -169,15 +180,15 @@ public final class RunTestsTool implements IMcpTool {
 			configuration.setAttribute(ATTR_TEST_KIND, kind);
 			// a run nobody is watching must not ask anything: a debugged test that
 			// suspends otherwise raises the modal perspective switch prompt
-			configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.TARGET_DEBUG_PERSPECTIVE,
-					com.vogella.eclipse.mcp.core.LaunchAttributes.PERSPECTIVE_NONE);
-			configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.TARGET_RUN_PERSPECTIVE,
-					com.vogella.eclipse.mcp.core.LaunchAttributes.PERSPECTIVE_NONE);
-			configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.STARTED_BY_MCP, true);
+			configuration.setAttribute(LaunchAttributes.TARGET_DEBUG_PERSPECTIVE,
+					LaunchAttributes.PERSPECTIVE_NONE);
+			configuration.setAttribute(LaunchAttributes.TARGET_RUN_PERSPECTIVE,
+					LaunchAttributes.PERSPECTIVE_NONE);
+			configuration.setAttribute(LaunchAttributes.STARTED_BY_MCP, true);
 			// launching a working copy saves it, and a saved configuration shows up in
 			// the user's Run Configurations dialog. Private keeps this server's launches
 			// out of a list that belongs to the person at the IDE.
-			configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.PRIVATE, true);
+			configuration.setAttribute(LaunchAttributes.PRIVATE, true);
 			if (type == null) {
 				// a container runs everything under it, which is how Run As on a project works
 				configuration.setAttribute(ATTR_CONTAINER, javaProject.getHandleIdentifier());
@@ -187,15 +198,15 @@ public final class RunTestsTool implements IMcpTool {
 					configuration.setAttribute(ATTR_TEST_NAME, testMethod);
 				}
 			}
-			java.nio.file.Path recordingFile = null;
+			Path recordingFile = null;
 			String recording = args.getString("flightRecording", "off"); //$NON-NLS-1$ //$NON-NLS-2$
-			if (com.vogella.eclipse.mcp.core.LaunchRecording.wanted(recording)) {
-				recordingFile = com.vogella.eclipse.mcp.core.LaunchRecording.fileFor(run.launchName());
+			if (LaunchRecording.wanted(recording)) {
+				recordingFile = LaunchRecording.fileFor(run.launchName());
 				configuration.setAttribute(IJavaLaunchConfigurationConstants.ATTR_VM_ARGUMENTS,
-						com.vogella.eclipse.mcp.core.LaunchRecording.appendTo(
+						LaunchRecording.appendTo(
 								configuration.getAttribute(IJavaLaunchConfigurationConstants.ATTR_VM_ARGUMENTS,
 										(String) null),
-								com.vogella.eclipse.mcp.core.LaunchRecording.vmArgument(recording, recordingFile, 0)));
+								LaunchRecording.vmArgument(recording, recordingFile, 0)));
 			}
 			String buildFirst = args.getString("buildFirst", "auto"); //$NON-NLS-1$ //$NON-NLS-2$
 			boolean autoBuilding = ResourcesPlugin.getWorkspace().isAutoBuilding();
@@ -216,7 +227,7 @@ public final class RunTestsTool implements IMcpTool {
 			run.launchedAs(launchedAs);
 			boolean debug = args.getBoolean("debug", false); //$NON-NLS-1$
 			org.eclipse.core.runtime.jobs.Job.create("MCP test launch " + run.id(), progress -> { //$NON-NLS-1$
-				String previous = com.vogella.eclipse.mcp.core.CompileErrorPrompt.suppress();
+				String previous = CompileErrorPrompt.suppress();
 				try {
 					org.eclipse.debug.core.ILaunch launch = configuration.launch(
 							debug ? ILaunchManager.DEBUG_MODE : ILaunchManager.RUN_MODE, null);
@@ -226,7 +237,7 @@ public final class RunTestsTool implements IMcpTool {
 					// as an assertion rather than a CoreException
 					TestRunRegistry.failed(run, describe(e));
 				} finally {
-					com.vogella.eclipse.mcp.core.CompileErrorPrompt.restore(previous);
+					CompileErrorPrompt.restore(previous);
 				}
 				return org.eclipse.core.runtime.Status.OK_STATUS;
 			}).schedule();
@@ -270,7 +281,7 @@ public final class RunTestsTool implements IMcpTool {
 												.getLocation(), run.launchName()))
 						.put(IPDELauncherConstants.SELECTED_WORKSPACE_BUNDLES,
 								String.join(", ", configuration.getAttribute( //$NON-NLS-1$
-										IPDELauncherConstants.SELECTED_WORKSPACE_BUNDLES, java.util.Set.<String>of())))
+										IPDELauncherConstants.SELECTED_WORKSPACE_BUNDLES, Set.<String>of())))
 						.put(IPDELauncherConstants.RUN_IN_UI_THREAD,
 								configuration.getAttribute(IPDELauncherConstants.RUN_IN_UI_THREAD, true))
 						.put(IPDELauncherConstants.LOCATION,
@@ -288,7 +299,7 @@ public final class RunTestsTool implements IMcpTool {
 			if (recordingFile != null) {
 				result.put("flightRecordingFile", recordingFile.toString()) //$NON-NLS-1$
 						.put("flightRecordingNote", //$NON-NLS-1$
-								com.vogella.eclipse.mcp.core.LaunchRecording.note(recordingFile, 0));
+								LaunchRecording.note(recordingFile, 0));
 			}
 			if (asPlugin) {
 				result.put("descriptorGeneration", descriptorGeneration(project)); //$NON-NLS-1$
@@ -329,8 +340,8 @@ public final class RunTestsTool implements IMcpTool {
 	 * required closure, which is why the prompt named a project this field did not.
 	 */
 	private static JsonArray projectsWithErrors(IProject project) {
-		java.util.Set<String> seen = new java.util.LinkedHashSet<>();
-		java.util.List<IProject> queue = new java.util.ArrayList<>(java.util.List.of(project));
+		Set<String> seen = new LinkedHashSet<>();
+		List<IProject> queue = new ArrayList<>(List.of(project));
 		JsonArray broken = new JsonArray();
 		while (!queue.isEmpty() && seen.size() < 500) {
 			IProject current = queue.remove(0);
@@ -341,7 +352,7 @@ public final class RunTestsTool implements IMcpTool {
 				broken.add(current.getName());
 			}
 			try {
-				queue.addAll(java.util.List.of(current.getReferencedProjects()));
+				queue.addAll(List.of(current.getReferencedProjects()));
 			} catch (CoreException | RuntimeException e) {
 				// PDE can throw computing dynamic references on a stale bundle wiring
 			}
@@ -413,7 +424,7 @@ public final class RunTestsTool implements IMcpTool {
 		configuration.setAttribute(IPDELauncherConstants.AUTOMATIC_ADD, allWorkspacePlugins);
 		configuration.setAttribute(IPDELauncherConstants.AUTOMATIC_INCLUDE_REQUIREMENTS, true);
 		if (!allWorkspacePlugins && testBundle != null) {
-			configuration.setAttribute(IPDELauncherConstants.SELECTED_WORKSPACE_BUNDLES, java.util.Set.of(testBundle));
+			configuration.setAttribute(IPDELauncherConstants.SELECTED_WORKSPACE_BUNDLES, Set.of(testBundle));
 		}
 	}
 
@@ -431,7 +442,7 @@ public final class RunTestsTool implements IMcpTool {
 		try {
 			IMarker[] markers = ResourcesPlugin.getWorkspace().getRoot()
 					.findMarkers("org.eclipse.pde.core.problem", true, IResource.DEPTH_INFINITE); //$NON-NLS-1$
-			java.util.Set<String> named = new java.util.LinkedHashSet<>();
+			Set<String> named = new LinkedHashSet<>();
 			for (IMarker marker : markers) {
 				if (marker.getAttribute(IMarker.SEVERITY, IMarker.SEVERITY_INFO) != IMarker.SEVERITY_ERROR) {
 					continue;
@@ -463,14 +474,14 @@ public final class RunTestsTool implements IMcpTool {
 	 * selection is by symbolic name.
 	 */
 	private static String symbolicName(IProject project) {
-		try (java.io.InputStream in = project.getFile("META-INF/MANIFEST.MF").getContents()) { //$NON-NLS-1$
-			String header = new java.util.jar.Manifest(in).getMainAttributes().getValue("Bundle-SymbolicName"); //$NON-NLS-1$
+		try (InputStream in = project.getFile("META-INF/MANIFEST.MF").getContents()) { //$NON-NLS-1$
+			String header = new Manifest(in).getMainAttributes().getValue("Bundle-SymbolicName"); //$NON-NLS-1$
 			if (header == null) {
 				return null;
 			}
 			int semicolon = header.indexOf(';');
 			return (semicolon < 0 ? header : header.substring(0, semicolon)).trim();
-		} catch (CoreException | java.io.IOException | RuntimeException e) {
+		} catch (CoreException | IOException | RuntimeException e) {
 			return null;
 		}
 	}
@@ -517,17 +528,17 @@ public final class RunTestsTool implements IMcpTool {
 	}
 
 	/** The test project and what it references, which is what the launch runs. */
-	private static java.util.List<IProject> launchProjects(IProject project) throws CoreException {
-		java.util.LinkedHashMap<String, IProject> found = new java.util.LinkedHashMap<>();
-		java.util.ArrayDeque<IProject> queue = new java.util.ArrayDeque<>(java.util.List.of(project));
+	private static List<IProject> launchProjects(IProject project) throws CoreException {
+		LinkedHashMap<String, IProject> found = new LinkedHashMap<>();
+		ArrayDeque<IProject> queue = new ArrayDeque<>(List.of(project));
 		while (!queue.isEmpty() && found.size() < 200) {
 			IProject current = queue.removeFirst();
 			if (!current.isAccessible() || found.putIfAbsent(current.getName(), current) != null) {
 				continue;
 			}
-			queue.addAll(java.util.List.of(current.getReferencedProjects()));
+			queue.addAll(List.of(current.getReferencedProjects()));
 		}
-		return java.util.List.copyOf(found.values());
+		return List.copyOf(found.values());
 	}
 
 	/**
@@ -598,7 +609,7 @@ public final class RunTestsTool implements IMcpTool {
 									.formatted(windowSystem));
 		}
 		configuration.setAttribute(ILaunchManager.ATTR_ENVIRONMENT_VARIABLES,
-				java.util.Map.of("DISPLAY", display, "GDK_BACKEND", "x11")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+				Map.of("DISPLAY", display, "GDK_BACKEND", "x11")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 		configuration.setAttribute(ILaunchManager.ATTR_APPEND_ENVIRONMENT_VARIABLES, true);
 		return result.put("applied", Boolean.TRUE) //$NON-NLS-1$
 				.put("variables", "DISPLAY=%s, GDK_BACKEND=x11".formatted(display)) //$NON-NLS-1$ //$NON-NLS-2$

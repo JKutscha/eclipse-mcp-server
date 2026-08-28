@@ -8,6 +8,7 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -58,7 +59,7 @@ class TargetPlatformToolsTest {
 		Map<String, Object> result = TestFixture.callAndParse(GET, Map.of("includeKnown", Boolean.TRUE));
 
 		Object known = result.get("known");
-		assertTrue(known instanceof java.util.List, "includeKnown lists the definitions the IDE knows");
+		assertTrue(known instanceof List, "includeKnown lists the definitions the IDE knows");
 		assertTrue(String.valueOf(known).contains("MCP test target"), "the workspace .target file is one of them: " + known);
 	}
 

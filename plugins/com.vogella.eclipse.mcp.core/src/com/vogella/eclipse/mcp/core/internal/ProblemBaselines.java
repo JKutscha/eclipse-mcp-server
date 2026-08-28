@@ -2,6 +2,7 @@ package com.vogella.eclipse.mcp.core.internal;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
@@ -45,7 +46,7 @@ final class ProblemBaselines {
 		return BASELINES.get(marker);
 	}
 
-	static synchronized java.util.List<String> ids() {
-		return java.util.List.copyOf(BASELINES.keySet());
+	static synchronized List<String> ids() {
+		return List.copyOf(BASELINES.keySet());
 	}
 }

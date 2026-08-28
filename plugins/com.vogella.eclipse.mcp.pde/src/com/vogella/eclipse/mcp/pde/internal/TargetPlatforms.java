@@ -2,6 +2,7 @@ package com.vogella.eclipse.mcp.pde.internal;
 
 import java.io.File;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IResource;
@@ -18,6 +19,7 @@ import org.osgi.framework.BundleContext;
 import org.osgi.framework.FrameworkUtil;
 import org.osgi.framework.ServiceReference;
 
+import com.vogella.eclipse.mcp.core.JreUsability;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
@@ -98,7 +100,7 @@ final class TargetPlatforms {
 		File location = vm.getInstallLocation();
 		json.put("resolved", Boolean.TRUE).put("vmName", vm.getName()) //$NON-NLS-1$ //$NON-NLS-2$
 				.put("installLocation", location == null ? null : location.getAbsolutePath()); //$NON-NLS-1$
-		String unusable = com.vogella.eclipse.mcp.core.JreUsability.reason(location);
+		String unusable = JreUsability.reason(location);
 		if (unusable != null) {
 			json.put("usable", Boolean.FALSE).put("warning", unusable); //$NON-NLS-1$ //$NON-NLS-2$
 		} else {
@@ -246,7 +248,7 @@ final class TargetPlatforms {
 		if (xml == null) {
 			return null;
 		}
-		var matcher = java.util.regex.Pattern.compile(name + "=\"([^\"]*)\"").matcher(xml); //$NON-NLS-1$
+		var matcher = Pattern.compile(name + "=\"([^\"]*)\"").matcher(xml); //$NON-NLS-1$
 		return matcher.find() ? matcher.group(1) : null;
 	}
 
@@ -256,7 +258,7 @@ final class TargetPlatforms {
 			return null;
 		}
 		JsonArray urls = new JsonArray();
-		var matcher = java.util.regex.Pattern.compile("<repository[^>]*location=\"([^\"]*)\"").matcher(xml); //$NON-NLS-1$
+		var matcher = Pattern.compile("<repository[^>]*location=\"([^\"]*)\"").matcher(xml); //$NON-NLS-1$
 		while (matcher.find()) {
 			urls.add(matcher.group(1));
 		}

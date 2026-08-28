@@ -1,6 +1,7 @@
 package com.vogella.eclipse.mcp.p2.internal;
 
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -80,7 +81,7 @@ public final class InstallTool implements IMcpTool {
 			URI uri;
 			try {
 				uri = new URI(repository);
-			} catch (java.net.URISyntaxException e) {
+			} catch (URISyntaxException e) {
 				return McpToolResult.error("'%s' is not a URL.".formatted(repository)); //$NON-NLS-1$
 			}
 			if (known.stream().noneMatch(candidate -> candidate.equals(uri))) {

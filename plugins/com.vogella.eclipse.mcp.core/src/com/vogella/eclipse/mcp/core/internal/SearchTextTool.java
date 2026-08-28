@@ -2,8 +2,12 @@ package com.vogella.eclipse.mcp.core.internal;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -22,6 +26,7 @@ import com.vogella.eclipse.mcp.core.Globs;
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.ToolArguments;
+import com.vogella.eclipse.mcp.core.WorkspaceSync;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
@@ -122,7 +127,7 @@ public final class SearchTextTool implements IMcpTool {
 		if (ToolArguments.of(arguments).getBoolean("refresh", true)) { //$NON-NLS-1$
 			for (IResource root : roots) {
 				try {
-					com.vogella.eclipse.mcp.core.WorkspaceSync.refresh(root, monitor);
+					WorkspaceSync.refresh(root, monitor);
 				} catch (org.eclipse.core.runtime.CoreException e) {
 					// an unrefreshable scope is still searchable, and stale beats nothing
 				}
@@ -161,11 +166,11 @@ public final class SearchTextTool implements IMcpTool {
 	private static final class Collector extends TextSearchRequestor {
 
 		/** Keyed by physical location and offset, so one file counts once. */
-		private final java.util.Map<String, JsonObject> distinct = new java.util.LinkedHashMap<>();
+		private final Map<String, JsonObject> distinct = new LinkedHashMap<>();
 
-		private final java.util.Map<String, JsonArray> alsoVisibleAs = new java.util.HashMap<>();
+		private final Map<String, JsonArray> alsoVisibleAs = new HashMap<>();
 
-		private final java.util.Set<String> locations = new java.util.LinkedHashSet<>();
+		private final Set<String> locations = new LinkedHashSet<>();
 
 		private final int maxResults;
 
@@ -245,7 +250,7 @@ public final class SearchTextTool implements IMcpTool {
 
 		JsonArray matches(int limit) {
 			JsonArray array = new JsonArray();
-			for (java.util.Map.Entry<String, JsonObject> entry : distinct.entrySet()) {
+			for (Map.Entry<String, JsonObject> entry : distinct.entrySet()) {
 				if (array.size() >= limit) {
 					break;
 				}

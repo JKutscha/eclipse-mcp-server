@@ -17,6 +17,7 @@ import org.eclipse.jdt.launching.IVMInstall;
 import org.eclipse.jdt.launching.JavaRuntime;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
+import com.vogella.eclipse.mcp.core.JreUsability;
 import com.vogella.eclipse.mcp.core.McpToolException;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.ToolArguments;
@@ -145,7 +146,7 @@ public final class GetClasspathTool implements IMcpTool {
 				if (entry.getPath().segmentCount() == 1) {
 					bound.put("fromWorkspaceDefault", Boolean.TRUE); //$NON-NLS-1$
 				}
-				String unusable = com.vogella.eclipse.mcp.core.JreUsability.reason(vm.getInstallLocation());
+				String unusable = JreUsability.reason(vm.getInstallLocation());
 				if (unusable != null) {
 					bound.put("usable", Boolean.FALSE).put("warning", unusable); //$NON-NLS-1$ //$NON-NLS-2$
 				}

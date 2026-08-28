@@ -1,10 +1,16 @@
 package com.vogella.eclipse.mcp.pde.internal;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
@@ -273,9 +279,9 @@ public final class EditManifestTool implements IMcpTool {
 	private static String unsupported(IProject project) {
 		org.eclipse.core.resources.IFile file = project.getFile("META-INF/MANIFEST.MF"); //$NON-NLS-1$
 		String content;
-		try (java.io.InputStream in = file.getContents(true)) {
-			content = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-		} catch (CoreException | java.io.IOException e) {
+		try (InputStream in = file.getContents(true)) {
+			content = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+		} catch (CoreException | IOException e) {
 			return "Could not read the manifest of %s: %s".formatted(project.getName(), e.getMessage()); //$NON-NLS-1$
 		}
 		// continuation lines start with a single space
@@ -300,15 +306,15 @@ public final class EditManifestTool implements IMcpTool {
 			for (org.eclipse.osgi.util.ManifestElement element : elements == null
 					? new org.eclipse.osgi.util.ManifestElement[0]
 					: elements) {
-				for (String key : java.util.Collections.list(element.getKeys() == null
-						? java.util.Collections.<String>emptyEnumeration()
+				for (String key : Collections.list(element.getKeys() == null
+						? Collections.<String>emptyEnumeration()
 						: element.getKeys())) {
 					if (!header.getValue().contains(key)) {
 						return refusal(project, header.getKey(), element.getValue(), key, "attribute"); //$NON-NLS-1$
 					}
 				}
-				for (String key : java.util.Collections.list(element.getDirectiveKeys() == null
-						? java.util.Collections.<String>emptyEnumeration()
+				for (String key : Collections.list(element.getDirectiveKeys() == null
+						? Collections.<String>emptyEnumeration()
 						: element.getDirectiveKeys())) {
 					if (!header.getValue().contains(key)) {
 						return refusal(project, header.getKey(), element.getValue(), key, "directive"); //$NON-NLS-1$
@@ -415,10 +421,10 @@ public final class EditManifestTool implements IMcpTool {
 	 * would recognise.
 	 */
 	private static <T> JsonObject difference(List<T> before, List<T> after,
-			java.util.function.Function<T, String> name, java.util.function.Function<T, JsonObject> render) {
-		Map<String, T> was = new java.util.LinkedHashMap<>();
+			Function<T, String> name, Function<T, JsonObject> render) {
+		Map<String, T> was = new LinkedHashMap<>();
 		before.forEach(entry -> was.put(name.apply(entry), entry));
-		Map<String, T> is = new java.util.LinkedHashMap<>();
+		Map<String, T> is = new LinkedHashMap<>();
 		after.forEach(entry -> is.put(name.apply(entry), entry));
 		JsonArray added = new JsonArray();
 		JsonArray removed = new JsonArray();

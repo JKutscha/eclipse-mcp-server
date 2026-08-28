@@ -1,5 +1,6 @@
 package com.vogella.eclipse.mcp.ui.internal;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
@@ -155,7 +156,7 @@ public final class ThemeTools {
 		private static String stylesheetUri(String css) {
 			if (!css.matches("(?i)[a-z][a-z0-9+.-]*:.*")) { //$NON-NLS-1$
 				Path path = Path.of(css);
-				if (!java.nio.file.Files.exists(path)) {
+				if (!Files.exists(path)) {
 					return null;
 				}
 				return path.toAbsolutePath().toUri().toString();

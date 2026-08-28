@@ -13,6 +13,9 @@ import org.eclipse.jdt.core.JavaModelException;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 /**
  * What marks a member as deprecated, kept apart by which of the two ways said
  * so.
@@ -81,7 +84,7 @@ record Deprecation(boolean annotated, boolean tagged, boolean flagged, boolean f
 		}
 		String text = javadoc.substring(at + TAG.length());
 		// up to the next block tag, since what follows it describes something else
-		java.util.regex.Matcher next = java.util.regex.Pattern.compile("\\n\\s*\\*?\\s*@[a-zA-Z]").matcher(text); //$NON-NLS-1$
+		Matcher next = Pattern.compile("\\n\\s*\\*?\\s*@[a-zA-Z]").matcher(text); //$NON-NLS-1$
 		if (next.find()) {
 			text = text.substring(0, next.start());
 		}

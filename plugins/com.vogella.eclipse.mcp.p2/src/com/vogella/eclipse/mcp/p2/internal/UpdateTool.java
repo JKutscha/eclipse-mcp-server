@@ -1,5 +1,8 @@
 package com.vogella.eclipse.mcp.p2.internal;
 
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -56,12 +59,12 @@ public final class UpdateTool implements IMcpTool {
 		}
 		// refresh first for the same reason as the check tool: without it the update
 		// resolves against cached metadata and finds nothing to apply
-		java.util.List<String> unitIds = Provisioning.stringList(arguments, "units"); //$NON-NLS-1$
+		List<String> unitIds = Provisioning.stringList(arguments, "units"); //$NON-NLS-1$
 		var units = Provisioning.installedUnits(agent, unitIds);
 		if (!unitIds.isEmpty() && units.isEmpty()) {
 			return McpToolResult.error("None of %s is installed, so there is nothing to update.".formatted(unitIds)); //$NON-NLS-1$
 		}
-		java.net.URI[] locations = units.isEmpty() ? null : Provisioning.sourcesFor(agent, units, monitor);
+		URI[] locations = units.isEmpty() ? null : Provisioning.sourcesFor(agent, units, monitor);
 		Provisioning.describeRepositories(agent, args.getBoolean("refresh", true), locations, monitor); //$NON-NLS-1$
 		UpdateOperation operation = units.isEmpty() ? new UpdateOperation(new ProvisioningSession(agent))
 				: new UpdateOperation(new ProvisioningSession(agent), units);
@@ -86,7 +89,7 @@ public final class UpdateTool implements IMcpTool {
 			// Constructing the operation with the units restricts what is examined but
 			// not what is selected: without setSelectedUpdates p2 applies every update
 			// it found, which once updated a whole SDK when one feature was named.
-			java.util.List<Update> wanted = new java.util.ArrayList<>();
+			List<Update> wanted = new ArrayList<>();
 			for (Update update : possible) {
 				if (unitIds.contains(update.toUpdate.getId())) {
 					wanted.add(update);
@@ -104,7 +107,7 @@ public final class UpdateTool implements IMcpTool {
 			return McpToolResult.error(ResolutionStatuses.failure("The update could not be resolved", resolution)); //$NON-NLS-1$
 		}
 		JsonArray changes = new JsonArray();
-		java.util.List<String> unexpected = new java.util.ArrayList<>();
+		List<String> unexpected = new ArrayList<>();
 		for (Update update : possible) {
 			changes.add(new JsonObject().put("unit", update.toUpdate.getId()) //$NON-NLS-1$
 					.put("fromVersion", update.toUpdate.getVersion().toString()) //$NON-NLS-1$
@@ -119,7 +122,7 @@ public final class UpdateTool implements IMcpTool {
 					"Refused: the resolution wants to update %s, which you did not ask for. Only %s was named. Nothing was changed." //$NON-NLS-1$
 							.formatted(unexpected, unitIds));
 		}
-		java.util.List<String> self = selfUpdates(possible);
+		List<String> self = selfUpdates(possible);
 		if (!self.isEmpty() && !args.getBoolean("acknowledgeSelfUpdate", false)) { //$NON-NLS-1$
 			return McpToolResult.error(
 					"Refused: %s is the MCP server itself, so applying this stops the bundle answering you while it does it. Nothing was changed. That is not merely a dropped connection: the provisioning job runs inside the bundles being replaced, so if anything goes wrong there is nothing left running to finish the update or to report why, and the IDE is then left with no server and no way to reach it except a restart by hand at the machine. Pass acknowledgeSelfUpdate true to accept that, and only when somebody can restart Eclipse if it does not come back." //$NON-NLS-1$
@@ -168,8 +171,8 @@ public final class UpdateTool implements IMcpTool {
 	 * no way in: the one failure this machinery cannot talk its way out of, and it
 	 * has no recovery path at all once the window is hidden.
 	 */
-	private static java.util.List<String> selfUpdates(Update[] updates) {
-		java.util.List<String> self = new java.util.ArrayList<>();
+	private static List<String> selfUpdates(Update[] updates) {
+		List<String> self = new ArrayList<>();
 		for (Update update : updates) {
 			String id = update.toUpdate.getId();
 			if (id.startsWith("com.vogella.eclipse.mcp")) { //$NON-NLS-1$

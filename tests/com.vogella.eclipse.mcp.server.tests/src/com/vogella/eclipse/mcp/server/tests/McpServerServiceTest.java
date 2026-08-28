@@ -10,6 +10,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -129,7 +130,7 @@ class McpServerServiceTest {
 							}
 						}
 						""", false, new NullProgressMonitor());
-		java.nio.file.Path empty = Files.createTempDirectory("mcp-endpoint-test");
+		Path empty = Files.createTempDirectory("mcp-endpoint-test");
 		empty.toFile().deleteOnExit();
 		project.getFile("smoke.target").create("""
 				<?xml version="1.0" encoding="UTF-8" standalone="no"?>
@@ -139,7 +140,7 @@ class McpServerServiceTest {
 				<location path="%s" type="Directory"/>
 				</locations>
 				</target>
-				""".formatted(empty.toAbsolutePath()).getBytes(java.nio.charset.StandardCharsets.UTF_8),
+				""".formatted(empty.toAbsolutePath()).getBytes(StandardCharsets.UTF_8),
 				org.eclipse.core.resources.IResource.NONE, new NullProgressMonitor());
 		project.build(IncrementalProjectBuilder.FULL_BUILD, new NullProgressMonitor());
 	}

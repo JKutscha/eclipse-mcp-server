@@ -3,6 +3,7 @@ package com.vogella.eclipse.mcp.debug.internal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.eclipse.core.runtime.CoreException;
@@ -62,8 +63,8 @@ public final class ListBreakpointsTool implements IMcpTool {
 				continue;
 			}
 			String typeName = typeName(javaBp);
-			if (filter == null || (typeName != null && typeName.toLowerCase(java.util.Locale.ROOT)
-					.contains(filter.toLowerCase(java.util.Locale.ROOT)))) {
+			if (filter == null || (typeName != null && typeName.toLowerCase(Locale.ROOT)
+					.contains(filter.toLowerCase(Locale.ROOT)))) {
 				matching.add(breakpoint);
 			}
 		}

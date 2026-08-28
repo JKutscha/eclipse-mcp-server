@@ -1,5 +1,6 @@
 package com.vogella.eclipse.mcp.jdt.internal;
 
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -99,7 +100,7 @@ public final class RemoveUnusedImportsTool implements IMcpTool {
 			throw new McpToolException("Could not refresh and build before reading the markers", e); //$NON-NLS-1$
 		}
 
-		Map<ICompilationUnit, Set<String>> unused = new java.util.LinkedHashMap<>();
+		Map<ICompilationUnit, Set<String>> unused = new LinkedHashMap<>();
 		try {
 			for (IMarker marker : scope.findMarkers(IJavaModelMarker.JAVA_MODEL_PROBLEM_MARKER, true,
 					IResource.DEPTH_INFINITE)) {

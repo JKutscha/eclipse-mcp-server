@@ -11,6 +11,8 @@ import org.eclipse.core.resources.ResourcesPlugin;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import com.vogella.eclipse.mcp.core.internal.BuildRegistry;
+
 /**
  * Cancelling whatever is building.
  * <p>
@@ -80,7 +82,7 @@ class CancelBuildToolTest {
 	 */
 	private static void waitForQuiet() throws Exception {
 		org.eclipse.core.runtime.jobs.IJobManager jobs = org.eclipse.core.runtime.jobs.Job.getJobManager();
-		jobs.join(com.vogella.eclipse.mcp.core.internal.BuildRegistry.FAMILY, null);
+		jobs.join(BuildRegistry.FAMILY, null);
 		jobs.join(ResourcesPlugin.FAMILY_AUTO_BUILD, null);
 		jobs.join(ResourcesPlugin.FAMILY_MANUAL_BUILD, null);
 	}

@@ -1,5 +1,6 @@
 package com.vogella.eclipse.mcp.debug.internal;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -19,10 +20,14 @@ import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.launching.IJavaLaunchConfigurationConstants;
 
 import com.vogella.eclipse.mcp.core.CallBudget;
+import com.vogella.eclipse.mcp.core.CompileErrorPrompt;
 import com.vogella.eclipse.mcp.core.IMcpTool;
+import com.vogella.eclipse.mcp.core.LaunchAttributes;
+import com.vogella.eclipse.mcp.core.LaunchRecording;
 import com.vogella.eclipse.mcp.core.McpToolException;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.ToolArguments;
+import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
 /**
@@ -39,12 +44,12 @@ public final class DebugLaunchTool implements IMcpTool {
 	 * The marker is what tells an adopted session apart from one a person started.
 	 */
 	static void unattended(org.eclipse.debug.core.ILaunchConfigurationWorkingCopy configuration) {
-		configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.TARGET_DEBUG_PERSPECTIVE,
-				com.vogella.eclipse.mcp.core.LaunchAttributes.PERSPECTIVE_NONE);
-		configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.TARGET_RUN_PERSPECTIVE,
-				com.vogella.eclipse.mcp.core.LaunchAttributes.PERSPECTIVE_NONE);
-		configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.STARTED_BY_MCP, true);
-		configuration.setAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.PRIVATE, true);
+		configuration.setAttribute(LaunchAttributes.TARGET_DEBUG_PERSPECTIVE,
+				LaunchAttributes.PERSPECTIVE_NONE);
+		configuration.setAttribute(LaunchAttributes.TARGET_RUN_PERSPECTIVE,
+				LaunchAttributes.PERSPECTIVE_NONE);
+		configuration.setAttribute(LaunchAttributes.STARTED_BY_MCP, true);
+		configuration.setAttribute(LaunchAttributes.PRIVATE, true);
 	}
 
 	@Override
@@ -93,7 +98,7 @@ public final class DebugLaunchTool implements IMcpTool {
 			throw new McpToolException("Could not build the launch configuration: %s".formatted(e.getMessage()), e);
 		}
 		int recordingSeconds = args.getInt("flightRecordingSeconds", 0, 0, 3600); //$NON-NLS-1$
-		java.nio.file.Path recordingFile = record(configuration, args.getString("flightRecording", "off"), //$NON-NLS-1$ //$NON-NLS-2$
+		Path recordingFile = record(configuration, args.getString("flightRecording", "off"), //$NON-NLS-1$ //$NON-NLS-2$
 				recordingSeconds);
 		String mode = "run".equals(args.getString("mode", "debug")) ? ILaunchManager.RUN_MODE //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 				: ILaunchManager.DEBUG_MODE;
@@ -116,7 +121,7 @@ public final class DebugLaunchTool implements IMcpTool {
 				// the same prompt eclipse_run_tests answers: launching a project with
 				// compile errors otherwise opens a modal dialog and the launch waits for
 				// a person who does not know they are being asked
-				String promptWas = com.vogella.eclipse.mcp.core.CompileErrorPrompt.suppress();
+				String promptWas = CompileErrorPrompt.suppress();
 				try {
 					org.eclipse.debug.core.ILaunch launched = configuration.launch(mode, progress);
 					if (!session.registered()) {
@@ -126,7 +131,7 @@ public final class DebugLaunchTool implements IMcpTool {
 				} catch (CoreException | RuntimeException e) {
 					session.failed(e.getMessage() == null ? String.valueOf(e) : e.getMessage());
 				} finally {
-					com.vogella.eclipse.mcp.core.CompileErrorPrompt.restore(promptWas);
+					CompileErrorPrompt.restore(promptWas);
 				}
 				return org.eclipse.core.runtime.Status.OK_STATUS;
 			}).schedule();
@@ -157,7 +162,7 @@ public final class DebugLaunchTool implements IMcpTool {
 			if (recordingFile != null) {
 				json.put("flightRecordingFile", recordingFile.toString()) //$NON-NLS-1$
 						.put("flightRecordingNote", //$NON-NLS-1$
-								com.vogella.eclipse.mcp.core.LaunchRecording.note(recordingFile, recordingSeconds));
+								LaunchRecording.note(recordingFile, recordingSeconds));
 			}
 			json.put("mode", mode); //$NON-NLS-1$
 			if (replaced != null) {
@@ -181,7 +186,7 @@ public final class DebugLaunchTool implements IMcpTool {
 	 * started, so the new one does not meet the old one's workspace lock.
 	 */
 	private static JsonObject replaceExisting(DebugSessionRegistry registry, String configName) {
-		com.vogella.eclipse.mcp.core.json.JsonArray ended = new com.vogella.eclipse.mcp.core.json.JsonArray();
+		JsonArray ended = new JsonArray();
 		boolean allGone = true;
 		for (DebugSessionRegistry.Session previous : registry.liveStartedByMcp(configName)) {
 			boolean gone = DebugSessionRegistry.terminateAndWait(previous, 10);
@@ -205,12 +210,12 @@ public final class DebugLaunchTool implements IMcpTool {
 	 *
 	 * @return {@code null} when no recording was asked for
 	 */
-	private static java.nio.file.Path record(ILaunchConfigurationWorkingCopy configuration, String settings,
+	private static Path record(ILaunchConfigurationWorkingCopy configuration, String settings,
 			int seconds) {
-		if (!com.vogella.eclipse.mcp.core.LaunchRecording.wanted(settings)) {
+		if (!LaunchRecording.wanted(settings)) {
 			return null;
 		}
-		java.nio.file.Path file = com.vogella.eclipse.mcp.core.LaunchRecording.fileFor(configuration.getName());
+		Path file = LaunchRecording.fileFor(configuration.getName());
 		String existing = null;
 		try {
 			existing = configuration.getAttribute(IJavaLaunchConfigurationConstants.ATTR_VM_ARGUMENTS, (String) null);
@@ -218,8 +223,8 @@ public final class DebugLaunchTool implements IMcpTool {
 			// unreadable VM arguments are not a reason to lose the recording
 		}
 		configuration.setAttribute(IJavaLaunchConfigurationConstants.ATTR_VM_ARGUMENTS,
-				com.vogella.eclipse.mcp.core.LaunchRecording.appendTo(existing,
-						com.vogella.eclipse.mcp.core.LaunchRecording.vmArgument(settings, file, seconds)));
+				LaunchRecording.appendTo(existing,
+						LaunchRecording.vmArgument(settings, file, seconds)));
 		return file;
 	}
 

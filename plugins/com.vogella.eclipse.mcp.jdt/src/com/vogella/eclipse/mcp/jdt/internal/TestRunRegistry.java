@@ -1,8 +1,12 @@
 package com.vogella.eclipse.mcp.jdt.internal;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -14,6 +18,7 @@ import org.eclipse.jdt.junit.model.ITestCaseElement;
 import org.eclipse.jdt.junit.model.ITestElement;
 import org.eclipse.jdt.junit.model.ITestRunSession;
 
+import com.vogella.eclipse.mcp.core.LaunchAttributes;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
@@ -144,7 +149,7 @@ public final class TestRunRegistry {
 					run.cases.add(new Case(element.getTestClassName(), element.getTestMethodName(),
 							// Result.toString() is "Failure", not "FAILURE"; normalising here is
 							// what stops the counters below silently matching nothing but OK
-							String.valueOf(element.getTestResult(false)).toUpperCase(java.util.Locale.ROOT),
+							String.valueOf(element.getTestResult(false)).toUpperCase(Locale.ROOT),
 							element.getElapsedTimeInSeconds(),
 							trace == null ? null : trace.getTrace(), trace == null ? null : trace.getExpected(),
 							trace == null ? null : trace.getActual()));
@@ -186,7 +191,7 @@ public final class TestRunRegistry {
 		try {
 			var manager = org.eclipse.debug.core.DebugPlugin.getDefault().getLaunchManager();
 			for (var configuration : manager.getLaunchConfigurations()) {
-				if (!configuration.getAttribute(com.vogella.eclipse.mcp.core.LaunchAttributes.STARTED_BY_MCP,
+				if (!configuration.getAttribute(LaunchAttributes.STARTED_BY_MCP,
 						false)) {
 					continue;
 				}
@@ -237,8 +242,8 @@ public final class TestRunRegistry {
 	}
 
 	/** The ids still held, oldest first, for a caller that has to name one. */
-	public synchronized java.util.List<String> ids() {
-		return java.util.List.copyOf(runs.keySet());
+	public synchronized List<String> ids() {
+		return List.copyOf(runs.keySet());
 	}
 
 	public static void failed(Run run, String reason) {
@@ -274,13 +279,13 @@ public final class TestRunRegistry {
 			}
 			location = org.eclipse.core.variables.VariablesPlugin.getDefault().getStringVariableManager()
 					.performStringSubstitution(location);
-			java.nio.file.Path log = java.nio.file.Path.of(location, ".metadata", ".log"); //$NON-NLS-1$ //$NON-NLS-2$
-			if (!java.nio.file.Files.isReadable(log)) {
+			Path log = Path.of(location, ".metadata", ".log"); //$NON-NLS-1$ //$NON-NLS-2$
+			if (!Files.isReadable(log)) {
 				return errors;
 			}
-			java.util.List<String> collected = new java.util.ArrayList<>();
+			List<String> collected = new ArrayList<>();
 			String entry = null;
-			for (String line : java.nio.file.Files.readAllLines(log)) {
+			for (String line : Files.readAllLines(log)) {
 				if (line.startsWith("!ENTRY") && line.contains(" 4 ")) { //$NON-NLS-1$ //$NON-NLS-2$
 					entry = line.substring("!ENTRY ".length()); //$NON-NLS-1$
 				} else if (entry != null && line.startsWith("!MESSAGE")) { //$NON-NLS-1$
@@ -291,7 +296,7 @@ public final class TestRunRegistry {
 			// the last ones: a workbench that fails to start says so at the end, after
 			// pages of unrelated bundle resolution noise from a big workspace
 			collected.subList(Math.max(0, collected.size() - MAX_LAUNCH_ERRORS), collected.size()).forEach(errors::add);
-		} catch (org.eclipse.core.runtime.CoreException | java.io.IOException | RuntimeException e) {
+		} catch (org.eclipse.core.runtime.CoreException | IOException | RuntimeException e) {
 			// the diagnosis is a bonus; failing to read it must not cost the answer
 		}
 		return errors;

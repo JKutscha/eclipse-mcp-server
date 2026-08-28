@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Test;
 
 import com.vogella.eclipse.mcp.ui.internal.CommandTools;
 
+import java.util.Map;
+
 /**
  * Reading the parameters of a command that declares none.
  * <p>
@@ -68,7 +70,7 @@ class CommandParametersTest {
 
 		@Override
 		public org.eclipse.core.commands.IParameterValues getValues() {
-			return java.util.Map::of;
+			return Map::of;
 		}
 
 		@Override

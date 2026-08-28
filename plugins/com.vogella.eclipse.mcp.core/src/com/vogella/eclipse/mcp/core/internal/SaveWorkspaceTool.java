@@ -1,5 +1,8 @@
 package com.vogella.eclipse.mcp.core.internal;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -161,19 +164,19 @@ public final class SaveWorkspaceTool implements IMcpTool {
 		if (location == null) {
 			return json;
 		}
-		java.nio.file.Path store = location.toFile().toPath()
+		Path store = location.toFile().toPath()
 				.resolve(".metadata/.plugins/org.eclipse.core.resources/.history"); //$NON-NLS-1$
-		if (!java.nio.file.Files.isDirectory(store)) {
+		if (!Files.isDirectory(store)) {
 			return json.put("bytes", Long.valueOf(0)).put("files", Integer.valueOf(0)); //$NON-NLS-1$ //$NON-NLS-2$
 		}
 		long bytes = 0;
 		int files = 0;
-		try (var walk = java.nio.file.Files.walk(store)) {
-			for (java.nio.file.Path path : walk.filter(java.nio.file.Files::isRegularFile).toList()) {
+		try (var walk = Files.walk(store)) {
+			for (Path path : walk.filter(Files::isRegularFile).toList()) {
 				files++;
 				bytes += path.toFile().length();
 			}
-		} catch (java.io.IOException | RuntimeException e) {
+		} catch (IOException | RuntimeException e) {
 			return json.put("note", "The history store could not be measured: " + e.getMessage()); //$NON-NLS-1$ //$NON-NLS-2$
 		}
 		return json.put("bytes", Long.valueOf(bytes)).put("files", Integer.valueOf(files)) //$NON-NLS-1$ //$NON-NLS-2$

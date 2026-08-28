@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.eclipse.jdt.core.IJavaProject;
 import org.junit.jupiter.api.AfterEach;
@@ -83,7 +84,7 @@ class FindReferencesToolTest {
 		List<Map<String, Object>> byMember = (List<Map<String, Object>>) merged.get("byMember");
 		assertEquals(2, byMember.size(), "one entry per overload, got " + byMember);
 		Map<Object, Object> counts = byMember.stream()
-				.collect(java.util.stream.Collectors.toMap(entry -> entry.get("signature"), entry -> entry.get("total")));
+				.collect(Collectors.toMap(entry -> entry.get("signature"), entry -> entry.get("total")));
 		assertEquals(Integer.valueOf(2), counts.get("load(String)"), "got " + counts);
 		assertEquals(Integer.valueOf(1), counts.get("load(int)"), "got " + counts);
 		List<Map<String, Object>> matches = (List<Map<String, Object>>) merged.get("matches");

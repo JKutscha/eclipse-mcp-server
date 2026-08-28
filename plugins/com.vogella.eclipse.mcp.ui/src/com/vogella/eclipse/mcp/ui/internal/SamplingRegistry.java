@@ -6,8 +6,11 @@ import java.lang.management.ThreadMXBean;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.vogella.eclipse.mcp.core.json.JsonArray;
@@ -243,11 +246,11 @@ public final class SamplingRegistry {
 		List<Sample> all = everything;
 		int filtered = 0;
 		if (frameFilter != null) {
-			String needle = frameFilter.toLowerCase(java.util.Locale.ROOT);
+			String needle = frameFilter.toLowerCase(Locale.ROOT);
 			List<Sample> matching = new ArrayList<>();
 			for (Sample sample : all) {
 				for (StackTraceElement element : sample.stack()) {
-					if (frame(element).toLowerCase(java.util.Locale.ROOT).contains(needle)) {
+					if (frame(element).toLowerCase(Locale.ROOT).contains(needle)) {
 						matching.add(sample);
 						break;
 					}
@@ -307,7 +310,7 @@ public final class SamplingRegistry {
 		for (Sample entry : samples) {
 			StackTraceElement[] sample = entry.stack();
 			self.merge(frame(sample[0]), 1, Integer::sum);
-			java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+			Set<String> seen = new LinkedHashSet<>();
 			for (StackTraceElement element : sample) {
 				if (seen.add(frame(element))) {
 					total.merge(frame(element), 1, Integer::sum);

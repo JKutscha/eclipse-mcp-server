@@ -1,9 +1,11 @@
 package com.vogella.eclipse.mcp.ui.internal;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
@@ -12,6 +14,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.swt.SWT;
@@ -69,7 +73,7 @@ public final class ScreenshotTools {
 		return null;
 	}
 
-	private static <T> McpToolResult onUi(java.util.function.Supplier<T> work, java.util.function.Function<T, String> render) {
+	private static <T> McpToolResult onUi(Supplier<T> work, Function<T, String> render) {
 		if (!PlatformUI.isWorkbenchRunning()) {
 			return McpToolResult.error("There is no running workbench."); //$NON-NLS-1$
 		}
@@ -181,10 +185,10 @@ public final class ScreenshotTools {
 					.put("availableViewsTruncated", Boolean.valueOf(matching.size() > maxResults)); //$NON-NLS-1$
 		}
 
-		static java.util.List<IWorkbenchPartReference> allReferences(IWorkbenchPage page) {
-			java.util.List<IWorkbenchPartReference> references = new java.util.ArrayList<>();
-			references.addAll(java.util.Arrays.asList(page.getViewReferences()));
-			references.addAll(java.util.Arrays.asList(page.getEditorReferences()));
+		static List<IWorkbenchPartReference> allReferences(IWorkbenchPage page) {
+			List<IWorkbenchPartReference> references = new ArrayList<>();
+			references.addAll(Arrays.asList(page.getViewReferences()));
+			references.addAll(Arrays.asList(page.getEditorReferences()));
 			return references;
 		}
 	}
@@ -595,7 +599,7 @@ public final class ScreenshotTools {
 					result.put("base64", Base64.getEncoder().encodeToString(bytes.toByteArray())); //$NON-NLS-1$
 				}
 				return result;
-			} catch (java.io.IOException e) {
+			} catch (IOException e) {
 				return failure("Could not write the image: " + e.getMessage()); //$NON-NLS-1$
 			}
 		}
