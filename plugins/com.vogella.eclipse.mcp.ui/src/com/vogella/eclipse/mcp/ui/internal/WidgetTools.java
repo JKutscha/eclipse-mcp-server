@@ -269,6 +269,129 @@ public final class WidgetTools {
 	}
 
 	/** Reports one widget, its ancestry and what the CSS engine computed for it. */
+	/** Selects a tab, whatever kind of editor happens to be behind it. */
+	public static final class SelectTab implements IMcpTool {
+
+		@Override
+		public String getName() {
+			return "eclipse_select_tab"; //$NON-NLS-1$
+		}
+
+		@Override
+		public String getDescription() {
+			return "Selects a tab by its widget path, the one eclipse_get_widget_tree reports with includeItems. CHANGES WHAT IS ON SCREEN. This addresses the folder rather than the editor, which is what makes it work at all: a multi page editor may be a MultiPageEditorPart, or a FormEditor, or neither, and the e4 model editor for instance builds its Form, List and XMI pages into a CTabFolder of its own, so no editor API reaches them. A page that is not selected is not rendered: eclipse_screenshot refuses it and eclipse_get_widget_tree reports it with zero bounds, so selecting it first is the only way to see it. The selection listeners are notified as if a person had clicked, because setSelection alone moves the highlight without telling the editor to build the page. Pass the path of a CTabItem or TabItem, as in 0/0/0/i2, or the path of the folder plus 'index'."; //$NON-NLS-1$
+		}
+
+		@Override
+		public String getInputSchema() {
+			return """
+					{
+					  "type": "object",
+					  "required": ["path"],
+					  "properties": {
+					    "part":        {"type":"string","description":"Part id the path is rooted in. Use eclipse_list_ui_targets."},
+					    "shellTitle":  {"type":"string","description":"Shell to root the path in instead of a part; omit both for the active shell."},
+					    "path":        {"type":"string","description":"Path of the tab item, such as 0/0/0/i2, or of the folder itself when 'index' is given."},
+					    "index":       {"type":"integer","minimum":0,"maximum":200,"description":"Item index, when 'path' names the folder rather than the item."},
+					    "notify":      {"type":"boolean","default":true,"description":"Also fire the selection event. Without it the tab looks selected while the editor never builds the page, which is the usual reason a screenshot then shows nothing."}
+					  },
+					  "additionalProperties": false
+					}"""; //$NON-NLS-1$
+		}
+
+		@Override
+		public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
+			ToolArguments args = ToolArguments.of(arguments);
+			String partId = args.getString("part"); //$NON-NLS-1$
+			String shellTitle = args.getString("shellTitle"); //$NON-NLS-1$
+			String path = args.getString("path"); //$NON-NLS-1$
+			if (path == null) {
+				return McpToolResult.error("The argument 'path' is required; eclipse_get_widget_tree with includeItems reports the paths."); //$NON-NLS-1$
+			}
+			Integer index = args.has("index") ? Integer.valueOf(args.getInt("index", 0, 0, 200)) : null; //$NON-NLS-1$ //$NON-NLS-2$
+			return UiThread.call(15,
+					() -> select(partId, shellTitle, path, index, args.getBoolean("notify", true))); //$NON-NLS-1$
+		}
+
+		private static JsonObject select(String partId, String shellTitle, String path, Integer index,
+				boolean notify) {
+			Control root = rootOf(partId, shellTitle, false);
+			if (root == null) {
+				return new JsonObject().put("selected", Boolean.FALSE) //$NON-NLS-1$
+						.put("reason", "No such part or shell, or the part is not open. Use eclipse_list_ui_targets."); //$NON-NLS-1$ //$NON-NLS-2$
+			}
+			Widget target = resolve(root, path);
+			if (target == null) {
+				return new JsonObject().put("selected", Boolean.FALSE) //$NON-NLS-1$
+						.put("reason", "The path '%s' does not resolve under this part.".formatted(path)); //$NON-NLS-1$ //$NON-NLS-2$
+			}
+			if (index != null) {
+				Widget[] items = itemsOf(target);
+				if (index.intValue() >= items.length) {
+					return new JsonObject().put("selected", Boolean.FALSE) //$NON-NLS-1$
+							.put("reason", "That folder has %d items, so index %d is out of range." //$NON-NLS-1$
+									.formatted(Integer.valueOf(items.length), index));
+				}
+				target = items[index.intValue()];
+			}
+			return switch (target) {
+			case org.eclipse.swt.custom.CTabItem item -> apply(item.getParent(), item, notify);
+			case org.eclipse.swt.widgets.TabItem item -> apply(item.getParent(), item, notify);
+			default -> new JsonObject().put("selected", Boolean.FALSE) //$NON-NLS-1$
+					.put("reason", //$NON-NLS-1$
+							"'%s' is a %s, not a tab item. Ask eclipse_get_widget_tree with includeItems for the item paths, which carry an i prefix." //$NON-NLS-1$
+									.formatted(path, target.getClass().getSimpleName()));
+			};
+		}
+
+		private static JsonObject apply(org.eclipse.swt.custom.CTabFolder folder,
+				org.eclipse.swt.custom.CTabItem item, boolean notify) {
+			int before = folder.getSelectionIndex();
+			folder.setSelection(item);
+			if (notify) {
+				fire(folder, item);
+			}
+			folder.layout(true, true);
+			return report(before, folder.getSelectionIndex(), item.getText(), notify);
+		}
+
+		private static JsonObject apply(org.eclipse.swt.widgets.TabFolder folder,
+				org.eclipse.swt.widgets.TabItem item, boolean notify) {
+			int before = folder.getSelectionIndex();
+			folder.setSelection(item);
+			if (notify) {
+				fire(folder, item);
+			}
+			folder.layout(true, true);
+			return report(before, folder.getSelectionIndex(), item.getText(), notify);
+		}
+
+		/**
+		 * The part that setSelection does not do.
+		 * <p>
+		 * SWT fires nothing for a programmatic selection, and an editor that builds
+		 * its page in the selection listener therefore leaves the page empty: the tab
+		 * is highlighted, the content is not there, and a screenshot shows the gap
+		 * rather than the page.
+		 */
+		private static void fire(Widget folder, Widget item) {
+			org.eclipse.swt.widgets.Event event = new org.eclipse.swt.widgets.Event();
+			event.widget = folder;
+			event.item = item;
+			folder.notifyListeners(org.eclipse.swt.SWT.Selection, event);
+		}
+
+		private static JsonObject report(int before, int after, String text, boolean notified) {
+			return new JsonObject().put("selected", Boolean.TRUE) //$NON-NLS-1$
+					.put("previousIndex", Integer.valueOf(before)) //$NON-NLS-1$
+					.put("index", Integer.valueOf(after)) //$NON-NLS-1$
+					.put("text", text) //$NON-NLS-1$
+					.put("listenersNotified", Boolean.valueOf(notified)) //$NON-NLS-1$
+					.put("note", //$NON-NLS-1$
+							"The page is rendered now, so eclipse_screenshot and eclipse_get_widget_tree report it with real bounds. Selecting another tab hides it again the same way."); //$NON-NLS-1$
+		}
+	}
+
 	public static final class InspectWidget implements IMcpTool {
 
 		private static final List<String> DEFAULT_PROPERTIES = List.of("background-color", "color", //$NON-NLS-1$ //$NON-NLS-2$

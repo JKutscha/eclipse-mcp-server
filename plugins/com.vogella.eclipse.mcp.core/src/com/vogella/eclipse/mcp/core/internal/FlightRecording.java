@@ -50,8 +50,8 @@ final class FlightRecording {
 	}
 
 	/** Starts a recording and returns its id. */
-	static String start(String settings, long maxAgeSeconds, long maxSizeBytes, long durationSeconds, String name)
-			throws IOException, ParseFailure {
+	static String start(String settings, long maxAgeSeconds, long maxSizeBytes, long durationSeconds, String name,
+			java.nio.file.Path dumpOnExitTo) throws IOException, ParseFailure {
 		Configuration configuration = configuration(settings);
 		Recording recording = new Recording(configuration);
 		recording.setName(name == null ? "MCP flight recording" : name); //$NON-NLS-1$
@@ -66,6 +66,13 @@ final class FlightRecording {
 		}
 		if (durationSeconds > 0) {
 			recording.setDuration(Duration.ofSeconds(durationSeconds));
+		}
+		if (dumpOnExitTo != null) {
+			// the only way to record what happens while this IDE shuts down: the tool
+			// that would stop the recording is going down with it, so the JVM has to
+			// write the file on its own way out
+			recording.setDestination(dumpOnExitTo);
+			recording.setDumpOnExit(true);
 		}
 		recording.start();
 		String id = "jfr-" + IDS.incrementAndGet(); //$NON-NLS-1$

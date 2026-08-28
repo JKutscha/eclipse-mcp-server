@@ -46,7 +46,8 @@ public final class FlightRecordingTools {
 					    "durationSeconds":   {"type":"integer","default":1800,"minimum":0,"maximum":86400,"description":"Stop on its own after this long. 0 runs until eclipse_stop_flight_recording, which then has to happen."},
 					    "maxAgeSeconds":     {"type":"integer","default":600,"minimum":0,"maximum":86400,"description":"Keep only this much history, so a problem that appears after hours can still be dumped at the moment it does. 0 keeps everything."},
 					    "maxSizeMegabytes":  {"type":"integer","default":100,"minimum":1,"maximum":4096},
-					    "name":              {"type":"string","description":"Label for the recording, shown in JDK Mission Control."}
+					    "name":              {"type":"string","description":"Label for the recording, shown in JDK Mission Control."},
+				    "dumpOnExitTo":      {"type":"string","description":"Absolute path the JVM writes the recording to when it EXITS. This is what makes the IDE's own shutdown measurable: eclipse_stop_flight_recording cannot run then, because the server is going down with the workbench. Read the file afterwards with eclipse_stop_flight_recording passing file. The recording can still be stopped normally before that."}
 					  },
 					  "additionalProperties": false
 					}"""; //$NON-NLS-1$
@@ -63,14 +64,16 @@ public final class FlightRecordingTools {
 			int maxAge = args.getInt("maxAgeSeconds", 600, 0, 86400); //$NON-NLS-1$
 			int maxSize = args.getInt("maxSizeMegabytes", 100, 1, 4096); //$NON-NLS-1$
 			try {
+				String dumpTo = args.getString("dumpOnExitTo"); //$NON-NLS-1$
 				String id = FlightRecording.start(settings, maxAge, maxSize * 1024L * 1024L, duration,
-						args.getString("name")); //$NON-NLS-1$
+						args.getString("name"), dumpTo == null ? null : Path.of(dumpTo)); //$NON-NLS-1$
 				return McpToolResult.of(new JsonObject().put("recordingId", id) //$NON-NLS-1$
 						.put("settings", settings) //$NON-NLS-1$
 						.put("durationSeconds", Integer.valueOf(duration)) //$NON-NLS-1$
 						.put("maxAgeSeconds", Integer.valueOf(maxAge)) //$NON-NLS-1$
 						.put("maxSizeMegabytes", Integer.valueOf(maxSize)) //$NON-NLS-1$
 						.put("running", Boolean.TRUE) //$NON-NLS-1$
+						.put("dumpOnExitTo", dumpTo) //$NON-NLS-1$
 						.put("note", duration == 0 //$NON-NLS-1$
 								? "This recording has no duration, so it runs until eclipse_stop_flight_recording is called. It is bounded by maxAge and maxSize, so it cannot fill the disk, but it does cost the profiling overhead until then." //$NON-NLS-1$
 								: "Let it run while the behaviour you are after happens, then call eclipse_stop_flight_recording. It stops on its own after durationSeconds either way.") //$NON-NLS-1$
