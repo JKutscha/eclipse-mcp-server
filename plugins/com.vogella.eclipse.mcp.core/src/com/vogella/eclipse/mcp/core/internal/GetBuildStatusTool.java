@@ -41,8 +41,12 @@ public final class GetBuildStatusTool implements IMcpTool {
 	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
 		String buildId = ToolArguments.of(arguments).getString("buildId"); //$NON-NLS-1$
 		if (buildId == null && !com.vogella.eclipse.mcp.core.ClientSessions.canAssumeASingleClient()) {
+			// the refusal stands even though the job snapshot below would be
+			// unambiguous: eclipse_wait_until_quiet answers that question and belongs
+			// to no client, so nothing is lost by keeping this one strict
 			return McpToolResult.error(com.vogella.eclipse.mcp.core.ClientSessions.ambiguousDefault("build", //$NON-NLS-1$
-					"buildId", BuildRegistry.getInstance().ids())); //$NON-NLS-1$
+					"buildId", BuildRegistry.getInstance().ids()) //$NON-NLS-1$
+					+ " Use eclipse_wait_until_quiet to ask what the workspace is doing; that answer is not per client."); //$NON-NLS-1$
 		}
 		JsonObject jobs = WorkspaceJobs.snapshot();
 		BuildRegistry.Build build = buildId == null ? BuildRegistry.getInstance().findLatest()
