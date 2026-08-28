@@ -945,6 +945,32 @@ The registration lives for this session only and is gone when the IDE restarts, 
 This closes the loop for iterating on a theme bundle: build it, install the bundle into the running IDE, register its css here, switch with `eclipse_set_theme`, screenshot.
 The bundle's own contribution lands at the next startup, because the theme engine reads the extension registry once, when it is constructed, and never again; registering the stylesheet by hand is the only way to use it before then.
 
+### `eclipse_list_theme_definitions`
+
+Lists the `org.eclipse.ui.themes` `colorDefinition` and `fontDefinition` entries registered in **this running IDE**. Read-only.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `kind` | string | `all` | `colors`, `fonts` or `all`. |
+| `idPattern` | string | | Regular expression matched anywhere in the id, e.g. `tag|comment|string`. |
+| `categoryId` | string | | Only definitions hanging under this theme element category. |
+| `onlyOverridden` | boolean | `false` | Only definitions the active theme resolves differently from their declared literal. |
+| `countOnly` | boolean | `false` | The totals per kind and no entries. |
+| `maxResults` | integer | 200 | Applied to each kind separately. |
+
+Each entry carries the id, the label, the category id and label, the value the declaration asks for, the value the active theme resolves it to, `isEditable` and the contributing bundle.
+
+Two of those cannot be answered by grepping a source tree, which is the reason this exists.
+Definitions contributed by installed bundles that are in no workspace project are invisible to a grep, and the resolved value is a property of the active theme rather than of any file.
+
+The declared and the resolved value are reported separately on purpose, because they disagree more often than expected.
+`isEditable` false takes a definition off the preference page but does not stop the CSS path in `ThemeElementHelper.populateDefinition` overwriting it, so what a declaration asks for and what the IDE actually draws are different questions.
+
+`overridden` says whether the two differ.
+It is omitted rather than guessed when the declaration has no literal to compare against, which is the case for `defaultsTo`, `colorFactory` and OS colour names.
+
+The declaration is read from the extension registry rather than from `IThemeRegistry`, which is internal to the workbench, and the resolved value from the public `ITheme` registries, so this depends on no workbench internals.
+
 ### `eclipse_get_installation`
 
 Reports the product, the installed feature groups with their versions, and the configuration timestamps this installation can be reverted to. Changes nothing.
@@ -2140,7 +2166,7 @@ The contract for an implementation:
 |---|---|---|---|
 | `com.vogella.eclipse.mcp.core` | 30 | `IMcpTool`, the registry and the extension point, plus the workspace, file, build, preference, log, command and flight recording tools | `org.eclipse.core.runtime`, `org.eclipse.core.resources`, `org.eclipse.search.core` |
 | `com.vogella.eclipse.mcp.server` | 0 | The MCP protocol handling, the embedded Jetty, the bearer token filter and the endpoint file | MCP SDK, Jetty, core |
-| `com.vogella.eclipse.mcp.ui` | 31 | The workbench tools: editor context, commands, views, perspectives, themes and CSS, screenshots, widget inspection, sampling and restart, plus the preference page and the startup hook | `org.eclipse.ui`, `org.eclipse.swt`, `org.eclipse.jface`, the e4 workbench and CSS bundles, `org.eclipse.compare`, core, server |
+| `com.vogella.eclipse.mcp.ui` | 32 | The workbench tools: editor context, commands, views, perspectives, themes and CSS, screenshots, widget inspection, sampling and restart, plus the preference page and the startup hook | `org.eclipse.ui`, `org.eclipse.swt`, `org.eclipse.jface`, the e4 workbench and CSS bundles, `org.eclipse.compare`, core, server |
 | `com.vogella.eclipse.mcp.jdt` | 16 | The Java model tools: declarations, references, hierarchies, source, search, and the refactoring, clean up, format and test running tools | `org.eclipse.jdt.core`, `org.eclipse.jdt.core.manipulation`, `org.eclipse.jdt.launching`, `org.eclipse.jdt.junit.core`, `org.eclipse.ltk.core.refactoring`, core |
 | `com.vogella.eclipse.mcp.debug` | 8 | The breakpoint tools, the debug session tools and the session registry | `org.eclipse.jdt.debug`, `org.eclipse.debug.core`, `org.eclipse.jdt.core`, core |
 | `com.vogella.eclipse.mcp.p2` | 8 | The provisioning tools: update, install, uninstall, the repository tools and the operation registry | the `org.eclipse.equinox.p2.*` bundles, core |
