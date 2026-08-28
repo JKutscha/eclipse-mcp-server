@@ -43,7 +43,7 @@ public final class SubstituteBundleTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Makes the IDE run a workspace project's bundle in place of the installed one at the next restart, by packing the project and pointing this installation's bundles.info line at the packed jar. CHANGES THE INSTALLATION, not the workspace, and runs as a dry run unless dryRun is set to false; the dry run shows the exact line before and after. THIS IS THE ONLY WAY IN FOR MOST OF THE SDK: a hot install through eclipse_install_bundle is invisible to anything that reads the registry once at startup, the theme engine among them, and the dropins directory cannot replace a bundle that belongs to an installed feature, because a feature demands its bundles at an exact version, which covers nearly everything in an SDK. THE RISK IS REAL: a bundles.info that names a jar which does not resolve leaves an IDE that will not start, and then no tool here can put it back. The original line is recorded, so action restore needs nothing from the caller, and action status reports what is substituted right now, checked against bundles.info rather than believed from the record, including a substitution another session made, which is what stops somebody debugging an IDE that is not running what its plugins directory holds. THE VERSION FIELD IS WHAT MAKES IT TAKE EFFECT: simpleconfigurator matches a bundle on symbolic name plus version, so a line that keeps the installed version and only changes the path is read as a bundle already installed and the path is never looked at, which is a substitution that does nothing while every check on the file says it is in force. The version of the substituted jar is therefore written into the line. Ask action status for the 'running' field, which reports what the framework has actually loaded rather than what the file says, and believe that one. The line may also be rewritten at a restart, so everything here matches on the bundle name, the one stable field."; //$NON-NLS-1$
+		return "Makes the IDE run a workspace project's bundle in place of the installed one at the next restart, by packing the project and pointing this installation's bundles.info line at the packed jar. CHANGES THE INSTALLATION, not the workspace, and runs as a dry run unless dryRun is set to false; the dry run shows the exact line before and after. THIS IS THE ONLY WAY IN FOR MOST OF THE SDK: a hot install through eclipse_install_bundle is invisible to anything that reads the registry once at startup, the theme engine among them, and the dropins directory cannot replace a bundle that belongs to an installed feature, because a feature demands its bundles at an exact version, which covers nearly everything in an SDK. THE RISK IS REAL: a bundles.info that names a jar which is not there leaves the bundles that need it unresolvable, and if that bundle is one the framework itself needs, the IDE does not start and no tool here can reach it; short of that the IDE still runs and action repair points such a line back at the installed jar. NEVER DELETE A PACKED JAR BY HAND: action cleanup does it and re-reads bundles.info first, because this file is rewritten at every start and by other sessions, so a jar that looks unreferenced can be the one the next start loads. The original line is recorded, so action restore needs nothing from the caller, and action status reports what is substituted right now, checked against bundles.info rather than believed from the record, including a substitution another session made and, under referencingSubstitutedJars, every line that points at a packed jar even when nothing here recorded it, which is what stops somebody debugging an IDE that is not running what its plugins directory holds. THE VERSION FIELD IS WHAT MAKES IT TAKE EFFECT: simpleconfigurator matches a bundle on symbolic name plus version, so a line that keeps the installed version and only changes the path is read as a bundle already installed and the path is never looked at, which is a substitution that does nothing while every check on the file says it is in force. The version of the substituted jar is therefore written into the line. Ask action status for the 'running' field, which reports what the framework has actually loaded rather than what the file says, and believe that one. The line may also be rewritten at a restart, so everything here matches on the bundle name, the one stable field."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -52,7 +52,7 @@ public final class SubstituteBundleTool implements IMcpTool {
 				{
 				  "type": "object",
 				  "properties": {
-				    "action":  {"type":"string","enum":["substitute","restore","status"],"default":"status","description":"'substitute' packs the project and points bundles.info at it, 'restore' puts the recorded original lines back, 'status' only reports."},
+				    "action":  {"type":"string","enum":["substitute","restore","status","cleanup","repair"],"default":"status","description":"'substitute' packs the project and points bundles.info at it, 'restore' puts the recorded original lines back, 'status' only reports, 'cleanup' deletes the packed jars that nothing references any more, 'repair' points a line whose jar is missing back at the installed one."},
 				    "jar":     {"type":"string","description":"Absolute path of a jar that is already built, used instead of 'project'. Its Bundle-SymbolicName and Bundle-Version are read from its own manifest rather than guessed from the file name, which for a Maven build matches neither. The jar is copied, so rebuilding it afterwards does not silently change what this IDE runs."},
 				    "project": {"type":"string","description":"Plug-in project to pack, for substitute. Its output folder and the bin.includes of build.properties are what goes into the jar. CHECK WHICH CLONE IT IS: the answer reports packedFrom, because a workspace project can point at one clone of a repository while the change being measured lives in another, and then this packs a tree without it."},
 				    "dryRun":  {"type":"boolean","default":true,"description":"Report the line that would change, and change nothing."}
@@ -89,8 +89,10 @@ public final class SubstituteBundleTool implements IMcpTool {
 			return switch (action) {
 			case "status" -> McpToolResult.of(status(configuration, bundlesInfo).toString()); //$NON-NLS-1$
 			case "restore" -> restore(configuration, bundlesInfo, args.getBoolean("dryRun", true)); //$NON-NLS-1$ //$NON-NLS-2$
+			case "cleanup" -> cleanup(configuration, bundlesInfo, args.getBoolean("dryRun", true)); //$NON-NLS-1$ //$NON-NLS-2$
+			case "repair" -> repair(configuration, bundlesInfo, args.getBoolean("dryRun", true)); //$NON-NLS-1$ //$NON-NLS-2$
 			case "substitute" -> substitute(configuration, bundlesInfo, args, monitor);
-			default -> McpToolResult.error("'action' is 'substitute', 'restore' or 'status'."); //$NON-NLS-1$
+			default -> McpToolResult.error("'action' is 'substitute', 'restore', 'status', 'cleanup' or 'repair'."); //$NON-NLS-1$
 			};
 		} catch (IOException e) {
 			return McpToolResult.error("Could not work with the installation: " + e); //$NON-NLS-1$
@@ -133,12 +135,64 @@ public final class SubstituteBundleTool implements IMcpTool {
 			}
 			active.add(entry);
 		}
+		// every line that points into the jar directory, whatever the record says:
+		// a line left behind by an older substitution has no record of its own, and
+		// it was invisible here while it decided what the IDE would load
+		JsonArray referencing = new JsonArray();
+		for (String line : lines) {
+			if (!line.contains(JARS) || line.startsWith("#")) { //$NON-NLS-1$
+				continue;
+			}
+			String bundle = line.substring(0, Math.max(0, line.indexOf(',')));
+			boolean recorded = false;
+			for (String[] record : records) {
+				recorded |= record[0].equals(bundle);
+			}
+			Path jar = jarOf(configuration, line);
+			referencing.add(new JsonObject().put("bundle", bundle) //$NON-NLS-1$
+					.put("line", line) //$NON-NLS-1$
+					.put("recorded", Boolean.valueOf(recorded)) //$NON-NLS-1$
+					.put("jarExists", Boolean.valueOf(jar != null && Files.isRegularFile(jar)))); //$NON-NLS-1$
+		}
 		return new JsonObject().put("substituted", active) //$NON-NLS-1$
 				.put("count", Integer.valueOf(active.size())) //$NON-NLS-1$
 				.put("stillInForce", Integer.valueOf(stillSubstituted)) //$NON-NLS-1$
-				.put("note", stillSubstituted == 0 //$NON-NLS-1$
-						? "No substitution is in force; this IDE runs what its plugins directory holds. A record with state 'restored' is history and can be forgotten." //$NON-NLS-1$
-						: "These bundles are NOT the installed ones, checked against bundles.info rather than taken from the record. The record survives restarts and sessions, so this is also what another session's substitution looks like. action restore puts them back, and it takes a restart either way."); //$NON-NLS-1$
+				.put("referencingSubstitutedJars", referencing) //$NON-NLS-1$
+				.put("note", note(stillSubstituted, referencing)); //$NON-NLS-1$
+	}
+
+	private static String note(int stillSubstituted, JsonArray referencing) {
+		if (referencing.size() > stillSubstituted) {
+			return "READ referencingSubstitutedJars, NOT the count: bundles.info points at a packed jar for a bundle this record knows nothing about, which is what an older substitution leaves behind. Whoever wrote that line, the IDE loads it at the next start, and deleting the jar without changing the line is what leaves an IDE that cannot resolve the bundle. action repair puts such a line back."; //$NON-NLS-1$
+		}
+		if (stillSubstituted == 0) {
+			return "No substitution is in force; this IDE runs what its plugins directory holds. A record with state 'restored' is history and can be forgotten, and action cleanup deletes the jars that go with it."; //$NON-NLS-1$
+		}
+		return "These bundles are NOT the installed ones, checked against bundles.info rather than taken from the record. The record survives restarts and sessions, so this is also what another session's substitution looks like. action restore puts them back, and it takes a restart either way."; //$NON-NLS-1$
+	}
+
+	/**
+	 * The jar a bundles.info line names, or null when it names none.
+	 * <p>
+	 * A path is either a file URI or relative to the installation, which is the
+	 * directory above the configuration area. Public for the test bundle, which
+	 * cannot see a package-private method across bundles.
+	 */
+	public static Path jarOf(Path configuration, String line) {
+		String[] fields = line.split(","); //$NON-NLS-1$
+		if (fields.length < 3) {
+			return null;
+		}
+		String path = fields[2];
+		try {
+			if (path.startsWith("file:")) { //$NON-NLS-1$
+				return Path.of(java.net.URI.create(path));
+			}
+			Path installation = configuration.getParent();
+			return installation == null ? null : installation.resolve(path);
+		} catch (IllegalArgumentException | java.nio.file.FileSystemNotFoundException e) {
+			return null;
+		}
 	}
 
 	/**
@@ -227,12 +281,23 @@ public final class SubstituteBundleTool implements IMcpTool {
 					.put("was", current) //$NON-NLS-1$
 					.put("line", record[1])); //$NON-NLS-1$
 		}
+		JsonArray stillReferenced = new JsonArray();
 		if (!dryRun && done.size() > 0) {
 			Files.write(bundlesInfo, lines, StandardCharsets.UTF_8);
 			Files.deleteIfExists(configuration.resolve(RECORD));
+			// read the file back rather than trust what was just written: another
+			// session writes this file too, and a restore that looks clean while a
+			// line still points at a packed jar is how a deleted jar takes the IDE
+			// down
+			for (String line : Files.readAllLines(bundlesInfo, StandardCharsets.UTF_8)) {
+				if (line.contains(JARS) && !line.startsWith("#")) { //$NON-NLS-1$
+					stillReferenced.add(line);
+				}
+			}
 		}
 		JsonObject result = new JsonObject().put("dryRun", Boolean.valueOf(dryRun)) //$NON-NLS-1$
 				.put("restored", done) //$NON-NLS-1$
+				.put("stillReferenced", stillReferenced) //$NON-NLS-1$
 				.put("restoredCount", Integer.valueOf(done.size())); //$NON-NLS-1$
 		if (missed.size() > 0) {
 			result.put("notRestored", missed); //$NON-NLS-1$
@@ -246,8 +311,134 @@ public final class SubstituteBundleTool implements IMcpTool {
 					.toString());
 		}
 		return McpToolResult.of(result.put("restartRequired", Boolean.TRUE) //$NON-NLS-1$
-				.put("note", dryRun ? "Nothing was changed. Pass dryRun false to put these lines back." //$NON-NLS-1$ //$NON-NLS-2$
-						: "The installed bundles are back in bundles.info; restart with eclipse_restart for the IDE to run them. The packed jars under configuration/mcp-substituted are no longer referenced and can be deleted.") //$NON-NLS-1$
+				.put("note", dryRun ? "Nothing was changed. Pass dryRun false to put these lines back." //$NON-NLS-1$
+						: stillReferenced.size() > 0
+								? "The recorded lines are back, BUT bundles.info still points at a packed jar for something else, listed under stillReferenced. Do not delete anything under mcp-substituted until that is gone; action repair puts such a line back." //$NON-NLS-1$
+								: "The installed bundles are back in bundles.info; restart with eclipse_restart for the IDE to run them. Delete the packed jars with action cleanup, which checks the file again first, rather than by hand: this file is written by simpleconfigurator and by other sessions, so what is unreferenced now may not be in a minute.") //$NON-NLS-1$
+				.toString());
+	}
+
+	/**
+	 * Deletes the packed jars nothing points at any more.
+	 * <p>
+	 * The check happens here rather than in the caller's head: the file is written
+	 * by simpleconfigurator at every start and by any other session, so a jar that
+	 * was unreferenced a minute ago may be the one the IDE is about to load, and
+	 * deleting it leaves a bundle that cannot resolve.
+	 */
+	private static McpToolResult cleanup(Path configuration, Path bundlesInfo, boolean dryRun) throws IOException {
+		Path directory = configuration.resolve(JARS);
+		if (!Files.isDirectory(directory)) {
+			return McpToolResult.of(new JsonObject().put("deleted", new JsonArray()) //$NON-NLS-1$
+					.put("note", "There is no %s directory, so no packed jar was ever left here.".formatted(directory)) //$NON-NLS-1$ //$NON-NLS-2$
+					.toString());
+		}
+		List<String> lines = Files.readAllLines(bundlesInfo, StandardCharsets.UTF_8);
+		JsonArray deleted = new JsonArray();
+		JsonArray kept = new JsonArray();
+		try (var jars = Files.list(directory)) {
+			for (Path jar : jars.filter(Files::isRegularFile).toList()) {
+				if (jar.getFileName().toString().equals("substitutions.txt")) { //$NON-NLS-1$
+					continue;
+				}
+				String referencedBy = null;
+				for (String line : lines) {
+					Path named = jarOf(configuration, line);
+					if (named != null && named.toAbsolutePath().normalize().equals(jar.toAbsolutePath().normalize())) {
+						referencedBy = line;
+						break;
+					}
+				}
+				if (referencedBy != null) {
+					kept.add(new JsonObject().put("jar", jar.toString()) //$NON-NLS-1$
+							.put("referencedBy", referencedBy)); //$NON-NLS-1$
+					continue;
+				}
+				if (!dryRun) {
+					Files.delete(jar);
+				}
+				deleted.add(jar.toString());
+			}
+		}
+		return McpToolResult.of(new JsonObject().put("dryRun", Boolean.valueOf(dryRun)) //$NON-NLS-1$
+				.put("deleted", deleted) //$NON-NLS-1$
+				.put("kept", kept) //$NON-NLS-1$
+				.put("note", kept.size() > 0 //$NON-NLS-1$
+						? "The jars under 'kept' are named by a line in bundles.info as it reads right now and were left alone; deleting one is what leaves an IDE that cannot resolve that bundle. Put its line back with action restore or action repair first." //$NON-NLS-1$
+						: dryRun ? "Nothing was deleted. Pass dryRun false to remove these; the check is made again at that point." //$NON-NLS-1$
+								: "Nothing in bundles.info pointed at these, so they were deleted.") //$NON-NLS-1$
+				.toString());
+	}
+
+	/**
+	 * Points a line whose jar is gone back at an installed one.
+	 * <p>
+	 * An IDE in this state may still be running, because one unresolvable bundle
+	 * does not stop the framework, and then the repair can be made from inside it.
+	 */
+	private static McpToolResult repair(Path configuration, Path bundlesInfo, boolean dryRun) throws IOException {
+		List<String[]> records = records(configuration);
+		List<String> lines = new ArrayList<>(Files.readAllLines(bundlesInfo, StandardCharsets.UTF_8));
+		Path installation = configuration.getParent();
+		JsonArray repaired = new JsonArray();
+		JsonArray broken = new JsonArray();
+		for (int i = 0; i < lines.size(); i++) {
+			String line = lines.get(i);
+			String[] fields = line.split(","); //$NON-NLS-1$
+			if (fields.length < 5 || line.startsWith("#")) { //$NON-NLS-1$
+				continue;
+			}
+			Path jar = jarOf(configuration, line);
+			if (jar == null || Files.exists(jar)) {
+				continue;
+			}
+			String replacement = null;
+			for (String[] record : records) {
+				if (record[0].equals(fields[0])) {
+					replacement = record[1];
+				}
+			}
+			if (replacement == null && installation != null) {
+				// no record for it, so fall back on the convention: the installed jar
+				// carries the bundle's own name and version
+				Path installed = installation.resolve("plugins/%s_%s.jar".formatted(fields[0], fields[1])); //$NON-NLS-1$
+				if (Files.isRegularFile(installed)) {
+					replacement = "%s,%s,plugins/%s_%s.jar,%s,%s".formatted(fields[0], fields[1], fields[0], fields[1], //$NON-NLS-1$
+							fields[3], fields[4]);
+				}
+			}
+			if (replacement == null) {
+				broken.add(new JsonObject().put("bundle", fields[0]) //$NON-NLS-1$
+						.put("line", line) //$NON-NLS-1$
+						.put("missing", String.valueOf(jar)) //$NON-NLS-1$
+						.put("reason", //$NON-NLS-1$
+								"No record of an original line, and no plugins/%s_%s.jar to fall back on. This one needs a human." //$NON-NLS-1$
+										.formatted(fields[0], fields[1])));
+				continue;
+			}
+			if (!dryRun) {
+				lines.set(i, replacement);
+			}
+			repaired.add(new JsonObject().put("bundle", fields[0]) //$NON-NLS-1$
+					.put("was", line) //$NON-NLS-1$
+					.put("missing", String.valueOf(jar)) //$NON-NLS-1$
+					.put("line", replacement)); //$NON-NLS-1$
+		}
+		if (!dryRun && repaired.size() > 0) {
+			Files.write(bundlesInfo, lines, StandardCharsets.UTF_8);
+		}
+		JsonObject result = new JsonObject().put("dryRun", Boolean.valueOf(dryRun)) //$NON-NLS-1$
+				.put("repaired", repaired) //$NON-NLS-1$
+				.put("repairedCount", Integer.valueOf(repaired.size())); //$NON-NLS-1$
+		if (broken.size() > 0) {
+			result.put("notRepaired", broken); //$NON-NLS-1$
+		}
+		return McpToolResult.of(result
+				.put("restartRequired", Boolean.valueOf(repaired.size() > 0)) //$NON-NLS-1$
+				.put("note", repaired.size() == 0 //$NON-NLS-1$
+						? "Every line in bundles.info names a file that exists, so there is nothing to repair." //$NON-NLS-1$
+						: dryRun ? "Nothing was changed. Pass dryRun false to write these lines back." //$NON-NLS-1$
+								: "The lines are back on files that exist; restart for the IDE to load them. Until then the bundles they name stay unresolved, which shows up as NoClassDefFoundError from anything that needed them.") //$NON-NLS-1$
 				.toString());
 	}
 
