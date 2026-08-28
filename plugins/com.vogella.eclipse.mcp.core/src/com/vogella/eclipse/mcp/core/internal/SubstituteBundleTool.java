@@ -43,7 +43,7 @@ public final class SubstituteBundleTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Makes the IDE run a workspace project's bundle in place of the installed one at the next restart, by packing the project and pointing this installation's bundles.info line at the packed jar. CHANGES THE INSTALLATION, not the workspace, and runs as a dry run unless dryRun is set to false; the dry run shows the exact line before and after. THIS IS THE ONLY WAY IN FOR MOST OF THE SDK: a hot install through eclipse_install_bundle is invisible to anything that reads the registry once at startup, the theme engine among them, and the dropins directory cannot replace a bundle that belongs to an installed feature, because a feature demands its bundles at an exact version, which covers nearly everything in an SDK. THE RISK IS REAL: a bundles.info that names a jar which does not resolve leaves an IDE that will not start, and then no tool here can put it back. The original line is recorded, so action restore needs nothing from the caller, and action status reports what is substituted right now, checked against bundles.info rather than believed from the record, including a substitution another session made, which is what stops somebody debugging an IDE that is not running what its plugins directory holds. THE LINE DOES NOT SURVIVE A RESTART UNCHANGED: simpleconfigurator rewrites bundles.info at every start, taking the version from the substituted jar's own manifest and making the path relative to the installation, so the text written here is not the text found afterwards. Everything here therefore matches on the bundle name, which is the one stable field."; //$NON-NLS-1$
+		return "Makes the IDE run a workspace project's bundle in place of the installed one at the next restart, by packing the project and pointing this installation's bundles.info line at the packed jar. CHANGES THE INSTALLATION, not the workspace, and runs as a dry run unless dryRun is set to false; the dry run shows the exact line before and after. THIS IS THE ONLY WAY IN FOR MOST OF THE SDK: a hot install through eclipse_install_bundle is invisible to anything that reads the registry once at startup, the theme engine among them, and the dropins directory cannot replace a bundle that belongs to an installed feature, because a feature demands its bundles at an exact version, which covers nearly everything in an SDK. THE RISK IS REAL: a bundles.info that names a jar which does not resolve leaves an IDE that will not start, and then no tool here can put it back. The original line is recorded, so action restore needs nothing from the caller, and action status reports what is substituted right now, checked against bundles.info rather than believed from the record, including a substitution another session made, which is what stops somebody debugging an IDE that is not running what its plugins directory holds. THE VERSION FIELD IS WHAT MAKES IT TAKE EFFECT: simpleconfigurator matches a bundle on symbolic name plus version, so a line that keeps the installed version and only changes the path is read as a bundle already installed and the path is never looked at, which is a substitution that does nothing while every check on the file says it is in force. The version of the substituted jar is therefore written into the line. Ask action status for the 'running' field, which reports what the framework has actually loaded rather than what the file says, and believe that one. The line may also be rewritten at a restart, so everything here matches on the bundle name, the one stable field."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -125,7 +125,8 @@ public final class SubstituteBundleTool implements IMcpTool {
 					.put("state", state) //$NON-NLS-1$
 					.put("originalLine", record[1]) //$NON-NLS-1$
 					.put("recordedLine", record[2]) //$NON-NLS-1$
-					.put("currentLine", current); //$NON-NLS-1$
+					.put("currentLine", current) //$NON-NLS-1$
+					.put("running", running(record[0])); //$NON-NLS-1$
 			if (current != null && !current.equals(record[2]) && "substituted".equals(state)) { //$NON-NLS-1$
 				entry.put("rewritten", //$NON-NLS-1$
 						"The line differs from what was written: simpleconfigurator rewrote it at a restart, normalising the version from the jar's manifest and the path relative to the installation. It is still the substituted jar."); //$NON-NLS-1$
@@ -138,6 +139,35 @@ public final class SubstituteBundleTool implements IMcpTool {
 				.put("note", stillSubstituted == 0 //$NON-NLS-1$
 						? "No substitution is in force; this IDE runs what its plugins directory holds. A record with state 'restored' is history and can be forgotten." //$NON-NLS-1$
 						: "These bundles are NOT the installed ones, checked against bundles.info rather than taken from the record. The record survives restarts and sessions, so this is also what another session's substitution looks like. action restore puts them back, and it takes a restart either way."); //$NON-NLS-1$
+	}
+
+	/**
+	 * What the framework actually loaded for this bundle, which is a different
+	 * question from what the file says.
+	 * <p>
+	 * A line can name the substituted jar while the running IDE holds the original
+	 * open, and then every check against bundles.info agrees that the substitution
+	 * is in force and every measurement taken is of the unchanged code. Only the
+	 * live bundle's own location settles it.
+	 */
+	private static JsonObject running(String symbolicName) {
+		org.osgi.framework.Bundle self = org.osgi.framework.FrameworkUtil.getBundle(SubstituteBundleTool.class);
+		if (self == null || self.getBundleContext() == null) {
+			return null;
+		}
+		for (org.osgi.framework.Bundle bundle : self.getBundleContext().getBundles()) {
+			if (symbolicName.equals(bundle.getSymbolicName())) {
+				String location = bundle.getLocation();
+				boolean substituted = location != null && location.contains(JARS);
+				return new JsonObject().put("version", String.valueOf(bundle.getVersion())) //$NON-NLS-1$
+						.put("location", location) //$NON-NLS-1$
+						.put("isSubstitutedJar", Boolean.valueOf(substituted)) //$NON-NLS-1$
+						.put("note", substituted //$NON-NLS-1$
+								? "The framework holds the substituted jar, so this IDE really is running it." //$NON-NLS-1$
+								: "THE FRAMEWORK HOLDS THE ORIGINAL. Whatever bundles.info says, this IDE is running the installed bundle, so anything measured here describes unchanged code. A restart is needed, and if one has already happened the substitution did not take."); //$NON-NLS-1$
+			}
+		}
+		return null;
 	}
 
 	/** The line for a bundle, found by its name, which is the one stable field. */
@@ -235,6 +265,10 @@ public final class SubstituteBundleTool implements IMcpTool {
 		if (symbolicName == null) {
 			return McpToolResult.error("Could not read Bundle-SymbolicName from %s.".formatted(manifest)); //$NON-NLS-1$
 		}
+		String packedVersion = header(manifest, "Bundle-Version"); //$NON-NLS-1$
+		if (packedVersion == null) {
+			return McpToolResult.error("Could not read Bundle-Version from %s.".formatted(manifest)); //$NON-NLS-1$
+		}
 
 		List<String> lines = new ArrayList<>(Files.readAllLines(bundlesInfo, StandardCharsets.UTF_8));
 		int index = -1;
@@ -257,7 +291,9 @@ public final class SubstituteBundleTool implements IMcpTool {
 		}
 		Path jars = configuration.resolve(JARS);
 		Path jar = jars.resolve("%s_%d.jar".formatted(symbolicName, Long.valueOf(System.currentTimeMillis()))); //$NON-NLS-1$
-		String substituted = "%s,%s,%s,%s,%s".formatted(fields[0], fields[1], jar.toUri(), fields[3], fields[4]); //$NON-NLS-1$
+		// the packed bundle's own version, for the reason given in substituteJar
+		String substituted = "%s,%s,%s,%s,%s".formatted(fields[0], packedVersion, jar.toUri(), fields[3], //$NON-NLS-1$
+				fields[4]);
 
 		JsonObject result = new JsonObject().put("bundle", symbolicName) //$NON-NLS-1$
 				.put("project", projectName) //$NON-NLS-1$
@@ -338,7 +374,12 @@ public final class SubstituteBundleTool implements IMcpTool {
 		}
 		Path jars = configuration.resolve(JARS);
 		Path copy = jars.resolve("%s_%d.jar".formatted(symbolicName, Long.valueOf(System.currentTimeMillis()))); //$NON-NLS-1$
-		String substituted = "%s,%s,%s,%s,%s".formatted(fields[0], fields[1], copy.toUri(), fields[3], fields[4]); //$NON-NLS-1$
+		// the version of the SUBSTITUTED jar, not the one the old line carried:
+		// simpleconfigurator matches a bundle on symbolic name plus version, so a
+		// line whose version is unchanged is taken for one already installed and its
+		// path is never looked at. The substitution then does nothing at all while
+		// every check on the file says it is in force
+		String substituted = "%s,%s,%s,%s,%s".formatted(fields[0], version, copy.toUri(), fields[3], fields[4]); //$NON-NLS-1$
 
 		JsonObject result = new JsonObject().put("bundle", symbolicName) //$NON-NLS-1$
 				.put("jar", source.toString()) //$NON-NLS-1$
@@ -460,9 +501,14 @@ public final class SubstituteBundleTool implements IMcpTool {
 	}
 
 	private static String symbolicName(Path manifest) throws IOException {
+		String value = header(manifest, "Bundle-SymbolicName"); //$NON-NLS-1$
+		return value == null ? null : value.split(";")[0].strip(); //$NON-NLS-1$
+	}
+
+	private static String header(Path manifest, String name) throws IOException {
 		for (String line : Files.readAllLines(manifest, StandardCharsets.UTF_8)) {
-			if (line.startsWith("Bundle-SymbolicName:")) { //$NON-NLS-1$
-				return line.substring("Bundle-SymbolicName:".length()).split(";")[0].strip(); //$NON-NLS-1$ //$NON-NLS-2$
+			if (line.startsWith(name + ":")) { //$NON-NLS-1$
+				return line.substring(name.length() + 1).strip();
 			}
 		}
 		return null;
