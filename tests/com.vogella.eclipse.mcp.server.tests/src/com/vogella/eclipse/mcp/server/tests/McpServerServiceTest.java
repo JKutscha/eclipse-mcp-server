@@ -327,6 +327,8 @@ class McpServerServiceTest {
 		case "eclipse_resolve_path" -> Map.of("of", List.of(PROJECT));
 		// a name nothing matches, so the smoke test removes nothing even by accident
 		case "eclipse_remove_project" -> Map.of("namePattern", "no-such-project-*");
+		// an id nothing matches, so the smoke test hides nothing persistently
+		case "eclipse_set_model_visibility" -> Map.of("elementId", "no.such.model.element", "visible", Boolean.TRUE);
 		// a dry run against the fixture, so no compliance is actually written
 		case "eclipse_set_java_version" -> Map.of("version", "21", "project", PROJECT);
 		// a command that does nothing, in the temporary directory the setup allows
