@@ -37,8 +37,12 @@ final class AllocationTracePage {
 				+ "Click a frame to zoom into it and Reset zoom to come back. " //$NON-NLS-1$
 				+ "THE BYTES ARE ESTIMATES: the JFR allocation sampler is throttled and reports a weight per sample, so these figures rank allocators against each other and do not add up to everything the process allocated. " //$NON-NLS-1$
 				+ "Stacks are cut at the recording's stackDepth, so callers sharing a top frame may be merged here."; //$NON-NLS-1$
+		List<FlameGraph.Stat> stats = List.of(
+				new FlameGraph.Stat("Allocated", FlameGraph.bytes(flame.total())), //$NON-NLS-1$
+				new FlameGraph.Stat("Sampled stacks", String.valueOf(flame.stacks())), //$NON-NLS-1$
+				new FlameGraph.Stat("Distinct frames", String.valueOf(flame.topTotal(Integer.MAX_VALUE).size()))); //$NON-NLS-1$
 		String url = TracePages.publish(title,
-				FlameGraph.page(new FlameGraph.Spec(title, subtitle, "bytes", flame, tables, note))); //$NON-NLS-1$
+				FlameGraph.page(new FlameGraph.Spec(title, subtitle, "bytes", flame, tables, note, stats))); //$NON-NLS-1$
 		answer.put("traceUrl", url); //$NON-NLS-1$
 		if (open) {
 			String failed = TracePages.open(url);

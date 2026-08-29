@@ -160,7 +160,16 @@ public final class FlameGraph {
 	}
 
 	/** What the page says about itself, beside the graph. */
-	public record Spec(String title, String subtitle, String unit, Builder flame, List<Table> tables, String note) {
+	public record Spec(String title, String subtitle, String unit, Builder flame, List<Table> tables, String note,
+			List<Stat> stats) {
+
+		public Spec(String title, String subtitle, String unit, Builder flame, List<Table> tables, String note) {
+			this(title, subtitle, unit, flame, tables, note, List.of());
+		}
+	}
+
+	/** One headline figure, shown as a tile above the graph. */
+	public record Stat(String label, String value) {
 	}
 
 	/** One summary table: a caption and its rows. */
@@ -208,23 +217,35 @@ public final class FlameGraph {
 		escape(spec.title(), out);
 		out.append("</title>\n<style>\n").append(STYLE).append("\n</style>\n</head>\n<body>\n"); //$NON-NLS-1$ //$NON-NLS-2$
 
-		out.append("<header><h1>"); //$NON-NLS-1$
+		out.append("<div class=\"wrap\">\n<header><h1>"); //$NON-NLS-1$
 		escape(spec.title(), out);
 		out.append("</h1><p class=\"sub\">"); //$NON-NLS-1$
 		escape(spec.subtitle(), out);
 		out.append("</p></header>\n"); //$NON-NLS-1$
 
+		if (spec.stats() != null && !spec.stats().isEmpty()) {
+			out.append("<div class=\"stats\">"); //$NON-NLS-1$
+			for (Stat stat : spec.stats()) {
+				out.append("<div class=\"stat\"><div class=\"k\">"); //$NON-NLS-1$
+				escape(stat.label(), out);
+				out.append("</div><div class=\"v\">"); //$NON-NLS-1$
+				escape(stat.value(), out);
+				out.append("</div></div>"); //$NON-NLS-1$
+			}
+			out.append("</div>\n"); //$NON-NLS-1$
+		}
+
 		if (spec.flame() == null || spec.flame().isEmpty()) {
 			out.append("<div class=\"empty\">No stacks were recorded, so there is nothing to draw. " //$NON-NLS-1$
 					+ "A profile with no samples usually means the recording was too short, or that every sample was filtered out.</div>\n"); //$NON-NLS-1$
 		} else {
-			out.append("<section class=\"flamewrap\">\n"); //$NON-NLS-1$
-			out.append("<div class=\"toolbar\">"); //$NON-NLS-1$
+			out.append("<section class=\"panel\">\n"); //$NON-NLS-1$
+			out.append("<div class=\"head\">"); //$NON-NLS-1$
 			out.append("<input id=\"find\" type=\"search\" placeholder=\"Highlight frames matching…\" spellcheck=\"false\">"); //$NON-NLS-1$
 			out.append("<button id=\"reset\" type=\"button\">Reset zoom</button>"); //$NON-NLS-1$
 			out.append("<span id=\"status\"></span>"); //$NON-NLS-1$
 			out.append("</div>\n<div id=\"flame\" role=\"img\" aria-label=\"Flame graph of the recorded stacks\"></div>\n"); //$NON-NLS-1$
-			out.append("<div id=\"tip\" hidden></div>\n</section>\n"); //$NON-NLS-1$
+			out.append("</section>\n<div id=\"tip\" hidden></div>\n"); //$NON-NLS-1$
 		}
 
 		if (spec.tables() != null && !spec.tables().isEmpty()) {
@@ -261,6 +282,7 @@ public final class FlameGraph {
 			escape(spec.note(), out);
 			out.append("</footer>\n"); //$NON-NLS-1$
 		}
+		out.append("</div>\n"); //$NON-NLS-1$
 
 		if (spec.flame() != null && !spec.flame().isEmpty()) {
 			out.append("<script id=\"profile\" type=\"application/json\">"); //$NON-NLS-1$
@@ -314,55 +336,86 @@ public final class FlameGraph {
 	private static final String STYLE = """
 			:root {
 			  color-scheme: dark;
-			  --bg: #14161c; --panel: #1b1e26; --line: #2a2f3a;
-			  --text: #e6e8ee; --dim: #98a0b3; --accent: #7aa2f7;
+			  --bg: #0b0d12; --panel: #141821; --panel-2: #191e29;
+			  --line: #232935; --line-soft: #1b202b;
+			  --text: #e8ebf2; --dim: #8b93a7; --faint: #5b6478;
+			  --accent: #7c9cff; --accent-soft: #7c9cff22;
+			  --radius: 12px;
 			}
 			* { box-sizing: border-box; }
+			html { -webkit-text-size-adjust: 100%; }
 			body {
 			  margin: 0; background: var(--bg); color: var(--text);
-			  font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+			  font: 13.5px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+			  -webkit-font-smoothing: antialiased;
 			}
-			header { padding: 20px 24px 12px; border-bottom: 1px solid var(--line); }
-			h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
-			.sub { margin: 4px 0 0; color: var(--dim); font-size: 12.5px; }
-			.flamewrap { padding: 16px 24px 4px; }
-			.toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+			.wrap { max-width: 1600px; margin: 0 auto; padding: 0 28px; }
+
+			header { padding: 30px 0 20px; }
+			h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -0.02em; }
+			.sub { margin: 6px 0 0; color: var(--dim); font-size: 13px; }
+
+			.stats { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0 22px; }
+			.stat {
+			  flex: 1 1 150px; background: linear-gradient(180deg, var(--panel-2), var(--panel));
+			  border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px;
+			}
+			.stat .k { color: var(--faint); font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em; font-weight: 600; }
+			.stat .v { margin-top: 3px; font-size: 19px; font-weight: 620; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+
+			.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+			.panel > .head {
+			  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+			  padding: 12px 14px; border-bottom: 1px solid var(--line-soft); background: var(--panel-2);
+			}
 			input[type=search] {
-			  flex: 1 1 240px; min-width: 180px; padding: 7px 10px;
-			  background: var(--panel); border: 1px solid var(--line); border-radius: 7px;
-			  color: var(--text); font: inherit;
+			  flex: 1 1 240px; min-width: 170px; padding: 8px 12px;
+			  background: var(--bg); border: 1px solid var(--line); border-radius: 9px;
+			  color: var(--text); font: inherit; transition: border-color .15s, box-shadow .15s;
 			}
-			input[type=search]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+			input[type=search]::placeholder { color: var(--faint); }
+			input[type=search]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 			button {
-			  padding: 7px 12px; background: var(--panel); border: 1px solid var(--line);
-			  border-radius: 7px; color: var(--text); font: inherit; cursor: pointer;
+			  padding: 8px 13px; background: var(--bg); border: 1px solid var(--line);
+			  border-radius: 9px; color: var(--text); font: inherit; font-weight: 500; cursor: pointer;
+			  transition: border-color .15s, background .15s;
 			}
-			button:hover { border-color: var(--accent); }
-			#status { color: var(--dim); font-variant-numeric: tabular-nums; }
-			#flame { width: 100%; overflow-x: auto; }
+			button:hover { border-color: var(--accent); background: var(--panel-2); }
+			button:active { transform: translateY(1px); }
+			#status { color: var(--dim); font-size: 12.5px; font-variant-numeric: tabular-nums; margin-left: auto; }
+
+			#flame { padding: 10px 8px 12px; overflow-x: auto; }
 			#flame svg { display: block; }
-			#flame rect { cursor: pointer; }
-			#flame text { pointer-events: none; font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #0e1013; }
+			#flame rect { cursor: pointer; transition: opacity .1s; }
+			#flame g:hover rect { opacity: .82; }
+			#flame text { pointer-events: none; font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 			#tip {
-			  position: fixed; z-index: 10; max-width: 60ch; padding: 8px 10px;
-			  background: #0e1013; border: 1px solid var(--line); border-radius: 8px;
+			  position: fixed; z-index: 10; max-width: 62ch; padding: 9px 11px;
+			  background: #05070b; border: 1px solid var(--line); border-radius: 10px;
 			  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-			  color: var(--text); pointer-events: none; box-shadow: 0 8px 24px #0008;
-			  overflow-wrap: anywhere;
+			  color: var(--text); pointer-events: none; box-shadow: 0 12px 32px #000a;
+			  overflow-wrap: anywhere; line-height: 1.5;
 			}
+			#tip b { color: var(--accent); font-weight: 600; }
 			[hidden] { display: none !important; }
-			.tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; padding: 16px 24px 24px; }
-			.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
-			.card h2 { margin: 0 0 10px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--dim); }
+
+			.tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; margin: 14px 0 0; }
+			.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; overflow: hidden; }
+			.card h2 {
+			  margin: 0; padding: 12px 14px; font-size: 10.5px; font-weight: 650;
+			  text-transform: uppercase; letter-spacing: .09em; color: var(--dim);
+			  border-bottom: 1px solid var(--line-soft); background: var(--panel-2);
+			}
 			.scroll { overflow-x: auto; }
 			table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
-			th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
-			th { color: var(--dim); font-weight: 500; }
-			tr:last-child td { border-bottom: 0; }
-			td { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
-			td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-			.empty { margin: 24px; padding: 20px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; color: var(--dim); }
-			footer { padding: 0 24px 28px; color: var(--dim); font-size: 12px; max-width: 90ch; }
+			th, td { text-align: left; padding: 7px 14px; border-bottom: 1px solid var(--line-soft); }
+			th { color: var(--faint); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; }
+			tbody tr:last-child td { border-bottom: 0; }
+			tbody tr:hover { background: var(--panel-2); }
+			td { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; color: var(--text); }
+			td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--dim); }
+			.empty { margin: 8px 0; padding: 22px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); color: var(--dim); }
+			footer { padding: 22px 0 34px; color: var(--faint); font-size: 12px; max-width: 92ch; line-height: 1.6; }
 			"""; //$NON-NLS-1$
 
 	private static final String SCRIPT = """
@@ -374,7 +427,7 @@ public final class FlameGraph {
 			  var status = document.getElementById('status');
 			  var find = document.getElementById('find');
 			  var NS = 'http://www.w3.org/2000/svg';
-			  var ROW = 18, focus = root, needle = '';
+			  var ROW = 19, focus = root, needle = '';
 
 			  function fmt(v) {
 			    if (unit === 'bytes') {
@@ -395,12 +448,15 @@ public final class FlameGraph {
 			    }
 			    return d;
 			  }
-			  // a warm ramp, and stable per frame so the same method keeps its colour
-			  function colour(name, hot) {
+			  // stable per frame, so one method keeps its colour wherever it appears, and
+			  // spread across the wheel rather than the classic orange, which at this
+			  // density reads as one block
+			  function colour(name) {
 			    var h = 0;
 			    for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
-			    var hue = 12 + Math.abs(h) % 42;
-			    return hot ? 'hsl(' + hue + ' 92% 68%)' : 'hsl(' + hue + ' 62% ' + (52 + Math.abs(h >> 7) % 10) + '%)';
+			    h = Math.abs(h);
+			    var hue = (h * 47) % 360;
+			    return 'hsl(' + hue + ' 46% 58%)';
 			  }
 
 			  function draw() {
@@ -424,21 +480,25 @@ public final class FlameGraph {
 			      r.setAttribute('y', height - (level + 1) * ROW);
 			      r.setAttribute('width', Math.max(w - 0.5, 0.5).toFixed(2));
 			      r.setAttribute('height', ROW - 1);
-			      r.setAttribute('rx', 2);
-			      r.setAttribute('fill', needle ? (hit ? '#8ce99a' : '#3a3f4b') : colour(node.n, false));
+			      r.setAttribute('rx', 3);
+			      r.setAttribute('fill', needle ? (hit ? '#7ee787' : '#2a2f3b') : colour(node.n));
 			      g.appendChild(r);
 			      if (w > 42) {
 			        var t = document.createElementNS(NS, 'text');
 			        t.setAttribute('x', (x + 4).toFixed(2));
 			        t.setAttribute('y', height - level * ROW - 6);
+			        t.setAttribute('fill', needle && !hit ? '#6b7385' : '#0a0c11');
 			        var label = node.n, max = Math.floor((w - 8) / 6.1);
 			        t.textContent = label.length > max ? label.slice(0, Math.max(max - 1, 1)) + '\\u2026' : label;
 			        g.appendChild(t);
 			      }
 			      g.addEventListener('mousemove', function (e) {
 			        tip.hidden = false;
-			        tip.textContent = node.n + '  \\u2014  ' + fmt(node.v)
-			          + '  (' + (node.v * 100 / root.v).toFixed(1) + '% of all)';
+			        tip.innerHTML = '';
+			        tip.append(node.n);
+			        var b = document.createElement('b');
+			        b.textContent = fmt(node.v) + ' \\u00b7 ' + (node.v * 100 / root.v).toFixed(1) + '% of all';
+			        tip.append(document.createElement('br'), b);
 			        var pad = 14;
 			        var left = Math.min(e.clientX + pad, window.innerWidth - tip.offsetWidth - 8);
 			        var top = e.clientY + pad + tip.offsetHeight > window.innerHeight
