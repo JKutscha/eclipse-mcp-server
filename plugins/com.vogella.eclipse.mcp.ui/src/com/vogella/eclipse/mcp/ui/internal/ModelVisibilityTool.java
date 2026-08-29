@@ -81,7 +81,7 @@ public final class ModelVisibilityTool implements IMcpTool {
 		int maxResults = args.getInt("maxResults", 20, 1, 200); //$NON-NLS-1$
 
 		CompletableFuture<JsonObject> pending = new CompletableFuture<>();
-		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
+		UiThread.exec(() -> {
 			try {
 				pending.complete(apply(elementId, visible, rendered, dryRun, maxResults));
 			} catch (RuntimeException e) {

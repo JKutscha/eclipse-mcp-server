@@ -225,7 +225,7 @@ public final class CommandTools {
 
 			ExecutionRecorder recorder = new ExecutionRecorder();
 			CompletableFuture<String> pending = new CompletableFuture<>();
-			PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
+			UiThread.exec(() -> {
 				try {
 					pending.complete(execute(wanted, parameters, dryRun, selection, recorder).toString());
 				} catch (RuntimeException e) {

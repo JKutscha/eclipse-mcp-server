@@ -42,6 +42,23 @@ public final class UiThread {
 		return PlatformUI.isWorkbenchRunning() && PlatformUI.getWorkbench().getDisplay() == Display.getCurrent();
 	}
 
+	/**
+	 * Queues work on the UI thread, or runs it here when this already is the UI
+	 * thread.
+	 * <p>
+	 * The tools that keep a future of their own call this rather than asyncExec:
+	 * queueing from the UI thread and then waiting on the future blocks the thread
+	 * that would run it, which is what a step of an atomic script does when it
+	 * calls another tool.
+	 */
+	static void exec(Runnable work) {
+		if (onUiThread()) {
+			work.run();
+		} else {
+			PlatformUI.getWorkbench().getDisplay().asyncExec(work);
+		}
+	}
+
 	/** Runs the work here and now, turning a failure into the same shape a wait produces. */
 	private static Outcome inline(Supplier<JsonObject> work) {
 		try {

@@ -62,6 +62,8 @@ An `IExecutionListener` on the resolved command records which verdict fired, so 
 **Threading.**
 Tool calls arrive on Jetty worker threads.
 Never call `Display.syncExec` from one; hand work to `asyncExec` and wait on a future with a short timeout, the way `GetEditorContextTool` does.
+Queue through `UiThread.exec` rather than `getDisplay().asyncExec` directly: a tool can now be called from another tool, and `eclipse_run_script` with `atomic` runs a whole batch inside one Display runnable, where queueing and then waiting on the future blocks the very thread that would run it.
+`UiThread.exec` runs the work inline when it already is the UI thread, and every entry point of `UiThread` does the same, which is what turned a ten second deadlock into a twelve millisecond step.
 Marker reads and JDT searches are safe off the UI thread and need no workspace lock.
 The server aborts any call that has not finished within the configured call timeout, 30 seconds by default.
 `McpToolAdapter` reads `McpPreferences.getCallTimeout()` per call, so a changed preference applies without a restart.

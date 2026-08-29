@@ -79,7 +79,7 @@ public final class ScreenshotTools {
 		}
 		CompletableFuture<T> pending = new CompletableFuture<>();
 		// asyncExec, never syncExec: a busy UI must not block the HTTP worker
-		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
+		UiThread.exec(() -> {
 			try {
 				pending.complete(work.get());
 			} catch (RuntimeException e) {

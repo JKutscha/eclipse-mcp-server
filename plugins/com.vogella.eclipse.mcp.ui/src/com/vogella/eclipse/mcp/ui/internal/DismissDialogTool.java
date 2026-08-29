@@ -68,7 +68,7 @@ public final class DismissDialogTool implements IMcpTool {
 		CompletableFuture<JsonObject> pending = new CompletableFuture<>();
 		// asyncExec even though a modal dialog is up: a modal runs a nested event loop,
 		// so queued runnables still execute, and syncExec from here could deadlock
-		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
+		UiThread.exec(() -> {
 			try {
 				pending.complete(dismiss(shellTitle, button, dryRun));
 			} catch (RuntimeException e) {

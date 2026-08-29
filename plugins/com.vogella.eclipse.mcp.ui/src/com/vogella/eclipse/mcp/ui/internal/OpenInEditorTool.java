@@ -75,7 +75,7 @@ public final class OpenInEditorTool implements IMcpTool {
 		boolean activate = args.getBoolean("activate", true); //$NON-NLS-1$
 
 		CompletableFuture<JsonObject> pending = new CompletableFuture<>();
-		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
+		UiThread.exec(() -> {
 			try {
 				pending.complete(open(file, line, activate));
 			} catch (RuntimeException e) {

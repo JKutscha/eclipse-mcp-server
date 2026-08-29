@@ -56,7 +56,7 @@ public final class GetEditorContextTool implements IMcpTool {
 		}
 		CompletableFuture<JsonObject> pending = new CompletableFuture<>();
 		// never syncExec from a request thread, a busy UI would block the HTTP worker
-		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
+		UiThread.exec(() -> {
 			try {
 				pending.complete(collect());
 			} catch (RuntimeException e) {
