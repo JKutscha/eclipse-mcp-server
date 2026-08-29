@@ -286,9 +286,17 @@ public final class SubstituteBundleTool implements IMcpTool {
 			if (!dryRun) {
 				lines.set(index, record[1]);
 			}
+			// a substitution layered on another records the jar it replaced, which is
+			// itself a packed one, so restoring lands on that rather than on the
+			// shipped bundle. That is right, and invisible unless it is said
+			boolean ontoSubstituted = record[1].contains(JARS);
 			done.add(new JsonObject().put("bundle", record[0]) //$NON-NLS-1$
 					.put("was", current) //$NON-NLS-1$
-					.put("line", record[1])); //$NON-NLS-1$
+					.put("line", record[1]) //$NON-NLS-1$
+					.put("restoredToSubstitutedJar", Boolean.valueOf(ontoSubstituted)) //$NON-NLS-1$
+					.put("restoredToNote", ontoSubstituted //$NON-NLS-1$
+							? "This puts back an EARLIER SUBSTITUTED jar, not the shipped one: a substitution was layered on another, and this record's original is that other packed jar. Restore again to go one layer further back, and check action status." //$NON-NLS-1$
+							: null));
 		}
 		JsonArray stillReferenced = new JsonArray();
 		if (!dryRun && done.size() > 0) {

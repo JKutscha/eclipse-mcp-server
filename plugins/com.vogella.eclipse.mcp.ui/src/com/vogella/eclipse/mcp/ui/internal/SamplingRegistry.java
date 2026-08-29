@@ -228,7 +228,12 @@ public final class SamplingRegistry {
 	 */
 	public static JsonObject aggregate(Session session, int topMethods, int minSamples, boolean includeRaw,
 			boolean includeIdle) {
-		return aggregate(session, topMethods, minSamples, includeRaw, includeIdle, null);
+		return aggregate(session, topMethods, minSamples, includeRaw, includeIdle, null, false);
+	}
+
+	public static JsonObject aggregate(Session session, int topMethods, int minSamples, boolean includeRaw,
+			boolean includeIdle, String frameFilter) {
+		return aggregate(session, topMethods, minSamples, includeRaw, includeIdle, frameFilter, false);
 	}
 
 	/**
@@ -298,12 +303,13 @@ public final class SamplingRegistry {
 	}
 
 	public static JsonObject aggregate(Session session, int topMethods, int minSamples, boolean includeRaw,
-			boolean includeIdle, String frameFilter) {
+			boolean includeIdle, String frameFilter, boolean includeAllThreads) {
 		Selection selection = select(session, includeIdle, frameFilter);
 		List<Sample> everything = selection.everything();
 		List<Sample> samples = selection.samples();
 		int filtered = selection.filtered();
 		int idle = selection.idle();
+		JsonArray threads = byThread(everything, contributing(samples), session, includeAllThreads);
 		JsonObject result = new JsonObject().put("sessionId", session.id()) //$NON-NLS-1$
 				.put("running", session.running()) //$NON-NLS-1$
 				.put("ticks", session.ticks()) //$NON-NLS-1$
@@ -312,7 +318,17 @@ public final class SamplingRegistry {
 				.put("intervalMillis", session.intervalMillis()) //$NON-NLS-1$
 				.put("achievedIntervalMillis", Long.valueOf(session.achievedIntervalMillis())) //$NON-NLS-1$
 				.put("elapsedMillis", session.elapsedMillis()) //$NON-NLS-1$
-				.put("byThread", byThread(everything, session)); //$NON-NLS-1$
+				.put("byThread", threads); //$NON-NLS-1$
+		int listed = threads.size();
+		int sampled = contributing(everything).size();
+		result.put("threadsSampled", Integer.valueOf(sampled)) //$NON-NLS-1$
+				.put("threadsListed", Integer.valueOf(listed)) //$NON-NLS-1$
+				.put("threadsOmitted", Integer.valueOf(sampled - listed)); //$NON-NLS-1$
+		if (sampled > listed) {
+			result.put("byThreadNote", //$NON-NLS-1$
+					"byThread lists only the threads that contributed a sample this answer is about; %d parked or filtered ones are counted above and left out, because their state counts were most of the answer and said nothing about where the time went. Pass includeThreads true for all of them." //$NON-NLS-1$
+							.formatted(Integer.valueOf(sampled - listed)));
+		}
 		long achieved = session.achievedIntervalMillis();
 		if (achieved > session.intervalMillis() * 1.2) {
 			// sampling every thread every 10ms does not fit in 10ms, and a caller
@@ -379,7 +395,17 @@ public final class SamplingRegistry {
 	 * have been the UI thread. The states answer the other half: blocked on a lock
 	 * and burning CPU are the same number of samples and opposite diagnoses.
 	 */
-	private static JsonArray byThread(List<Sample> samples, Session session) {
+	/** The threads that contributed a sample the answer is actually about. */
+	private static java.util.Set<Long> contributing(List<Sample> samples) {
+		java.util.Set<Long> ids = new java.util.HashSet<>();
+		for (Sample sample : samples) {
+			ids.add(Long.valueOf(sample.threadId()));
+		}
+		return ids;
+	}
+
+	private static JsonArray byThread(List<Sample> samples, java.util.Set<Long> contributing, Session session,
+			boolean includeAll) {
 		Map<Long, String> names = new LinkedHashMap<>();
 		Map<Long, Integer> counts = new LinkedHashMap<>();
 		Map<Long, Map<String, Integer>> states = new LinkedHashMap<>();
@@ -395,6 +421,11 @@ public final class SamplingRegistry {
 		sorted.sort(Map.Entry.<Long, Integer>comparingByValue().reversed());
 		JsonArray array = new JsonArray();
 		for (Map.Entry<Long, Integer> entry : sorted) {
+			// an IDE parks seventy threads in pools, and their state counts were most
+			// of the answer while saying nothing about where the time went
+			if (!includeAll && !contributing.contains(entry.getKey())) {
+				continue;
+			}
 			JsonObject states0 = new JsonObject();
 			states.get(entry.getKey()).forEach(states0::put);
 			long[] range = cpu.get(entry.getKey());

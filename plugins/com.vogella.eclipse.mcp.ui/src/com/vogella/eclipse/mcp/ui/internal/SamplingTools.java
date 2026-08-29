@@ -105,7 +105,7 @@ public final class SamplingTools {
 
 		@Override
 		public String getDescription() {
-			return "Stops a sampling session and returns the aggregated result: the frames where the time was actually spent, the frames most often present on the stack, and the samples merged into one call tree. The raw samples are not returned unless asked for, because a hundred samples of seventy frames is seven thousand lines. Threads that were parked or waiting are excluded by default and counted in idleSamplesExcluded, and the answer says so if sampling stopped early because its tick budget ran out."; //$NON-NLS-1$
+			return "Stops a sampling session and returns the aggregated result: the frames where the time was actually spent, the frames most often present on the stack, and the samples merged into one call tree. The raw samples are not returned unless asked for, because a hundred samples of seventy frames is seven thousand lines. byThread lists only the threads that contributed a sample the answer is about, with threadsSampled, threadsListed and threadsOmitted beside it; pass includeThreads for all of them. Threads that were parked or waiting are excluded by default and counted in idleSamplesExcluded, and the answer says so if sampling stopped early because its tick budget ran out."; //$NON-NLS-1$
 		}
 
 		@Override
@@ -120,7 +120,8 @@ public final class SamplingTools {
 					    "includeRawSamples": {"type":"boolean","default":false,"description":"Also return every sample. Large."},
 					    "frameFilter":        {"type":"string","description":"Aggregate only the stacks containing this text in a frame, e.g. a package prefix or one class. Applied when reading, not when sampling, so one session can be re-read from several angles with keepRunning."},
 					    "includeIdleThreads": {"type":"boolean","default":false,"description":"Count threads parked or waiting. Off by default, because otherwise the pooled threads of an idle IDE dominate the result. Turn it ON to diagnose a FREEZE: a frozen thread is usually parked, and the default drops exactly the samples that explain the stall."},
-					    "keepRunning": {"type":"boolean","default":false,"description":"Report the aggregate so far without stopping."},
+					    "includeThreads": {"type":"boolean","default":false,"description":"List every thread that was sampled in byThread, including the parked pool threads. Off by default because on an IDE with seventy threads their state counts are most of the answer and say nothing about where the time went; the totals are reported either way."},
+					    "keepRunning": {"type":"boolean","default":false,"description":"Report the aggregate so far without stopping. With frameFilter this is how one session is read from several angles."},
 					    "show":        {"type":"boolean","default":false,"description":"Also render the samples as a flame graph on a page this IDE serves, and return its URL under traceUrl. The page is dark themed, self contained and held in memory only."},
 					    "open":        {"type":"boolean","default":false,"description":"Open that page in the machine's browser. Implies show. VISIBLE TO WHOEVER IS AT THE IDE, since a browser window appears."}
 					  },
@@ -149,7 +150,8 @@ public final class SamplingTools {
 			String frameFilter = args.getString("frameFilter"); //$NON-NLS-1$
 			JsonObject result = SamplingRegistry.aggregate(session, args.getInt("topMethods", 15, 1, 200), //$NON-NLS-1$
 					args.getInt("minSamples", 2, 1, 1000), //$NON-NLS-1$
-					args.getBoolean("includeRawSamples", false), includeIdle, frameFilter); //$NON-NLS-1$
+					args.getBoolean("includeRawSamples", false), includeIdle, frameFilter, //$NON-NLS-1$
+					args.getBoolean("includeThreads", false)); //$NON-NLS-1$
 			boolean open = args.getBoolean("open", false); //$NON-NLS-1$
 			if (open || args.getBoolean("show", false)) { //$NON-NLS-1$
 				TracePage.publishSampling(session, includeIdle, frameFilter, result, open);
