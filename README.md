@@ -1,4 +1,4 @@
-<img src="icons/eclipse-mcp-server.png" alt="" width="128" align="right">
+<img src="docs/images/logo256.png" alt="" width="128" align="right">
 
 # Eclipse MCP Server
 
@@ -15,6 +15,14 @@ The debugger tools change things too, in narrower ways that each description sta
 There is no general file writing and no refactoring.
 Commands run only in directories the user has named, and the git operations are a branch switch and a pull request fetch, both through EGit.
 The server is **disabled by default**, listens on the loopback interface only, and rejects every request that does not carry a bearer token.
+
+<p align="center">
+  <img src="docs/images/splash-animated.webp" alt="The Eclipse MCP Server splash screen" width="600">
+</p>
+
+Optionally the IDE can come up under this splash instead of the platform's own.
+It is **off by default**; set `replaceSplash` in the installation's configuration scope to turn it on.
+The launcher paints the splash before OSGi starts, so the change takes effect at the restart after the one that applies it.
 
 ## Building
 
