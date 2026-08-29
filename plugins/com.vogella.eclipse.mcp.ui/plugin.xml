@@ -28,6 +28,7 @@
       <tool class="com.vogella.eclipse.mcp.ui.internal.KeyboardTools$PressKey"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.SelectionTools$GetSelection"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.SelectionTools$SetSelection"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.ContextMenuTool"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.RestartTool"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.DismissDialogTool"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.ViewTools$Show"/>

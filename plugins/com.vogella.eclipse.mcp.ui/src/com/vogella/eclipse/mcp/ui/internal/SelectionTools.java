@@ -123,6 +123,11 @@ public final class SelectionTools {
 		return value.length() <= MAX_LABEL ? value : value.substring(0, MAX_LABEL) + "..."; //$NON-NLS-1$
 	}
 
+	/** The part a tool argument names, for the other tools in this package. */
+	static IWorkbenchPart partFor(String partId) {
+		return findPart(partId);
+	}
+
 	private static IWorkbenchPart findPart(String partId) {
 		IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
 		IWorkbenchPage page = window == null ? null : window.getActivePage();

@@ -2107,6 +2107,25 @@ Each step reports `ok`, `millis`, `error` and the tool's own answer as a documen
 
 Do not put `eclipse_restart` in a script: it takes the IDE down and the remaining steps go with it.
 
+### `eclipse_get_context_menu`
+
+Reports what a part's context menu would show for the current selection. Read-only, and **nothing appears on screen**.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `part` | string | active part | Part whose context menu to report. |
+| `path` | string | | Report one submenu, by label without its mnemonic, e.g. `Team`, nested with `/`. |
+| `maxDepth` | integer, 1 to 6 | 2 | How many levels of submenu to open. |
+| `maxResults` | integer | 300 | |
+
+A context menu is a native window rather than an SWT shell, so `eclipse_screenshot` cannot capture it, and the `Menu` does not exist until something asks for it, so `eclipse_get_widget_tree` finds nothing either.
+This sends the control the `MenuDetect` a right click sends, populates the menu with a `Show` event, walks it, and hides everything it showed; the menu is never made visible, so no native grab is taken.
+
+Each item reports its `label` without the mnemonic or accelerator, `enabled`, `separator`, `hasSubmenu`, `selected` for check and radio items, and the `command` behind it, read from the contribution (a 3.x `CommandContributionItem` or an e4 handled item, asked through the shape they share rather than by importing an internal type).
+
+This is a different question from `eclipse_run_workbench_command` enablement: **an item can be enabled and contributed to no menu at all**, and a command missing from the menu a person actually opens is the bug the enablement answer hides.
+Set the selection first with `eclipse_set_selection`; `path` also keeps a large menu cheap, since every level costs a `Show` on each submenu.
+
 ### `eclipse_get_selection` and `eclipse_set_selection`
 
 `eclipse_get_selection` is read-only; **`eclipse_set_selection` changes what is selected in the IDE** and reports the previous selection so it can be put back.
