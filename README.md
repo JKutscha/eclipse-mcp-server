@@ -8,7 +8,7 @@ An agent with a shell already has files, grep and git.
 What it does not have is the resolved Java model, the incremental builder's problem markers and the user's current editor context.
 Those are the capabilities exposed here.
 
-Built and maintained by [vogella GmbH](https://vogella.com/services/), and used in our consulting and in our AI based Java cleanup services.
+Built and maintained by [vogella GmbH](https://vogella.com/services/), and used in our consulting and in our AI based Java cleanup services [for legacy code and code optimization](https://vogella.com/services/).
 
 Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration, `eclipse_set_project_state` opens and closes projects, `eclipse_set_bree` rewrites plug-in manifests, `eclipse_add_repository` and `eclipse_remove_repository` change the configured update sites, `eclipse_run_command` runs arbitrary commands in directories that same preference page has to name first, `eclipse_run_workbench_command` runs whatever workbench command it is given, and `eclipse_manage_window` and `eclipse_log_status` open and close windows and write log entries.
 The debugger tools change things too, in narrower ways that each description states: `eclipse_set_breakpoint` edits the breakpoint list, `eclipse_debug_launch` starts a process under the debugger, `eclipse_debug_evaluate` runs an expression inside the debugged program, and `eclipse_debug_control` steps and terminates it.
@@ -2078,7 +2078,9 @@ The uniform-pixel check is what makes this safe rather than quietly wrong: SWT r
 
 **Highlights.**
 `highlights` draws rectangles onto the captured image, each `{path, bounds, color, label, style}`:
-`path` is a widget path from `eclipse_get_widget_tree` relative to the capture target, `bounds` is `x,y wxh` in points relative to the capture target, `color` is `#rrggbb` (default `#ff0066`, which reads on light and dark themes), `label` is drawn in a filled box above the rectangle, and `style` is `outline` (3 px, the default) or `fill` (translucent).
+`path` is a widget path from `eclipse_get_widget_tree` relative to the capture target, `bounds` is `x,y wxh` in points relative to the capture target, `color` is `#rrggbb` (default `#ff0066`, which reads on light and dark themes), `label` is drawn in a filled box beside the rectangle, and `style` is `outline` (the default) or `fill` (translucent).
+`padding` adds air around the rectangle **in points**, one number for every side or `top,right,bottom,left`, applied after the rectangle is resolved and before it is scaled, which is the only way to frame a widget loosely when the rectangle came from a `path`.
+`lineWidth` is the outline in pixels, 3 by default, and `labelPosition` is `above` (default), `below`, `left`, `right` or `inside`, for keeping a label off a neighbouring element.
 Points are scaled by the zoom the capture was painted at and by the downscale to `maxWidth`, and the answer reports under `highlights` the pixel rectangle each one landed on, whether it was clipped, and the label's box, so a reader can verify the overlay against the image.
 The rectangle and the fill are written into the pixels directly rather than through a GC, so a monitor's scaling cannot shift them.
 **Selecting a shell.**
@@ -2387,7 +2389,7 @@ The contract for an implementation:
 
 ## Commercial support
 
-[vogella GmbH](https://vogella.com/services/) builds and maintains this server and offers training and consulting around Eclipse, the Eclipse platform and its tooling, and AI based Java cleanup.
+[vogella GmbH](https://vogella.com/services/) builds and maintains this server and offers training and consulting around Eclipse, the Eclipse platform and its tooling, and AI based Java cleanup [for legacy code and code optimization](https://vogella.com/services/).
 
 If you use this server in earnest and something is missing, saying so is welcome either way: the issues and pull requests here are open, and the commercial route exists for work that wants a schedule attached.
 

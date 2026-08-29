@@ -43,7 +43,42 @@ public final class Overlays {
 
 	/** One requested highlight, resolved to points, or the reason it could not be. */
 	public record Highlight(String path, String bounds, Rectangle points, RGB color, String label, boolean fill,
-			String error) {
+			int lineWidth, String labelPosition, String error) {
+	}
+
+	/** Grows a rectangle by the padding, which is where the air around a widget comes from. */
+	public static Rectangle pad(Rectangle rectangle, int[] padding) {
+		return new Rectangle(rectangle.x - padding[3], rectangle.y - padding[0],
+				rectangle.width + padding[1] + padding[3], rectangle.height + padding[0] + padding[2]);
+	}
+
+	/** Top, right, bottom, left. One number is all four; four are the sides in that order. */
+	public static int[] parsePadding(Object value) {
+		if (value == null) {
+			return new int[4];
+		}
+		if (value instanceof Number number) {
+			int all = number.intValue();
+			return new int[] { all, all, all, all };
+		}
+		String[] parts = String.valueOf(value).strip().split(","); //$NON-NLS-1$
+		try {
+			if (parts.length == 1) {
+				int all = Integer.parseInt(parts[0].strip());
+				return new int[] { all, all, all, all };
+			}
+			if (parts.length == 4) {
+				int[] sides = new int[4];
+				for (int i = 0; i < 4; i++) {
+					sides[i] = Integer.parseInt(parts[i].strip());
+				}
+				return sides;
+			}
+		} catch (NumberFormatException e) {
+			// reported below
+		}
+		throw new IllegalArgumentException(
+				"'%s' is not a padding; give a number of points, or 'top,right,bottom,left'.".formatted(value)); //$NON-NLS-1$
 	}
 
 	/** Resolves the raw {@code highlights} argument against the capture target. */
@@ -54,7 +89,7 @@ public final class Overlays {
 		}
 		for (Object entry : entries) {
 			if (!(entry instanceof Map<?, ?> map)) {
-				resolved.add(new Highlight(null, null, null, DEFAULT_COLOR, null, false,
+				resolved.add(new Highlight(null, null, null, DEFAULT_COLOR, null, false, OUTLINE, null,
 						"A highlight has to be an object with path or bounds.")); //$NON-NLS-1$
 				continue;
 			}
@@ -62,11 +97,18 @@ public final class Overlays {
 			String bounds = string(map.get("bounds")); //$NON-NLS-1$
 			String label = string(map.get("label")); //$NON-NLS-1$
 			boolean fill = "fill".equals(string(map.get("style"))); //$NON-NLS-1$ //$NON-NLS-2$
+			String labelPosition = string(map.get("labelPosition")); //$NON-NLS-1$
+			int lineWidth = map.get("lineWidth") instanceof Number width //$NON-NLS-1$
+					? Math.clamp(width.intValue(), 1, 40)
+					: OUTLINE;
 			RGB color;
+			int[] padding;
 			try {
 				color = parseColor(string(map.get("color"))); //$NON-NLS-1$
+				padding = parsePadding(map.get("padding")); //$NON-NLS-1$
 			} catch (IllegalArgumentException e) {
-				resolved.add(new Highlight(path, bounds, null, DEFAULT_COLOR, label, fill, e.getMessage()));
+				resolved.add(new Highlight(path, bounds, null, DEFAULT_COLOR, label, fill, lineWidth, labelPosition,
+						e.getMessage()));
 				continue;
 			}
 			Rectangle points;
@@ -94,7 +136,10 @@ public final class Overlays {
 				points = null;
 				error = "A highlight needs path or bounds."; //$NON-NLS-1$
 			}
-			resolved.add(new Highlight(path, bounds, points, color, label, fill, error));
+			// padding widens what was resolved, before any scaling, so it is expressed
+			// in the same points the caller used
+			resolved.add(new Highlight(path, bounds, points == null ? null : pad(points, padding), color, label, fill,
+					lineWidth, labelPosition, error));
 		}
 		return resolved;
 	}
@@ -127,10 +172,11 @@ public final class Overlays {
 			if (highlight.fill()) {
 				fill(image, clipped, highlight.color());
 			}
-			outline(image, pixels, image.width, image.height, highlight.color());
+			outline(image, pixels, image.width, image.height, highlight.color(), highlight.lineWidth());
 			Rectangle labelBox = null;
 			if (highlight.label() != null && !highlight.label().isBlank() && display != null) {
-				labelBox = label(display, image, clipped, highlight.color(), highlight.label(), scale);
+				labelBox = label(display, image, clipped, highlight.color(), highlight.label(), scale,
+						highlight.labelPosition());
 			}
 			report.add(entry.put("drawn", Boolean.TRUE).put("labelPixels", labelBox == null ? null : describe(labelBox))); //$NON-NLS-1$ //$NON-NLS-2$
 		}
@@ -138,9 +184,9 @@ public final class Overlays {
 	}
 
 	/** A {@value #OUTLINE} pixel frame just inside the rectangle, clipped to the image. */
-	static void outline(ImageData image, Rectangle r, int width, int height, RGB color) {
+	static void outline(ImageData image, Rectangle r, int width, int height, RGB color, int lineWidth) {
 		int pixel = image.palette.getPixel(color);
-		for (int i = 0; i < OUTLINE; i++) {
+		for (int i = 0; i < lineWidth; i++) {
 			horizontal(image, r.x, r.x + r.width - 1, r.y + i, width, height, pixel);
 			horizontal(image, r.x, r.x + r.width - 1, r.y + r.height - 1 - i, width, height, pixel);
 			vertical(image, r.y, r.y + r.height - 1, r.x + i, width, height, pixel);
@@ -191,7 +237,7 @@ public final class Overlays {
 	 * above, and inside its top left corner when there is room nowhere.
 	 */
 	private static Rectangle label(Display display, ImageData image, Rectangle anchor, RGB color, String text,
-			double scale) {
+			double scale, String position) {
 		Point size;
 		GC measure = new GC(display);
 		try {
@@ -220,15 +266,32 @@ public final class Overlays {
 			background.dispose();
 			foreground.dispose();
 		}
-		int x = Math.max(0, Math.min(anchor.x, image.width - rendered.width));
+		int x = anchor.x;
 		int y;
-		if (anchor.y - rendered.height >= 0) {
-			y = anchor.y - rendered.height;
-		} else if (anchor.y + anchor.height + rendered.height <= image.height) {
-			y = anchor.y + anchor.height;
-		} else {
-			y = anchor.y + OUTLINE;
+		String wanted = position == null ? "above" : position.toLowerCase(java.util.Locale.ROOT); //$NON-NLS-1$
+		switch (wanted) {
+		case "below" -> y = anchor.y + anchor.height; //$NON-NLS-1$
+		case "inside" -> y = anchor.y; //$NON-NLS-1$
+		case "left" -> { //$NON-NLS-1$
+			y = anchor.y;
+			x = anchor.x - rendered.width;
 		}
+		case "right" -> { //$NON-NLS-1$
+			y = anchor.y;
+			x = anchor.x + anchor.width;
+		}
+		default -> {
+			// above, and the fallbacks that keep it on the image when there is no room
+			if (anchor.y - rendered.height >= 0) {
+				y = anchor.y - rendered.height;
+			} else if (anchor.y + anchor.height + rendered.height <= image.height) {
+				y = anchor.y + anchor.height;
+			} else {
+				y = anchor.y;
+			}
+		}
+		}
+		x = Math.max(0, Math.min(x, image.width - rendered.width));
 		y = Math.max(0, Math.min(y, image.height - rendered.height));
 		blit(rendered, image, x, y);
 		return new Rectangle(x, y, rendered.width, rendered.height);

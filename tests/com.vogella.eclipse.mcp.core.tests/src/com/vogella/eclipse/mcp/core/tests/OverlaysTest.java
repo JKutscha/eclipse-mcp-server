@@ -1,5 +1,6 @@
 package com.vogella.eclipse.mcp.core.tests;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -39,6 +40,50 @@ class OverlaysTest {
 		assertEquals(new RGB(1, 2, 3), Overlays.parseColor("1, 2, 3"));
 		assertEquals(Overlays.DEFAULT_COLOR, Overlays.parseColor(null));
 		assertThrows(IllegalArgumentException.class, () -> Overlays.parseColor("red"));
+	}
+
+	@Test
+	void paddingWidensTheRectangleInPointsBeforeItIsScaled() throws Exception {
+		assertArrayEquals(new int[] { 4, 4, 4, 4 }, Overlays.parsePadding(Integer.valueOf(4)));
+		assertArrayEquals(new int[] { 1, 2, 3, 4 }, Overlays.parsePadding("1,2,3,4"));
+		assertArrayEquals(new int[] { 0, 0, 0, 0 }, Overlays.parsePadding(null));
+		assertThrows(IllegalArgumentException.class, () -> Overlays.parsePadding("1,2"));
+
+		ImageData image = plain(200, 100);
+		List<Overlays.Highlight> highlights = Overlays.resolve(null, null,
+				List.of(Map.of("bounds", "20,20 40x20", "padding", Integer.valueOf(5))));
+
+		Map<String, Object> drawn = first(Overlays.draw(null, image, highlights, 1.0).toString());
+
+		// the padded rectangle is what is reported, so a caller sees what was drawn
+		assertEquals("15,15 50x30", drawn.get("pointsInTarget"), "got " + drawn);
+		assertEquals("15,15 50x30", drawn.get("pixels"), "got " + drawn);
+	}
+
+	@Test
+	void paddingIsAppliedInPointsAndThenScaled() throws Exception {
+		ImageData image = plain(200, 100);
+		List<Overlays.Highlight> highlights = Overlays.resolve(null, null,
+				List.of(Map.of("bounds", "20,20 40x20", "padding", Integer.valueOf(5))));
+
+		// zoom 200 halved back: the padded points and the pixels agree again, which is
+		// what tells a padding applied before scaling from one applied after
+		Map<String, Object> drawn = first(Overlays.draw(null, image, highlights, 2.0 * 0.5).toString());
+
+		assertEquals("15,15 50x30", drawn.get("pointsInTarget"), "got " + drawn);
+		assertEquals("15,15 50x30", drawn.get("pixels"), "got " + drawn);
+	}
+
+	@Test
+	void lineWidthDecidesHowThickTheFrameIs() throws Exception {
+		ImageData image = plain(60, 60);
+		List<Overlays.Highlight> highlights = Overlays.resolve(null, null,
+				List.of(Map.of("bounds", "10,10 30x30", "color", "#ff0000", "lineWidth", Integer.valueOf(1))));
+
+		Overlays.draw(null, image, highlights, 1.0);
+
+		assertEquals(new RGB(255, 0, 0), at(image, 10, 20), "one pixel of frame");
+		assertEquals(GREY, at(image, 11, 20), "and no more than one");
 	}
 
 	@Test
