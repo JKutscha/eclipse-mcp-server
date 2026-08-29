@@ -13,7 +13,7 @@ Built and maintained by [vogella GmbH](https://vogella.com/services/), and used 
 Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration, `eclipse_set_project_state` opens and closes projects, `eclipse_set_bree` rewrites plug-in manifests, `eclipse_add_repository` and `eclipse_remove_repository` change the configured update sites, `eclipse_run_command` runs arbitrary commands in directories that same preference page has to name first, `eclipse_run_workbench_command` runs whatever workbench command it is given, and `eclipse_manage_window` and `eclipse_log_status` open and close windows and write log entries.
 The debugger tools change things too, in narrower ways that each description states: `eclipse_set_breakpoint` edits the breakpoint list, `eclipse_debug_launch` starts a process under the debugger, `eclipse_debug_evaluate` runs an expression inside the debugged program, and `eclipse_debug_control` steps and terminates it.
 There is no general file writing and no refactoring.
-Commands run only in directories the user has named, and the only git operation is a branch switch through EGit.
+Commands run only in directories the user has named, and the git operations are a branch switch and a pull request fetch, both through EGit.
 The server is **disabled by default**, listens on the loopback interface only, and rejects every request that does not carry a bearer token.
 
 ## Building
@@ -1068,6 +1068,37 @@ It also refuses a switch that would conflict instead of leaving a half completed
 
 `eclipse_get_git_status` reports `branch`, `head`, `state`, `clean` and the modified, untracked and conflicting paths.
 Record `head` alongside a problem set: comparing errors across branches without knowing which commit each set belongs to is how one branch's failures get attributed to another.
+
+### `eclipse_fetch_pull_request`
+
+**Changes the repository and the working tree**, and is a dry run unless `dryRun` is set to `false`.
+Fetches a GitHub pull request into a local branch and checks it out, which is what *Fetch GitHub Pull Request* in the Git Repositories view does.
+Needs EGit.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `number` | integer, required | | The pull request number. |
+| `project` | string | | Project whose repository, resolved as the Git Repositories view resolves it. |
+| `directory` | string | | Working tree or `.git` directory, for a repository outside the workspace. |
+| `remote` | string | `origin` | The remote that points at the repository the pull request was opened against. |
+| `branch` | string | | Name for the local branch. Defaults to the branch the pull request was opened from. |
+| `checkout` | boolean | `true` | Switch to the branch after fetching. |
+| `dryRun` | boolean | `true` | Report what would happen, including whether the remote advertises the pull request. |
+
+GitHub advertises every pull request as the git ref `refs/pull/N/head`, so the fetch is a plain git fetch through EGit's `FetchOperation`, with the credentials the user already configured, and works without any token.
+
+The local branch is named after the branch the pull request was opened from, which is the one thing git alone cannot tell.
+The GitHub REST API is asked for it, with `GH_TOKEN` or `GITHUB_TOKEN` when set; a public repository needs no token.
+When the API cannot be reached, the branch falls back to `pr-N`, `branchSource` says `fallback` and `apiError` says why.
+`pullRequest` carries the title, state, author, head and base branches when the API answered.
+
+A local branch of that name that already exists is reused when it points at the same commit, fast-forwarded when the pull request gained commits, and refused when it has commits of its own.
+The fast-forward of the checked out branch goes through EGit's `MergeOperation`, so the working tree follows and the affected projects refresh.
+`branchAction` reports `created`, `unchanged` or `fastForwarded`.
+
+The dry run asks the remote for its advertised refs, so `advertised` false means the number is wrong or the remote is not the repository the pull request was opened against, before anything is downloaded.
+
+Nothing is merged into the current branch and nothing is pushed.
 
 ### `eclipse_run_tests` and `eclipse_get_test_results`
 

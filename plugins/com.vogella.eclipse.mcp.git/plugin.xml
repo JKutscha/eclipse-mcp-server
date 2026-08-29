@@ -6,6 +6,7 @@
       <tool class="com.vogella.eclipse.mcp.git.internal.GetGitStatusTool"/>
       <tool class="com.vogella.eclipse.mcp.git.internal.CheckoutTool"/>
       <tool class="com.vogella.eclipse.mcp.git.internal.AddGitRepositoryTool"/>
+      <tool class="com.vogella.eclipse.mcp.git.internal.FetchPullRequestTool"/>
    </extension>
 
 </plugin>

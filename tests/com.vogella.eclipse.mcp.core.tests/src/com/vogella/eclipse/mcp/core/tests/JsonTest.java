@@ -2,6 +2,7 @@ package com.vogella.eclipse.mcp.core.tests;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
@@ -94,5 +95,35 @@ class JsonTest {
 		assertEquals("null", Json.write(null));
 		assertEquals("true", Json.write(Boolean.TRUE));
 		assertEquals("\"text\"", Json.write("text"));
+	}
+
+	@Test
+	void theReaderRoundTripsWhatTheWriterProduces() {
+		// the git tools read GitHub's answers through this, so a nested object, an
+		// array, an escaped string and a null have to come back as they went in
+		String written = new JsonObject().put("name", "quote \" and \\ and \n and \u00e9")
+				.put("nested", new JsonObject().put("count", Integer.valueOf(3)).put("ratio", Double.valueOf(0.25)))
+				.put("list", new JsonArray().add("a").add(Boolean.TRUE).add(null)).put("missing", null).toString();
+
+		@SuppressWarnings("unchecked")
+		Map<String, Object> parsed = (Map<String, Object>) Json.parse(written);
+
+		assertEquals("quote \" and \\ and \n and \u00e9", parsed.get("name"));
+		@SuppressWarnings("unchecked")
+		Map<String, Object> nested = (Map<String, Object>) parsed.get("nested");
+		assertEquals(Long.valueOf(3), nested.get("count"));
+		assertEquals(Double.valueOf(0.25), nested.get("ratio"));
+		assertEquals(java.util.Arrays.asList("a", Boolean.TRUE, null), parsed.get("list"));
+		assertTrue(parsed.containsKey("missing") && parsed.get("missing") == null, "got " + parsed);
+	}
+
+	@Test
+	void theReaderRejectsWhatIsNotJson() {
+		// a truncated or trailing answer must fail loudly rather than yield a partial
+		// object that a caller then reads a wrong branch name out of
+		for (String broken : List.of("{\"a\":1", "{\"a\":1} x", "[1,]", "{\"a\" 1}", "", "\"open", "tru")) {
+			assertThrows(IllegalArgumentException.class, () -> Json.parse(broken), broken);
+		}
+		assertEquals("\u00e9", Json.parse("\"\\u00e9\""));
 	}
 }

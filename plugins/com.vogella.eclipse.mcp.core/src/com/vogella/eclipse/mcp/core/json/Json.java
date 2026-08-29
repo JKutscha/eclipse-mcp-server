@@ -1,10 +1,12 @@
 package com.vogella.eclipse.mcp.core.json;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Writes indented JSON for the small value model of this package.
+ * Reads and writes JSON for the small value model of this package.
  */
 public final class Json {
 
@@ -19,6 +21,190 @@ public final class Json {
 		StringBuilder out = new StringBuilder();
 		writeValue(value, out, 0);
 		return out.toString();
+	}
+
+	/**
+	 * Parses a JSON document into {@link Map}, {@link List}, {@link String},
+	 * {@link Long}, {@link Double}, {@link Boolean} and {@code null}.
+	 *
+	 * @throws IllegalArgumentException when the text is not JSON
+	 */
+	public static Object parse(String text) {
+		Parser parser = new Parser(text);
+		Object value = parser.value();
+		parser.skipWhitespace();
+		if (!parser.atEnd()) {
+			throw parser.error("Unexpected trailing content"); //$NON-NLS-1$
+		}
+		return value;
+	}
+
+	private static final class Parser {
+
+		private final String text;
+		private int at;
+
+		Parser(String text) {
+			this.text = text;
+		}
+
+		Object value() {
+			skipWhitespace();
+			if (atEnd()) {
+				throw error("Unexpected end of input"); //$NON-NLS-1$
+			}
+			char c = text.charAt(at);
+			return switch (c) {
+			case '{' -> object();
+			case '[' -> array();
+			case '"' -> string();
+			case 't' -> literal("true", Boolean.TRUE); //$NON-NLS-1$
+			case 'f' -> literal("false", Boolean.FALSE); //$NON-NLS-1$
+			case 'n' -> literal("null", null); //$NON-NLS-1$
+			default -> number();
+			};
+		}
+
+		private Map<String, Object> object() {
+			Map<String, Object> members = new LinkedHashMap<>();
+			at++;
+			skipWhitespace();
+			if (peek() == '}') {
+				at++;
+				return members;
+			}
+			while (true) {
+				skipWhitespace();
+				if (peek() != '"') {
+					throw error("Expected a member name"); //$NON-NLS-1$
+				}
+				String name = string();
+				skipWhitespace();
+				expect(':');
+				members.put(name, value());
+				skipWhitespace();
+				if (peek() == ',') {
+					at++;
+					continue;
+				}
+				expect('}');
+				return members;
+			}
+		}
+
+		private List<Object> array() {
+			List<Object> elements = new ArrayList<>();
+			at++;
+			skipWhitespace();
+			if (peek() == ']') {
+				at++;
+				return elements;
+			}
+			while (true) {
+				elements.add(value());
+				skipWhitespace();
+				if (peek() == ',') {
+					at++;
+					continue;
+				}
+				expect(']');
+				return elements;
+			}
+		}
+
+		private String string() {
+			at++;
+			StringBuilder out = new StringBuilder();
+			while (true) {
+				if (atEnd()) {
+					throw error("Unterminated string"); //$NON-NLS-1$
+				}
+				char c = text.charAt(at++);
+				if (c == '"') {
+					return out.toString();
+				}
+				if (c != '\\') {
+					out.append(c);
+					continue;
+				}
+				if (atEnd()) {
+					throw error("Unterminated escape"); //$NON-NLS-1$
+				}
+				char escaped = text.charAt(at++);
+				switch (escaped) {
+				case '"', '\\', '/' -> out.append(escaped);
+				case 'b' -> out.append('\b');
+				case 'f' -> out.append('\f');
+				case 'n' -> out.append('\n');
+				case 'r' -> out.append('\r');
+				case 't' -> out.append('\t');
+				case 'u' -> {
+					if (at + 4 > text.length()) {
+						throw error("Truncated unicode escape"); //$NON-NLS-1$
+					}
+					try {
+						out.append((char) Integer.parseInt(text.substring(at, at + 4), 16));
+					} catch (NumberFormatException e) {
+						throw error("Invalid unicode escape"); //$NON-NLS-1$
+					}
+					at += 4;
+				}
+				default -> throw error("Invalid escape"); //$NON-NLS-1$
+				}
+			}
+		}
+
+		private Number number() {
+			int start = at;
+			while (!atEnd() && "+-0123456789.eE".indexOf(text.charAt(at)) >= 0) { //$NON-NLS-1$
+				at++;
+			}
+			String token = text.substring(start, at);
+			if (token.isEmpty()) {
+				throw error("Unexpected character"); //$NON-NLS-1$
+			}
+			try {
+				if (token.indexOf('.') < 0 && token.indexOf('e') < 0 && token.indexOf('E') < 0) {
+					return Long.valueOf(token);
+				}
+				return Double.valueOf(token);
+			} catch (NumberFormatException e) {
+				throw error("Invalid number"); //$NON-NLS-1$
+			}
+		}
+
+		private Object literal(String word, Object value) {
+			if (!text.startsWith(word, at)) {
+				throw error("Unexpected character"); //$NON-NLS-1$
+			}
+			at += word.length();
+			return value;
+		}
+
+		private void expect(char c) {
+			if (peek() != c) {
+				throw error("Expected '" + c + "'"); //$NON-NLS-1$ //$NON-NLS-2$
+			}
+			at++;
+		}
+
+		private char peek() {
+			return atEnd() ? 0 : text.charAt(at);
+		}
+
+		void skipWhitespace() {
+			while (!atEnd() && Character.isWhitespace(text.charAt(at))) {
+				at++;
+			}
+		}
+
+		boolean atEnd() {
+			return at >= text.length();
+		}
+
+		IllegalArgumentException error(String message) {
+			return new IllegalArgumentException(message + " at offset " + at); //$NON-NLS-1$
+		}
 	}
 
 	private static void writeValue(Object value, StringBuilder out, int indent) {
