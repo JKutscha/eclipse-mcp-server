@@ -60,6 +60,16 @@
     "dismissed": true,
     "kind": "popup"
    }
+  },
+  {
+   "tool": "eclipse_run_workbench_command",
+   "label": "revert the edit",
+   "arguments": {
+    "command": "org.eclipse.ui.file.revert"
+   },
+   "expect": {
+    "executed": true
+   }
   }
  ]
 }
