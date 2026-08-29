@@ -34,6 +34,9 @@ public final class SelectionTools {
 
 	private static final long UI_TIMEOUT_SECONDS = 15;
 
+	/** A Java element's toString prints its whole subtree, so labels are capped. */
+	private static final int MAX_LABEL = 200;
+
 	private SelectionTools() {
 	}
 
@@ -83,12 +86,41 @@ public final class SelectionTools {
 	private static JsonObject describeElement(Object element) {
 		IResource resource = element == null ? null : Adapters.adapt(element, IResource.class);
 		return new JsonObject().put("class", element == null ? null : element.getClass().getName()) //$NON-NLS-1$
-				.put("label", String.valueOf(element)) //$NON-NLS-1$
+				.put("label", label(element, resource)) //$NON-NLS-1$
 				.put("adaptsToResource", Boolean.valueOf(resource != null)) //$NON-NLS-1$
 				.put("path", resource == null ? null : resource.getFullPath().toString()) //$NON-NLS-1$
 				.put("project", resource == null || resource.getProject() == null ? null //$NON-NLS-1$
 						: resource.getProject().getName())
 				.put("accessible", resource == null ? null : Boolean.valueOf(resource.isAccessible())); //$NON-NLS-1$
+	}
+
+	/**
+	 * A short label, never the element's own {@code toString}.
+	 * <p>
+	 * A Java element prints its whole subtree from {@code toString}, which turned
+	 * one two-element selection into a half-megabyte answer. The resource name, or
+	 * what the workbench itself would show, is what a caller reads anyway.
+	 */
+	private static String label(Object element, IResource resource) {
+		if (element == null) {
+			return null;
+		}
+		if (resource != null) {
+			return resource.getFullPath().toString();
+		}
+		org.eclipse.ui.model.IWorkbenchAdapter adapter = Adapters.adapt(element,
+				org.eclipse.ui.model.IWorkbenchAdapter.class);
+		if (adapter != null) {
+			String label = adapter.getLabel(element);
+			if (label != null && !label.isBlank()) {
+				return truncate(label);
+			}
+		}
+		return truncate(String.valueOf(element));
+	}
+
+	private static String truncate(String value) {
+		return value.length() <= MAX_LABEL ? value : value.substring(0, MAX_LABEL) + "..."; //$NON-NLS-1$
 	}
 
 	private static IWorkbenchPart findPart(String partId) {
