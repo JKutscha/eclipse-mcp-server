@@ -2076,6 +2076,22 @@ The rectangle and the fill are written into the pixels directly rather than thro
 `eclipse_get_text_bounds` and `eclipse_list_annotations` produce the `bounds` of a text range or of a squiggle in exactly this form.
 On a HiDPI monitor use a `part` capture (no `includeToolbar`) with the `inPart` bounds: a single part print is pixel-exact, while `includeToolbar` and `shell` captures render at twice the size and are unreliable there (see `docs/platform-bugs.md`).
 
+### `eclipse_type_text` and `eclipse_press_key`
+
+**Both change the IDE.** They set up an editor state a client cannot reach by reading what is already there.
+
+`eclipse_type_text` takes `text` and an optional `part`, and inserts the text at the caret of the active (or named) text editor by editing its document, the way a typed key ends up in the file: a current selection is replaced, the caret moves behind the text, and the editor becomes dirty.
+It is deterministic and independent of focus and keyboard layout, so it is the one to use for entering characters.
+It does not open content assist or run any key binding, and nothing is saved.
+
+`eclipse_press_key` posts real key events through `Display.post` to the focused control, for what the document API cannot do: `Ctrl+Space` to open content assist, `Escape` to close a popup, `Enter` to accept a proposal, arrow keys to move the selection in a proposal table, `Tab`, `BackSpace`.
+It takes a `key` like `Ctrl+Space`, `Escape`, `Down`, `Enter`, or a single character, and a `count`.
+`Display.post` goes to whatever window has OS focus, so the tool refuses when the IDE is not the active window rather than sending the key elsewhere, and it reports whether the post was accepted and whether focus was inside the IDE.
+On Wayland the compositor commonly ignores a posted event even when the post is accepted, which the answer warns about; verify the effect with a screenshot, and for plain characters use `eclipse_type_text`.
+
+The two complete the content-assist workflow: `eclipse_type_text` the trigger text, `eclipse_press_key` `Ctrl+Space`, `eclipse_screenshot` the popup with a highlight on the selected `Table` row, then `eclipse_press_key` `Escape` or `eclipse_dismiss_dialog` to close it.
+`eclipse_dismiss_dialog` with no `shellTitle` now closes the content assist popup too: when no modal dialog is open it finds the transient popup, which has no title and carries the proposal `Table`, and reports `kind` as `popup` rather than `dialog`.
+
 ### `eclipse_get_text_bounds` and `eclipse_list_annotations`
 
 Both read-only, both default to the active editor and accept `part` for another open editor.

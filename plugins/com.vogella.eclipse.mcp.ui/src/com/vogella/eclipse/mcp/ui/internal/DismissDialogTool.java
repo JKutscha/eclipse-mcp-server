@@ -14,6 +14,8 @@ import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Event;
 import org.eclipse.swt.widgets.Shell;
+import org.eclipse.swt.widgets.Table;
+import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PlatformUI;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
@@ -36,7 +38,7 @@ public final class DismissDialogTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Closes an open dialog, or presses one of its buttons. PRESSING A BUTTON DOES WHATEVER THAT BUTTON DOES, which may be destructive, so this reports the dialog and its buttons and changes nothing unless dryRun is set to false. With no button named it closes the dialog, which for a JFace dialog is the same as cancelling; that is the safe way to unblock an IDE waiting on a prompt nobody meant to answer. Use eclipse_list_ui_targets first to see what is open."; //$NON-NLS-1$
+		return "Closes an open dialog, or presses one of its buttons. PRESSING A BUTTON DOES WHATEVER THAT BUTTON DOES, which may be destructive, so this reports the dialog and its buttons and changes nothing unless dryRun is set to false. With no button named it closes the dialog, which for a JFace dialog is the same as cancelling; that is the safe way to unblock an IDE waiting on a prompt nobody meant to answer. With no shellTitle it closes the active modal dialog, or, when none is open, a transient popup such as the content assist proposal list, which has no title and cannot be matched by name. Use eclipse_list_ui_targets first to see what is open."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -100,6 +102,7 @@ public final class DismissDialogTool implements IMcpTool {
 		collectButtons(shell, buttons);
 		JsonObject result = new JsonObject().put("title", shell.getText()) //$NON-NLS-1$
 				.put("modal", isModal(shell)) //$NON-NLS-1$
+				.put("kind", isModal(shell) ? "dialog" : "popup") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 				.put("buttons", buttons); //$NON-NLS-1$
 		if (dryRun) {
 			return result.put("dismissed", Boolean.FALSE) //$NON-NLS-1$
@@ -122,12 +125,19 @@ public final class DismissDialogTool implements IMcpTool {
 
 	private static Shell find(Display display, String title) {
 		if (title == null) {
-			// only a modal shell qualifies: that is the one blocking the IDE, and it is
-			// what the schema promises. The fallback that used to return the active
-			// shell when it was not getShells()[0] depended on an ordering SWT does not
-			// guarantee, and handed back the user's main window as a thing to close.
+			// a modal shell is what blocks the IDE, so it wins. The fallback that used
+			// to return the active shell when it was not getShells()[0] depended on an
+			// ordering SWT does not guarantee, and handed back the user's main window.
 			for (Shell shell : display.getShells()) {
 				if (shell.isVisible() && isModal(shell)) {
+					return shell;
+				}
+			}
+			// no modal dialog: a transient popup such as content assist, which has no
+			// title, is the next thing worth closing. A proposal popup carries a Table,
+			// which tells it apart from a tooltip that has none.
+			for (Shell shell : display.getShells()) {
+				if (shell.isVisible() && !isModal(shell) && shell != mainShell(display) && hasTable(shell)) {
 					return shell;
 				}
 			}
@@ -139,6 +149,23 @@ public final class DismissDialogTool implements IMcpTool {
 			}
 		}
 		return null;
+	}
+
+	private static Shell mainShell(Display display) {
+		IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
+		return window == null ? null : window.getShell();
+	}
+
+	private static boolean hasTable(Composite parent) {
+		for (Control child : parent.getChildren()) {
+			if (child instanceof Table) {
+				return true;
+			}
+			if (child instanceof Composite composite && hasTable(composite)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static boolean isModal(Shell shell) {
