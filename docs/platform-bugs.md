@@ -286,6 +286,20 @@ leaves the current theme alone. It does not throw and corrupts nothing, but the
 warning goes where an MCP caller cannot read it, which is why
 `eclipse_set_theme` refuses unregistered ids itself instead of forwarding them.
 
+## `LineNumberRulerColumn` paints from a range the widget has already moved past
+
+Observed 2026-08-29 on 4.41 (`org.eclipse.jface.text.source_3.31.100.v20260814-0956`, stock): three `IllegalArgumentException: Index out of bounds` logged as "Unhandled event loop exception", thrown out of `LineNumberRulerColumn.doubleBufferPaint`.
+
+`doubleBufferPaint` captures the `ILineRange visibleLines` at line 695 and then hands it to an `ImageGcDrawer` at 709-714.
+SWT invokes that drawer lazily rather than at construction: the stack shows the callback firing from inside `Image.getImageData` during `GC.drawImage` (`GC.java:810` to `916`, `Image.java:1148`, `1267`, `1286`), one frame below `doubleBufferPaint:705`.
+By then the widget can have scrolled or shrunk, `JFaceTextUtil.modelLineToWidgetLine` yields a widget line the `StyledText` no longer has, and `doPaint:868` `getOffsetAtLine` raises `SWT.ERROR_INVALID_RANGE`.
+
+Here it surfaced during shutdown, inside the nested event loop of `SaveableHelper.waitForBackgroundSaveJobs`, which widens the window between the capture and the callback.
+Four independent stack frames match the shipped source exactly (616, 705, 712, 868), and no `org.eclipse.jface.text` has ever been substituted in this installation, so it is not a local artifact.
+
+This is the same shape as the `Control.print` HiDPI problem below: an `ImageGcDrawer` callback runs later than its caller assumes.
+Nothing filed upstream yet; the session working in the platform text editors has the analysis.
+
 ## `Control.print` on a HiDPI monitor doubles a composed capture, so `includeToolbar` is unreliable there
 
 Observed 2026-08-29 on GTK3 at 200 % zoom: `eclipse_screenshot` with `includeToolbar` (the part stack, an e4 `CTabFolder`) renders the editor content at twice its size, so a highlight from `eclipse_get_text_bounds` `inPartStack` lands several lines off.

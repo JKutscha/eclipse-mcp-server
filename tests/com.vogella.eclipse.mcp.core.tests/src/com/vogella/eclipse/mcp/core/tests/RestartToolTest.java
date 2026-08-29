@@ -39,6 +39,54 @@ class RestartToolTest {
 	}
 
 	@Test
+	void aLauncherThatWillNotRelaunchIsRefusedBeforeTheCloseRatherThanInADialog() {
+		// Workbench.restart answers this case with a modal informNoRestart dialog,
+		// which on an IDE nobody is looking at hangs the close instead of failing
+		String commands = System.getProperty("eclipse.commands");
+		String launcher = System.getProperty("eclipse.launcher");
+		try {
+			System.setProperty("eclipse.commands", "-data\n/tmp/ws\n--launcher.noRestart\n");
+			System.setProperty("eclipse.launcher", "/opt/eclipse/eclipse");
+			String reason = RestartTool.cannotRestartReason();
+			assertNotNull(reason, "a noRestart launcher has to be refused");
+			assertTrue(reason.contains("noRestart"), reason);
+
+			System.setProperty("eclipse.commands", "-data\n/tmp/ws\n");
+			assertNull(RestartTool.cannotRestartReason(), "an ordinary launcher can relaunch");
+
+			System.clearProperty("eclipse.launcher");
+			String noLauncher = RestartTool.cannotRestartReason();
+			assertNotNull(noLauncher, "a JVM outside the launcher cannot relaunch itself");
+			assertTrue(noLauncher.contains("launcher"), noLauncher);
+		} finally {
+			restore("eclipse.commands", commands);
+			restore("eclipse.launcher", launcher);
+		}
+	}
+
+	@Test
+	void aRelaunchedProcessIsRecognisableFromTheLauncherArguments() {
+		String commands = System.getProperty("eclipse.commands");
+		try {
+			System.setProperty("eclipse.commands", "-data\n/tmp/ws\n");
+			assertFalse(RestartTool.cameFromARelaunch(), "a first start carries no relaunch marker");
+
+			System.setProperty("eclipse.commands", "-data\n/tmp/ws\n--launcher.oldUserArgsStart\n");
+			assertTrue(RestartTool.cameFromARelaunch(), "the launcher records a relaunch with this argument");
+		} finally {
+			restore("eclipse.commands", commands);
+		}
+	}
+
+	private static void restore(String property, String value) {
+		if (value == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, value);
+		}
+	}
+
+	@Test
 	void anArgumentIsMatchedAsAWholeLine() {
 		assertTrue(RestartTool.contains("-nosplash\n", "-nosplash"));
 		assertTrue(RestartTool.contains("-data\nfile:/tmp/ws\n-nosplash\n", "-nosplash"));

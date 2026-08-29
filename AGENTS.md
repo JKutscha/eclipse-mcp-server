@@ -263,6 +263,14 @@ When units are named, `getInstallableUnitSources` says which repositories can su
 This matters most in the self-update loop, where the tool is used immediately after a publish. Do not make the refresh opt-in to save a round trip; a check that quietly lies is worse than a slow one.
 The update site is a composite whose child location changes per release rather than accumulating, so it is the composite document itself that has to be re-read.
 
+**`IWorkbench.restart` is a cancellable close, so a prompt can veto the restart.**
+It routes to `close(RETURN_RESTART, false)`, and that `false` means `saveAllParts` prompts for every dirty part; a veto returns `false` and the JVM stays up.
+There is no forced-restart API, so `eclipse_restart` with `force` discards the work itself, closing dirty editors without saving, rather than leaving it to a prompt that nobody is looking at on a background IDE.
+The guard asks the model for every dirty part in every window, which is the set the platform prompts for, not the active page's editors: a part this side did not count cleared the guard and then stalled the close in an invisible dialog.
+The boolean `restart` returns is the only signal that any of this went wrong, and it used to be discarded under an answer that had already claimed success, which is how a restart could fail silently for a whole session.
+The answer cannot report the outcome, since the server dies with the IDE, so it reports what was requested and a failed attempt is carried by the next call as `previousRestartFailed` and logged.
+A process that came up from a relaunch carries `--launcher.oldUserArgsStart` in `eclipse.commands`, which is the cheapest way to tell a real relaunch from a restart that never happened.
+
 **`IWorkbench.restart()` relaunches without the original command line.**
 Use `restart(true)`. The no argument form drops `-data`, so the IDE comes back up showing the workspace chooser and waits for a person, which is exactly what an unattended restart must not do.
 
