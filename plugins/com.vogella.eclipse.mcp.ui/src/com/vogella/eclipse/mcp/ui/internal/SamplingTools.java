@@ -120,7 +120,9 @@ public final class SamplingTools {
 					    "includeRawSamples": {"type":"boolean","default":false,"description":"Also return every sample. Large."},
 					    "frameFilter":        {"type":"string","description":"Aggregate only the stacks containing this text in a frame, e.g. a package prefix or one class. Applied when reading, not when sampling, so one session can be re-read from several angles with keepRunning."},
 					    "includeIdleThreads": {"type":"boolean","default":false,"description":"Count threads parked or waiting. Off by default, because otherwise the pooled threads of an idle IDE dominate the result. Turn it ON to diagnose a FREEZE: a frozen thread is usually parked, and the default drops exactly the samples that explain the stall."},
-					    "keepRunning": {"type":"boolean","default":false,"description":"Report the aggregate so far without stopping."}
+					    "keepRunning": {"type":"boolean","default":false,"description":"Report the aggregate so far without stopping."},
+					    "show":        {"type":"boolean","default":false,"description":"Also render the samples as a flame graph on a page this IDE serves, and return its URL under traceUrl. The page is dark themed, self contained and held in memory only."},
+					    "open":        {"type":"boolean","default":false,"description":"Open that page in the machine's browser. Implies show. VISIBLE TO WHOEVER IS AT THE IDE, since a browser window appears."}
 					  },
 					  "additionalProperties": false
 					}"""; //$NON-NLS-1$
@@ -143,12 +145,16 @@ public final class SamplingTools {
 			if (!args.getBoolean("keepRunning", false)) { //$NON-NLS-1$
 				session.stop();
 			}
-			return McpToolResult.of(SamplingRegistry
-					.aggregate(session, args.getInt("topMethods", 15, 1, 200), //$NON-NLS-1$
-							args.getInt("minSamples", 2, 1, 1000), //$NON-NLS-1$
-							args.getBoolean("includeRawSamples", false), //$NON-NLS-1$
-							args.getBoolean("includeIdleThreads", false), args.getString("frameFilter")) //$NON-NLS-1$ //$NON-NLS-2$
-					.toString());
+			boolean includeIdle = args.getBoolean("includeIdleThreads", false); //$NON-NLS-1$
+			String frameFilter = args.getString("frameFilter"); //$NON-NLS-1$
+			JsonObject result = SamplingRegistry.aggregate(session, args.getInt("topMethods", 15, 1, 200), //$NON-NLS-1$
+					args.getInt("minSamples", 2, 1, 1000), //$NON-NLS-1$
+					args.getBoolean("includeRawSamples", false), includeIdle, frameFilter); //$NON-NLS-1$
+			boolean open = args.getBoolean("open", false); //$NON-NLS-1$
+			if (open || args.getBoolean("show", false)) { //$NON-NLS-1$
+				TracePage.publishSampling(session, includeIdle, frameFilter, result, open);
+			}
+			return McpToolResult.of(result.toString());
 		}
 	}
 }

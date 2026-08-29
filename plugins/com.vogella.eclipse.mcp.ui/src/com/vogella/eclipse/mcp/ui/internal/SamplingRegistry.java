@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
+import com.vogella.eclipse.mcp.core.FlameGraph;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
@@ -240,8 +241,8 @@ public final class SamplingRegistry {
 	 * pump and the reference handler, none of which is ever the answer to the
 	 * question a caller is asking.
 	 */
-	public static JsonObject aggregate(Session session, int topMethods, int minSamples, boolean includeRaw,
-			boolean includeIdle, String frameFilter) {
+	/** The samples a set of options selects, so every view of a session picks the same ones. */
+	private static Selection select(Session session, boolean includeIdle, String frameFilter) {
 		List<Sample> everything = session.snapshot();
 		List<Sample> all = everything;
 		int filtered = 0;
@@ -271,6 +272,38 @@ public final class SamplingRegistry {
 				samples.add(sample);
 			}
 		}
+		return new Selection(everything, samples, idle, filtered);
+	}
+
+	private record Selection(List<Sample> everything, List<Sample> samples, int idle, int filtered) {
+	}
+
+	/**
+	 * The selected samples merged into the tree a flame graph draws, weighted by
+	 * sample count. Built from the same selection the aggregate reports, so the
+	 * picture and the numbers beside it describe one set of samples.
+	 */
+	public static FlameGraph.Builder flame(Session session, boolean includeIdle, String frameFilter) {
+		FlameGraph.Builder builder = FlameGraph.builder();
+		for (Sample sample : select(session, includeIdle, frameFilter).samples()) {
+			StackTraceElement[] stack = sample.stack();
+			List<String> frames = new ArrayList<>(stack.length);
+			// outermost first, which is bottom up in the picture
+			for (int i = stack.length - 1; i >= 0; i--) {
+				frames.add(frame(stack[i]));
+			}
+			builder.add(frames, 1);
+		}
+		return builder;
+	}
+
+	public static JsonObject aggregate(Session session, int topMethods, int minSamples, boolean includeRaw,
+			boolean includeIdle, String frameFilter) {
+		Selection selection = select(session, includeIdle, frameFilter);
+		List<Sample> everything = selection.everything();
+		List<Sample> samples = selection.samples();
+		int filtered = selection.filtered();
+		int idle = selection.idle();
 		JsonObject result = new JsonObject().put("sessionId", session.id()) //$NON-NLS-1$
 				.put("running", session.running()) //$NON-NLS-1$
 				.put("ticks", session.ticks()) //$NON-NLS-1$

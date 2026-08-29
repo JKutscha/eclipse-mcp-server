@@ -20,6 +20,7 @@ import jdk.jfr.consumer.RecordedFrame;
 import jdk.jfr.consumer.RecordedStackTrace;
 import jdk.jfr.consumer.RecordingFile;
 
+import com.vogella.eclipse.mcp.core.FlameGraph;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
@@ -136,6 +137,15 @@ final class FlightRecording {
 	 * time was spent, and what the collector did.
 	 */
 	static JsonObject aggregate(Path file, Aggregation options) throws IOException {
+		return aggregate(file, options, null);
+	}
+
+	/**
+	 * The same, additionally filling {@code flame} with the allocation stacks so that
+	 * a page can draw them. Filled here rather than from a second pass, because
+	 * parsing a recording is the expensive part and it is already being done.
+	 */
+	static JsonObject aggregate(Path file, Aggregation options, FlameGraph.Builder flame) throws IOException {
 		Map<String, long[]> byClass = new HashMap<>();
 		Map<String, long[]> byStack = new HashMap<>();
 		Map<String, long[]> hotMethods = new HashMap<>();
@@ -171,6 +181,9 @@ final class FlightRecording {
 					add(byClass, className(event), weight);
 					if (stack != null) {
 						add(byStack, stack, weight);
+						if (flame != null) {
+							flame.add(FlameGraph.parseArrowStack(stack), weight);
+						}
 					}
 				} else if (EXECUTION_SAMPLE.equals(type) && stack != null) {
 					add(hotMethods, topFrame(event.getStackTrace()), 1);

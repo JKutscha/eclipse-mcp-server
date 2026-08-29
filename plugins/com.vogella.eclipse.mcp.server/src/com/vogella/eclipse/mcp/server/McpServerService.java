@@ -19,11 +19,14 @@ import org.osgi.framework.Version;
 
 import com.vogella.eclipse.mcp.core.ClientSessions;
 import com.vogella.eclipse.mcp.core.McpToolRegistry;
+import com.vogella.eclipse.mcp.core.TracePages;
 import com.vogella.eclipse.mcp.server.internal.ActiveSessions;
 import com.vogella.eclipse.mcp.server.internal.BearerTokenFilter;
 import com.vogella.eclipse.mcp.server.internal.BundleJsonSchemaValidator;
 import com.vogella.eclipse.mcp.server.internal.EndpointFile;
 import com.vogella.eclipse.mcp.server.internal.McpToolAdapter;
+import com.vogella.eclipse.mcp.server.internal.TracePageStore;
+import com.vogella.eclipse.mcp.server.internal.TraceServlet;
 import com.vogella.eclipse.mcp.server.internal.TokenStore;
 
 import io.modelcontextprotocol.json.McpJsonMapper;
@@ -44,6 +47,8 @@ import jakarta.servlet.DispatcherType;
 public final class McpServerService {
 
 	private static final String ENDPOINT_PATH = "/mcp"; //$NON-NLS-1$
+
+	private static final String TRACE_PATH = "/trace"; //$NON-NLS-1$
 
 	private static final String LOOPBACK = "127.0.0.1"; //$NON-NLS-1$
 
@@ -166,6 +171,8 @@ public final class McpServerService {
 		runningPort = port;
 		endpoint = new McpEndpoint("http://%s:%d%s".formatted(LOOPBACK, port, ENDPOINT_PATH), token); //$NON-NLS-1$
 		ClientSessions.setProvider(ActiveSessions::count);
+		TracePages.setPublisher((title, html) -> "http://%s:%d%s/%s".formatted(LOOPBACK, Integer.valueOf(port), //$NON-NLS-1$
+				TRACE_PATH, TracePageStore.add(title, html)));
 		EndpointFile.write(endpoint);
 		ILog.get().info("MCP server listening on %s with %d tool(s)".formatted(endpoint.url(), specifications.size())); //$NON-NLS-1$
 	}
@@ -208,12 +215,19 @@ public final class McpServerService {
 		FilterHolder filter = new FilterHolder(new BearerTokenFilter(token));
 		filter.setAsyncSupported(true);
 		context.addFilter(filter, ENDPOINT_PATH + "/*", EnumSet.of(DispatcherType.REQUEST)); //$NON-NLS-1$
+		// deliberately outside that mapping: a browser cannot put the bearer token on
+		// a plain navigation, so a trace page is guarded by 128 random bits in its own
+		// URL instead. The connector is loopback only, so the pair is a capability URL
+		// that never leaves this machine
+		context.addServlet(new ServletHolder(new TraceServlet()), TRACE_PATH + "/*"); //$NON-NLS-1$
 		server.setHandler(context);
 		return server;
 	}
 
 	private void stopQuietly() {
 		ClientSessions.setProvider(null);
+		TracePages.setPublisher(null);
+		TracePageStore.clear();
 		ActiveSessions.clear();
 		EndpointFile.markStopped();
 		endpoint = null;

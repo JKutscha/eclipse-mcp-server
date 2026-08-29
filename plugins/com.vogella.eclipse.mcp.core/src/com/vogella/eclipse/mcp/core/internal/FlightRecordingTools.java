@@ -7,6 +7,7 @@ import java.util.Map;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 
+import com.vogella.eclipse.mcp.core.FlameGraph;
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.ToolArguments;
@@ -112,7 +113,9 @@ public final class FlightRecordingTools {
 					    "topStacks":    {"type":"integer","default":10,"minimum":1,"maximum":100,"description":"How many of the allocation stacks that allocated most to report. Each one is many lines, so this is the field that decides how big the answer gets."},
 					    "stackDepth":   {"type":"integer","default":8,"minimum":1,"maximum":64,"description":"Frames per aggregated call chain. Deeper separates callers that share a top frame; shallower merges them."},
 					    "frameFilter":  {"type":"string","description":"Aggregate only events whose stack contains this text at ANY depth, independent of stackDepth, which cuts the rendering and not the search. Applied when reading, so one recording can be read from several angles; eventsMatched and matchedEventTypes then count what this filter kept, which is how one phase is weighed against another."},
-					    "outputPath":   {"type":"string","description":"Keep the .jfr file at this absolute path, for opening it in JDK Mission Control. Omit to delete it after reading."}
+					    "outputPath":   {"type":"string","description":"Keep the .jfr file at this absolute path, for opening it in JDK Mission Control. Omit to delete it after reading."},
+					    "show":         {"type":"boolean","default":false,"description":"Also render the allocation stacks as a flame graph on a page this IDE serves, weighted by bytes, and return its URL under traceUrl. Dark themed, self contained, held in memory only."},
+					    "open":         {"type":"boolean","default":false,"description":"Open that page in the machine's browser. Implies show. VISIBLE TO WHOEVER IS AT THE IDE, since a browser window appears."}
 					  },
 					  "additionalProperties": false
 					}"""; //$NON-NLS-1$
@@ -128,9 +131,11 @@ public final class FlightRecordingTools {
 					args.getInt("topStacks", 10, 1, 100), //$NON-NLS-1$
 					args.getInt("stackDepth", 8, 1, 64), //$NON-NLS-1$
 					args.getString("frameFilter")); //$NON-NLS-1$
+			boolean open = args.getBoolean("open", false); //$NON-NLS-1$
+			boolean show = open || args.getBoolean("show", false); //$NON-NLS-1$
 			String existing = args.getString("file"); //$NON-NLS-1$
 			if (existing != null) {
-				return read(Path.of(existing), options);
+				return read(Path.of(existing), options, show, open);
 			}
 			try {
 				String id = args.getString("recordingId", FlightRecording.mostRecentId()); //$NON-NLS-1$
@@ -142,17 +147,22 @@ public final class FlightRecordingTools {
 				try {
 					FlightRecording.dump(id, file, keepRunning);
 					long size = Files.size(file);
-					JsonObject result = FlightRecording.aggregate(file, options)
+					FlameGraph.Builder flame = show ? FlameGraph.builder() : null;
+					JsonObject result = FlightRecording.aggregate(file, options, flame)
 							.put("recordingId", id) //$NON-NLS-1$
 							.put("stillRunning", Boolean.valueOf(keepRunning)) //$NON-NLS-1$
 							.put("recordingBytes", Long.valueOf(size)); //$NON-NLS-1$
 					if (outputPath != null) {
 						result.put("file", file.toString()); //$NON-NLS-1$
 					}
-					return McpToolResult.of(result
-							.put("note", //$NON-NLS-1$
-									"The byte figures are the allocation sampler's weights, so they rank allocators rather than adding up to everything allocated. allocationByStack is what names a caller; a class on its own rarely does.") //$NON-NLS-1$
-							.toString());
+					result.put("note", //$NON-NLS-1$
+							"The byte figures are the allocation sampler's weights, so they rank allocators rather than adding up to everything allocated. allocationByStack is what names a caller; a class on its own rarely does."); //$NON-NLS-1$
+					if (flame != null) {
+						AllocationTracePage.publish("Allocation " + id, //$NON-NLS-1$
+								"%s recorded, allocation stacks weighted by bytes".formatted(FlameGraph.bytes(size)), //$NON-NLS-1$
+								flame, result, open);
+					}
+					return McpToolResult.of(result.toString());
 				} finally {
 					if (outputPath == null) {
 						Files.deleteIfExists(file);
@@ -166,7 +176,7 @@ public final class FlightRecordingTools {
 		}
 
 		/** A recording somebody else wrote, most likely a launched program's own. */
-		private static McpToolResult read(Path file, FlightRecording.Aggregation options) {
+		private static McpToolResult read(Path file, FlightRecording.Aggregation options, boolean show, boolean open) {
 			if (!Files.isReadable(file)) {
 				return McpToolResult.error(
 						"There is no readable file at '%s'. A launch that records itself writes the file when the JVM EXITS, so it is absent while the program still runs and stays absent if the program was killed rather than ended." //$NON-NLS-1$
@@ -178,12 +188,19 @@ public final class FlightRecordingTools {
 					return McpToolResult.error(
 							"'%s' is empty, which is what a recording looks like before its JVM has written it out.".formatted(file)); //$NON-NLS-1$
 				}
-				return McpToolResult.of(FlightRecording.aggregate(file, options).put("file", file.toString()) //$NON-NLS-1$
+				FlameGraph.Builder flame = show ? FlameGraph.builder() : null;
+				JsonObject result = FlightRecording.aggregate(file, options, flame).put("file", file.toString()) //$NON-NLS-1$
 						.put("recordingBytes", Long.valueOf(size)) //$NON-NLS-1$
 						.put("of", "another JVM, read from its file; nothing of this IDE was recorded or stopped") //$NON-NLS-1$ //$NON-NLS-2$
 						.put("note", //$NON-NLS-1$
-								"The byte figures are the allocation sampler's weights, so they rank allocators rather than adding up to everything allocated. allocationByStack is what names a caller; a class on its own rarely does.") //$NON-NLS-1$
-						.toString());
+								"The byte figures are the allocation sampler's weights, so they rank allocators rather than adding up to everything allocated. allocationByStack is what names a caller; a class on its own rarely does."); //$NON-NLS-1$
+				if (flame != null) {
+					AllocationTracePage.publish("Allocation " + file.getFileName(), //$NON-NLS-1$
+							"%s read from %s, allocation stacks weighted by bytes".formatted(FlameGraph.bytes(size), //$NON-NLS-1$
+									file.getFileName()),
+							flame, result, open);
+				}
+				return McpToolResult.of(result.toString());
 			} catch (LinkageError e) {
 				return McpToolResult.error(UNAVAILABLE);
 			} catch (IOException | RuntimeException e) {
