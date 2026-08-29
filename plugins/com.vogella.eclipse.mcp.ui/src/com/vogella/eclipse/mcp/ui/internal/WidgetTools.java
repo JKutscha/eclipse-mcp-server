@@ -1,9 +1,12 @@
 package com.vogella.eclipse.mcp.ui.internal;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.swt.graphics.Rectangle;
@@ -79,14 +82,16 @@ public final class WidgetTools {
 				continue;
 			}
 			boolean item = step.startsWith("i"); //$NON-NLS-1$
+			boolean row = step.startsWith("r"); //$NON-NLS-1$
 			int index;
 			try {
-				index = Integer.parseInt(item ? step.substring(1) : step);
+				index = Integer.parseInt(item || row ? step.substring(1) : step);
 			} catch (NumberFormatException e) {
 				return null;
 			}
-			Widget[] candidates = item ? itemsOf(current)
-					: current instanceof Composite composite ? composite.getChildren() : new Widget[0];
+			Widget[] candidates = row ? rowsOf(current)
+					: item ? itemsOf(current)
+							: current instanceof Composite composite ? composite.getChildren() : new Widget[0];
 			if (index < 0 || index >= candidates.length) {
 				return null;
 			}
@@ -104,6 +109,15 @@ public final class WidgetTools {
 	 * them as its own stylable element. Enumerating them is what lets the inspector
 	 * address one, pseudo classes included.
 	 */
+	/** The rows of a Table or Tree, which an r prefixed path segment addresses. */
+	static Widget[] rowsOf(Widget widget) {
+		return switch (widget) {
+		case org.eclipse.swt.widgets.Table table -> table.getItems();
+		case org.eclipse.swt.widgets.Tree tree -> tree.getItems();
+		default -> new Widget[0];
+		};
+	}
+
 	private static Widget[] itemsOf(Widget widget) {
 		return switch (widget) {
 		case org.eclipse.swt.widgets.ToolBar bar -> bar.getItems();
@@ -153,6 +167,8 @@ public final class WidgetTools {
 		case org.eclipse.swt.custom.CTabItem item -> item.getBounds();
 		case org.eclipse.swt.widgets.TabItem item -> item.getBounds();
 		case org.eclipse.swt.widgets.CoolItem item -> item.getBounds();
+		case org.eclipse.swt.widgets.TableItem row -> row.getBounds();
+		case org.eclipse.swt.widgets.TreeItem row -> row.getBounds();
 		default -> null;
 		};
 	}
@@ -181,6 +197,8 @@ public final class WidgetTools {
 		case org.eclipse.swt.custom.CTabItem item -> item.getParent();
 		case org.eclipse.swt.widgets.TabItem item -> item.getParent();
 		case org.eclipse.swt.widgets.CoolItem item -> item.getParent();
+		case org.eclipse.swt.widgets.TableItem row -> row.getParent();
+		case org.eclipse.swt.widgets.TreeItem row -> row.getParent();
 		case org.eclipse.swt.widgets.TableColumn column -> column.getParent();
 		case org.eclipse.swt.widgets.TreeColumn column -> column.getParent();
 		default -> null;
@@ -218,7 +236,7 @@ public final class WidgetTools {
 					    "filter":     {"type":"string","description":"Only report widgets whose simple class name contains this text, case insensitive, e.g. 'Tree' or 'ToolBar'. The walk still descends through everything."},
 				    "includeToolbar": {"type":"boolean","default":false,"description":"Start from the surrounding part stack rather than the part. A view's toolbar is built in the stack's CTabFolder, not in the part, so it is in no plain part tree at all; this is how to reach it."},
 					    "includeItems": {"type":"boolean","default":false,"description":"Also enumerate Items, which are not Controls and are therefore in no plain walk: ToolItems, CTabItems, TabItems, CoolItems, MenuItems and the columns of a Table or Tree. Their paths carry an i prefix, as in 2/i0, and that is the only way eclipse_inspect_widget can address one. Off by default because a Menu can be large."},
-				    "includeRows": {"type":"boolean","default":false,"description":"Also enumerate the rows of a Table or Tree, with an r prefixed path (0/r2) and, beside the row bounds, boundsInShell mapped to the shell so a row can be highlighted on a shell=popup screenshot. selected marks the row the widget has selected. This is how to outline the chosen content assist proposal. Off by default because a big Table has many rows."},
+				    "includeRows": {"type":"boolean","default":false,"description":"Also enumerate the rows of a Table or Tree, with an r prefixed path (0/r2) that eclipse_inspect_widget and eclipse_set_selection accept and, beside the row bounds, boundsInShell mapped to the shell so a row can be highlighted on a shell=popup screenshot. selected marks the row the widget has selected. This is how to outline the chosen content assist proposal. Off by default because a big Table has many rows."},
 				    "maxDepth":   {"type":"integer","default":6,"minimum":1,"maximum":30,"description":"How far down the widget hierarchy to walk. A whole workbench window is dozens of levels deep, so the default stops well short of it."},
 					    "maxResults": {"type":"integer","default":200,"minimum":1,"maximum":2000}
 					  },
@@ -309,15 +327,25 @@ public final class WidgetTools {
 				int[] total) {
 			org.eclipse.swt.widgets.Item[] rows;
 			org.eclipse.swt.widgets.Control table;
-			int selected;
+			// the indices rather than getSelectionIndex, which is a single index and
+			// answers -1 on a multi selection, so every row read as unselected exactly
+			// where a caller was looking at several
+			Set<Integer> selected = new HashSet<>();
 			if (widget instanceof org.eclipse.swt.widgets.Table t) {
 				rows = t.getItems();
 				table = t;
-				selected = t.getSelectionIndex();
+				for (int index : t.getSelectionIndices()) {
+					selected.add(Integer.valueOf(index));
+				}
 			} else if (widget instanceof org.eclipse.swt.widgets.Tree t) {
 				rows = t.getItems();
 				table = t;
-				selected = -1;
+				List<org.eclipse.swt.widgets.TreeItem> chosen = Arrays.asList(t.getSelection());
+				for (int i = 0; i < rows.length; i++) {
+					if (chosen.contains(rows[i])) {
+						selected.add(Integer.valueOf(i));
+					}
+				}
 			} else {
 				return;
 			}
@@ -342,7 +370,7 @@ public final class WidgetTools {
 						.put("kind", "row") //$NON-NLS-1$ //$NON-NLS-2$
 						.put("class", rows[i].getClass().getName()) //$NON-NLS-1$
 						.put("text", rows[i].getText()) //$NON-NLS-1$
-						.put("selected", Boolean.valueOf(i == selected)) //$NON-NLS-1$
+						.put("selected", Boolean.valueOf(selected.contains(Integer.valueOf(i)))) //$NON-NLS-1$
 						.put("bounds", rowBounds.x + "," + rowBounds.y + " " + rowBounds.width + "x" + rowBounds.height) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
 						.put("boundsInShell", inShell.x + "," + inShell.y + " " + inShell.width + "x" + inShell.height)); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
 			}

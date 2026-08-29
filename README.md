@@ -2083,6 +2083,28 @@ The rectangle and the fill are written into the pixels directly rather than thro
 `eclipse_get_text_bounds` and `eclipse_list_annotations` produce the `bounds` of a text range or of a squiggle in exactly this form.
 On a HiDPI monitor use a `part` capture (no `includeToolbar`) with the `inPart` bounds: a single part print is pixel-exact, while `includeToolbar` and `shell` captures render at twice the size and are unreliable there (see `docs/platform-bugs.md`).
 
+### `eclipse_get_selection` and `eclipse_set_selection`
+
+`eclipse_get_selection` is read-only; **`eclipse_set_selection` changes what is selected in the IDE** and reports the previous selection so it can be put back.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `part` | string | active part | Part whose selection to set. `eclipse_set_selection` only. |
+| `elements` | array, required | | Workspace paths (`/org.eclipse.compare`), project names (`g`), or widget-tree row paths (`0/0/0/r7`). Empty clears the selection. |
+| `reveal` | boolean | `true` | Scroll the viewer to the selection. |
+| `activate` | boolean | `true` | Activate the part first, so the selection reaches the handler evaluation context. |
+
+This is what makes a command's enablement testable: set a selection, then ask `eclipse_run_workbench_command` with `dryRun` whether the command is enabled for it.
+It is also the only way to build a selection here at all, since a view may register no Select All handler and `eclipse_press_key` cannot deliver `Ctrl+A` on a backgrounded Wayland session.
+
+**Two selections are reported on purpose.**
+`handlerSelection` is the `ACTIVE_CURRENT_SELECTION` variable of the evaluation context, which is what an `enabledWhen` expression is tested against; `serviceSelection` is what the active page's selection service holds.
+They disagree whenever a part has not published its selection into the context yet, and an enablement question answered from the wrong one is answered wrongly.
+Each element carries its class, label, whether it adapts to `IResource`, and the resource's path, project and accessibility, since that is what most enablement expressions test.
+
+`eclipse_set_selection` reports what the selection service holds **afterwards** rather than what was requested: a viewer silently drops an element it does not have, and a selection that did not take would otherwise show up only as a wrong enablement answer later.
+A closed project resolves like any other, since whether a selection may contain one is often exactly what the enablement test is about.
+
 ### `eclipse_type_text` and `eclipse_press_key`
 
 **Both change the IDE.** They set up an editor state a client cannot reach by reading what is already there.
