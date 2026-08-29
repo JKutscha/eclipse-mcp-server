@@ -14,8 +14,8 @@ public final class Json {
 	}
 
 	/**
-	 * Serializes {@link JsonObject}, {@link JsonArray}, {@link String}, {@link Number},
-	 * {@link Boolean} and {@code null} as indented JSON.
+	 * Serializes {@link JsonObject}, {@link JsonArray}, {@link JsonRaw}, {@link String},
+	 * {@link Number}, {@link Boolean} and {@code null} as indented JSON.
 	 */
 	public static String write(Object value) {
 		StringBuilder out = new StringBuilder();
@@ -210,6 +210,7 @@ public final class Json {
 	private static void writeValue(Object value, StringBuilder out, int indent) {
 		switch (value) {
 		case null -> out.append("null"); //$NON-NLS-1$
+		case JsonRaw raw -> out.append(raw.json());
 		case JsonObject object -> writeObject(object.values(), out, indent);
 		case JsonArray array -> writeArray(array.values(), out, indent);
 		case String string -> writeString(string, out);

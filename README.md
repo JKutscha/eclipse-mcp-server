@@ -2083,6 +2083,30 @@ The rectangle and the fill are written into the pixels directly rather than thro
 `eclipse_get_text_bounds` and `eclipse_list_annotations` produce the `bounds` of a text range or of a squiggle in exactly this form.
 On a HiDPI monitor use a `part` capture (no `includeToolbar`) with the `inPart` bounds: a single part print is pixel-exact, while `includeToolbar` and `shell` captures render at twice the size and are unreliable there (see `docs/platform-bugs.md`).
 
+### `eclipse_run_script`
+
+Runs several tools in order and reports what each answered.
+**As destructive as its steps**, since it does whatever they do.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `steps` | array, required | | Each `{tool, arguments, label, expect, continueOnError}`. |
+| `atomic` | boolean | `false` | Run every step in one turn of the UI thread. |
+| `stopOnFailure` | boolean | `true` | Stop at the first step that errors or fails its expectations. |
+
+**Two things it buys.**
+`atomic` runs the whole batch inside one turn of the UI thread, which is the only way a transient state survives from one step to the next: a content assist popup, a hover or a drag closes as soon as the event loop runs between two ordinary calls, so "open the proposals, then read them" cannot be done as two calls and can be done here.
+Leave it off for long steps, since the UI is blocked for the whole batch.
+
+`expect` turns a sequence into a check that passes or fails rather than a transcript somebody has to read, which is what makes a scripted IDE test possible from outside.
+A path walks the answer with dots and list indices (`widgets.0.selected`).
+A plain value means equality; `{"contains": "x"}` a substring; `{"matches": "regex"}` a regular expression; `{"exists": true}` presence; `{"size": n}` the length of a list.
+A failed expectation is reported with the path, what was expected and what was there.
+
+Each step reports `ok`, `millis`, `error` and the tool's own answer as a document rather than a string escaped into one, and the run reports `total`, `passed`, `failed` and `stoppedEarly`.
+
+Do not put `eclipse_restart` in a script: it takes the IDE down and the remaining steps go with it.
+
 ### `eclipse_get_selection` and `eclipse_set_selection`
 
 `eclipse_get_selection` is read-only; **`eclipse_set_selection` changes what is selected in the IDE** and reports the previous selection so it can be put back.
