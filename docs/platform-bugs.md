@@ -285,3 +285,12 @@ nothing loops the themes, falls through, logs a warning through `ILog` and
 leaves the current theme alone. It does not throw and corrupts nothing, but the
 warning goes where an MCP caller cannot read it, which is why
 `eclipse_set_theme` refuses unregistered ids itself instead of forwarding them.
+
+## `CTabFolder.print` paints at twice the folder's size on GTK
+
+Observed 2026-08-29 on GTK3 at 200 % zoom: printing a part stack (the e4 `CTabFolder`) through `Control.print` into an image sized to the folder fills it with the top left quarter of the folder, magnified, while printing the part composite inside the same folder comes out at the right size.
+Nothing in the answer betrayed it: the painted pixels covered the whole canvas, so the filler checks passed.
+
+Worked around in `ScreenshotTools.Capture.capture`: a stack is painted into a canvas of twice its size, `paintedBeyond` checks whether the paint reached past the folder's own size, and the data is then halved or cropped; the answer reports `printScale`.
+Nothing filed upstream yet.
+
