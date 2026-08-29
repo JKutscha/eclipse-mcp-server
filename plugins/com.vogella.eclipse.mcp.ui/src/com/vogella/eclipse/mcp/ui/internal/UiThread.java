@@ -7,6 +7,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 
+import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.PlatformUI;
 
 import com.vogella.eclipse.mcp.core.McpToolResult;
@@ -26,6 +27,28 @@ public final class UiThread {
 	static final String NO_WORKBENCH = "There is no running workbench."; //$NON-NLS-1$
 
 	private UiThread() {
+	}
+
+	/**
+	 * Whether this call is already on the UI thread.
+	 * <p>
+	 * Queueing from there and then waiting on the future would block the very
+	 * thread that has to run it, so every entry point runs the work inline
+	 * instead. This is what lets one tool call several others in a single
+	 * asyncExec, which is the only way a transient state such as a content assist
+	 * popup survives between them.
+	 */
+	static boolean onUiThread() {
+		return PlatformUI.isWorkbenchRunning() && PlatformUI.getWorkbench().getDisplay() == Display.getCurrent();
+	}
+
+	/** Runs the work here and now, turning a failure into the same shape a wait produces. */
+	private static Outcome inline(Supplier<JsonObject> work) {
+		try {
+			return new Outcome(work.get(), null);
+		} catch (Throwable e) {
+			return new Outcome(null, "The request failed: " + e); //$NON-NLS-1$
+		}
 	}
 
 	/** What the UI thread answered, or why it did not. Exactly one of the two is set. */
@@ -88,6 +111,10 @@ public final class UiThread {
 	 * would only drop the record of what it went on to do.
 	 */
 	static TimedOutcome timed(long timeoutSeconds, Supplier<JsonObject> work) {
+		if (onUiThread()) {
+			Outcome outcome = inline(work);
+			return new TimedOutcome(outcome.value(), false, outcome.error());
+		}
 		CompletableFuture<JsonObject> pending = submit(work);
 		if (pending == null) {
 			return new TimedOutcome(null, false, NO_WORKBENCH);
@@ -108,7 +135,7 @@ public final class UiThread {
 	static final UiDispatch.Executor EXECUTOR = new UiDispatch.Executor() {
 		@Override
 		public <T> T call(Callable<T> work, int timeoutSeconds) throws Exception {
-			if (!PlatformUI.isWorkbenchRunning()) {
+			if (!PlatformUI.isWorkbenchRunning() || onUiThread()) {
 				return work.call();
 			}
 			CompletableFuture<T> pending = new CompletableFuture<>();
@@ -138,6 +165,9 @@ public final class UiThread {
 	 * to fold the failure into an answer somebody else is writing.
 	 */
 	static Outcome run(long timeoutSeconds, Supplier<JsonObject> work) {
+		if (onUiThread()) {
+			return inline(work);
+		}
 		CompletableFuture<JsonObject> pending = submit(work);
 		if (pending == null) {
 			return new Outcome(null, NO_WORKBENCH);
