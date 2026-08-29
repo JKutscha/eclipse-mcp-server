@@ -1825,6 +1825,39 @@ Stopping dumps the recording and returns it aggregated: `allocationByClass`, `al
 
 Recording happens in-process through `jdk.jfr`, so nothing has to be installed and no JVM flag is needed at startup. The packages are imported optionally: a JVM that does not expose them gets a refusal saying so rather than a failure. An Eclipse started from a normal `eclipse.ini` has them, because it launches with `--add-modules=ALL-SYSTEM`.
 
+### `eclipse_start_screencast` and `eclipse_stop_screencast`
+
+Records a shell or a part as PNG frames and assembles them into an animated GIF.
+**Writes files** to a directory of its own and changes nothing in the IDE.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `target` | `part` \| `shell` | `shell` | Inferred from `part` when that is given. `eclipse_start_screencast` only. |
+| `part` | string | | Part id, from `eclipse_list_ui_targets`. It has to be visible. |
+| `shellTitle` | string | | Title of the shell, or a substring. Omit for the active shell. |
+| `intervalMillis` | integer, 100 to 10000 | 500 | Time between frames, on top of the paint itself. |
+| `maxFrames` | integer, 1 to 1000 | 120 | Recording stops on its own after this many frames. |
+| `maxWidth` | integer | 800 | Downscale each frame to this width. |
+| `directory` | string | temp | Where the frames go. |
+| `sessionId` | string | most recent | `eclipse_stop_screencast` only. |
+| `gif` | boolean | `true` | Assemble the GIF; off leaves only the frames. |
+| `loop` | boolean | `true` | Loop the GIF. |
+| `outputPath` | string | `screencast.gif` in the frame directory | |
+| `keepFrames` | boolean | `true` | Leave the PNG frames on disk. |
+
+This is what shows a change in motion rather than before and after: a tab overflowing while a sash is dragged, a hover appearing, a view repainting after a theme switch.
+
+Each frame is painted on the UI thread through `Control.print`, the path `eclipse_screenshot` falls back to on a compositing window manager, so it records what the IDE paints and not native popups, menus or dialogs, and a shell recording has no window decorations.
+The paint is the only part on the UI thread; scaling and encoding run on a thread of the session's own.
+2 to 5 frames a second is what a full shell sustains without slowing the IDE.
+
+Each frame stays in the GIF as long as it really did on screen, so a stall is visible as a held frame.
+`averagePaintMillis` is what one frame cost the UI thread, which is added to the interval between frames: a full shell on a HiDPI monitor paints in about half a second, a single part far faster.
+`lateTicks` and `maxLatenessMillis` report how long the timer waited past its due time, which is the recording's own measurement of how busy the IDE was with other things.
+The GIF is written through SWT's own image loader onto a fixed 256 colour palette, which posterises gradients; the PNG frames stay lossless for `ffmpeg -framerate 4 -i frame-%04d.png out.mp4` through `eclipse_run_command`.
+
+Recording stops on its own at `maxFrames`, when the target is disposed, or when a paint fails; `stoppedBy` says which.
+
 ### `eclipse_list_ui_targets`
 
 Lists every open shell with its title, modality and bounds, and every workbench part with its id, title and visibility.

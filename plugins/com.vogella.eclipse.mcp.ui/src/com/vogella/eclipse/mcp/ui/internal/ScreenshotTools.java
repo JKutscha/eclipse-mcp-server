@@ -446,7 +446,7 @@ public final class ScreenshotTools {
 		}
 
 		/** One control of a composed shell capture, with its placement. */
-		private record Paintable(Control control, Rectangle at) {
+		record Paintable(Control control, Rectangle at) {
 
 			/**
 			 * Prints the control into an image of its own and draws that image at its
@@ -516,7 +516,7 @@ public final class ScreenshotTools {
 			return count;
 		}
 
-		private static List<Paintable> paintablesOf(Shell shell) {
+		static List<Paintable> paintablesOf(Shell shell) {
 			List<Paintable> paintables = new ArrayList<>();
 			for (Control child : shell.getChildren()) {
 				Rectangle bounds = child.getBounds();
@@ -552,7 +552,7 @@ public final class ScreenshotTools {
 		 * 5370 wide capture asked for 2000 lands on 1790, which missed by half a
 		 * percent and left the picture mushy for nothing.
 		 */
-		private static int crispWidth(int actual, int maxWidth) {
+		static int crispWidth(int actual, int maxWidth) {
 			if (actual <= maxWidth) {
 				return maxWidth;
 			}
@@ -761,7 +761,7 @@ public final class ScreenshotTools {
 		}
 
 		/** The monitor's zoom in percent, which is the resolution a widget paints at. */
-		private static int zoomOf(Control control) {
+		static int zoomOf(Control control) {
 			try {
 				org.eclipse.swt.widgets.Monitor monitor = control.getMonitor();
 				int zoom = monitor == null ? 100 : monitor.getZoom();
@@ -797,7 +797,7 @@ public final class ScreenshotTools {
 			return null;
 		}
 
-		private static Control findPart(String partId, boolean activate) {
+		static Control findPart(String partId, boolean activate) {
 			IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
 			IWorkbenchPage page = window == null ? null : window.getActivePage();
 			if (page == null) {
