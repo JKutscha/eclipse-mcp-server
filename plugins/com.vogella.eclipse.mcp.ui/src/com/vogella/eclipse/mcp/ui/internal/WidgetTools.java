@@ -212,11 +212,13 @@ public final class WidgetTools {
 					  "type": "object",
 					  "properties": {
 					    "part":       {"type":"string","description":"Part id, from eclipse_list_ui_targets. Omit to walk a shell instead."},
-					    "shellTitle": {"type":"string","description":"Shell to walk when no part is given. Omit for the active shell."},
+					    "shellTitle": {"type":"string","description":"Shell to walk when no part is given, by title substring. Ambiguous when shells share a title; use 'shell'."},
+					    "shell":      {"type":"string","description":"Shell independent of title: 'popup' for the content assist proposals, an index from eclipse_list_ui_targets ('1'), or its bounds ('151,334 402x255'). Wins over shellTitle."},
 					    "path":       {"type":"string","description":"Start from this widget rather than the root, e.g. '0/2'."},
 					    "filter":     {"type":"string","description":"Only report widgets whose simple class name contains this text, case insensitive, e.g. 'Tree' or 'ToolBar'. The walk still descends through everything."},
 				    "includeToolbar": {"type":"boolean","default":false,"description":"Start from the surrounding part stack rather than the part. A view's toolbar is built in the stack's CTabFolder, not in the part, so it is in no plain part tree at all; this is how to reach it."},
 					    "includeItems": {"type":"boolean","default":false,"description":"Also enumerate Items, which are not Controls and are therefore in no plain walk: ToolItems, CTabItems, TabItems, CoolItems, MenuItems and the columns of a Table or Tree. Their paths carry an i prefix, as in 2/i0, and that is the only way eclipse_inspect_widget can address one. Off by default because a Menu can be large."},
+				    "includeRows": {"type":"boolean","default":false,"description":"Also enumerate the rows of a Table or Tree, with an r prefixed path (0/r2) and, beside the row bounds, boundsInShell mapped to the shell so a row can be highlighted on a shell=popup screenshot. selected marks the row the widget has selected. This is how to outline the chosen content assist proposal. Off by default because a big Table has many rows."},
 				    "maxDepth":   {"type":"integer","default":6,"minimum":1,"maximum":30,"description":"How far down the widget hierarchy to walk. A whole workbench window is dozens of levels deep, so the default stops well short of it."},
 					    "maxResults": {"type":"integer","default":200,"minimum":1,"maximum":2000}
 					  },
@@ -228,17 +230,18 @@ public final class WidgetTools {
 		public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
 			ToolArguments args = ToolArguments.of(arguments);
 			String partId = args.getString("part"); //$NON-NLS-1$
-			String shellTitle = args.getString("shellTitle"); //$NON-NLS-1$
+			String shellTitle = args.getString("shell") != null ? args.getString("shell") : args.getString("shellTitle"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 			String path = args.getString("path"); //$NON-NLS-1$
 			String filter = args.getString("filter"); //$NON-NLS-1$
 			int maxDepth = args.getInt("maxDepth", DEFAULT_DEPTH, 1, 30); //$NON-NLS-1$
 			int maxResults = args.getInt("maxResults", 200, 1, 2000); //$NON-NLS-1$
 			return UiThread.call(15, () -> collect(partId, shellTitle, path, filter, maxDepth, maxResults,
-					args.getBoolean("includeToolbar", false), args.getBoolean("includeItems", false))); //$NON-NLS-1$ //$NON-NLS-2$
+					args.getBoolean("includeToolbar", false), args.getBoolean("includeItems", false), //$NON-NLS-1$ //$NON-NLS-2$
+					args.getBoolean("includeRows", false))); //$NON-NLS-1$
 		}
 
 		private static JsonObject collect(String partId, String shellTitle, String path, String filter, int maxDepth,
-				int maxResults, boolean includeToolbar, boolean includeItems) {
+				int maxResults, boolean includeToolbar, boolean includeItems, boolean includeRows) {
 			Control root = rootOf(partId, shellTitle, includeToolbar);
 			if (root == null) {
 				return new JsonObject().put("found", Boolean.FALSE) //$NON-NLS-1$
@@ -253,8 +256,8 @@ public final class WidgetTools {
 			String needle = filter == null ? null : filter.toLowerCase(Locale.ROOT);
 			JsonArray widgets = new JsonArray();
 			int[] total = { 0 };
-			walk(start, path == null ? "" : path.strip(), 0, maxDepth, needle, maxResults, includeItems, widgets, //$NON-NLS-1$
-					total);
+			walk(start, path == null ? "" : path.strip(), 0, maxDepth, needle, maxResults, includeItems, includeRows, //$NON-NLS-1$
+					widgets, total);
 			return new JsonObject().put("found", Boolean.TRUE) //$NON-NLS-1$
 					.put("root", start.getClass().getName()) //$NON-NLS-1$
 					.put("total", Integer.valueOf(total[0])) //$NON-NLS-1$
@@ -263,7 +266,7 @@ public final class WidgetTools {
 		}
 
 		private static void walk(Widget widget, String path, int depth, int maxDepth, String needle, int maxResults,
-				boolean includeItems, JsonArray into, int[] total) {
+				boolean includeItems, boolean includeRows, JsonArray into, int[] total) {
 			boolean wanted = needle == null
 					|| widget.getClass().getSimpleName().toLowerCase(Locale.ROOT).contains(needle);
 			if (wanted) {
@@ -285,8 +288,11 @@ public final class WidgetTools {
 				Widget[] items = itemsOf(widget);
 				for (int i = 0; i < items.length; i++) {
 					walk(items[i], path.isEmpty() ? "i" + i : path + "/i" + i, depth + 1, maxDepth, needle, //$NON-NLS-1$ //$NON-NLS-2$
-							maxResults, includeItems, into, total);
+							maxResults, includeItems, includeRows, into, total);
 				}
+			}
+			if (includeRows) {
+				addRows(widget, path, needle, maxResults, into, total);
 			}
 			if (!(widget instanceof Composite composite)) {
 				return;
@@ -294,8 +300,60 @@ public final class WidgetTools {
 			Control[] children = composite.getChildren();
 			for (int i = 0; i < children.length; i++) {
 				walk(children[i], path.isEmpty() ? String.valueOf(i) : path + "/" + i, depth + 1, maxDepth, needle, //$NON-NLS-1$
-						maxResults, includeItems, into, total);
+						maxResults, includeItems, includeRows, into, total);
 			}
+		}
+
+		/** The rows of a Table or Tree, with bounds and the shell-relative bounds. */
+		private static void addRows(Widget widget, String path, String needle, int maxResults, JsonArray into,
+				int[] total) {
+			org.eclipse.swt.widgets.Item[] rows;
+			org.eclipse.swt.widgets.Control table;
+			int selected;
+			if (widget instanceof org.eclipse.swt.widgets.Table t) {
+				rows = t.getItems();
+				table = t;
+				selected = t.getSelectionIndex();
+			} else if (widget instanceof org.eclipse.swt.widgets.Tree t) {
+				rows = t.getItems();
+				table = t;
+				selected = -1;
+			} else {
+				return;
+			}
+			// a row is reported even under a class filter that a Table did not match, so
+			// the caller that asked for rows gets them; the filter still gates controls
+			boolean wanted = needle == null || "tableitem".contains(needle) || "treeitem".contains(needle); //$NON-NLS-1$ //$NON-NLS-2$
+			if (!wanted) {
+				return;
+			}
+			Shell shell = table.getShell();
+			for (int i = 0; i < rows.length; i++) {
+				org.eclipse.swt.graphics.Rectangle rowBounds = rowBounds(rows[i]);
+				if (rowBounds == null) {
+					continue;
+				}
+				total[0]++;
+				if (into.size() >= maxResults) {
+					continue;
+				}
+				org.eclipse.swt.graphics.Rectangle inShell = table.getDisplay().map(table, shell, rowBounds);
+				into.add(new JsonObject().put("path", (path.isEmpty() ? "" : path) + "/r" + i) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+						.put("kind", "row") //$NON-NLS-1$ //$NON-NLS-2$
+						.put("class", rows[i].getClass().getName()) //$NON-NLS-1$
+						.put("text", rows[i].getText()) //$NON-NLS-1$
+						.put("selected", Boolean.valueOf(i == selected)) //$NON-NLS-1$
+						.put("bounds", rowBounds.x + "," + rowBounds.y + " " + rowBounds.width + "x" + rowBounds.height) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+						.put("boundsInShell", inShell.x + "," + inShell.y + " " + inShell.width + "x" + inShell.height)); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+			}
+		}
+
+		private static org.eclipse.swt.graphics.Rectangle rowBounds(org.eclipse.swt.widgets.Item item) {
+			return switch (item) {
+			case org.eclipse.swt.widgets.TableItem row -> row.getBounds();
+			case org.eclipse.swt.widgets.TreeItem row -> row.getBounds();
+			default -> null;
+			};
 		}
 
 		/** An item's label, which is usually the only readable thing about it. */
@@ -327,7 +385,8 @@ public final class WidgetTools {
 					  "required": ["path"],
 					  "properties": {
 					    "part":        {"type":"string","description":"Part id the path is rooted in. Use eclipse_list_ui_targets."},
-					    "shellTitle":  {"type":"string","description":"Shell to root the path in instead of a part; omit both for the active shell."},
+					    "shellTitle":  {"type":"string","description":"Shell to root the path in, by title substring; omit both for the active shell."},
+					    "shell":       {"type":"string","description":"Shell independent of title: 'popup', an index from eclipse_list_ui_targets, or its bounds. Wins over shellTitle."},
 					    "path":        {"type":"string","description":"Path of the tab item, such as 0/0/0/i2, or of the folder itself when 'index' is given."},
 					    "index":       {"type":"integer","minimum":0,"maximum":200,"description":"Item index, when 'path' names the folder rather than the item."},
 					    "notify":      {"type":"boolean","default":true,"description":"Also fire the selection event. Without it the tab looks selected while the editor never builds the page, which is the usual reason a screenshot then shows nothing."}
@@ -340,7 +399,7 @@ public final class WidgetTools {
 		public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
 			ToolArguments args = ToolArguments.of(arguments);
 			String partId = args.getString("part"); //$NON-NLS-1$
-			String shellTitle = args.getString("shellTitle"); //$NON-NLS-1$
+			String shellTitle = args.getString("shell") != null ? args.getString("shell") : args.getString("shellTitle"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 			String path = args.getString("path"); //$NON-NLS-1$
 			if (path == null) {
 				return McpToolResult.error("The argument 'path' is required; eclipse_get_widget_tree with includeItems reports the paths."); //$NON-NLS-1$
@@ -451,7 +510,8 @@ public final class WidgetTools {
 					  "type": "object",
 					  "properties": {
 					    "part":       {"type":"string","description":"Part id, from eclipse_list_ui_targets. Omit to address a shell instead."},
-					    "shellTitle": {"type":"string","description":"Shell when no part is given."},
+					    "shellTitle": {"type":"string","description":"Shell when no part is given, by title substring."},
+					    "shell":      {"type":"string","description":"Shell independent of title: 'popup', an index from eclipse_list_ui_targets, or its bounds. Wins over shellTitle."},
 					    "path":       {"type":"string","description":"Slash separated indices from eclipse_get_widget_tree, e.g. '0/2/1'. An i prefixed segment is an item rather than a child control, as in '2/i0' for the first button of a toolbar. Omit for the root."},
 					    "properties": {"type":"array","items":{"type":"string"},"description":"CSS properties to resolve. Defaults to the colour and font ones plus swt-selected-tab-fill."},
 					    "pseudo":     {"type":"string","description":"Pseudo class to resolve against, e.g. 'hover', 'selected', 'checked'. A property that only differs under a pseudo class reads as unset without this."},
@@ -465,7 +525,7 @@ public final class WidgetTools {
 		public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
 			ToolArguments args = ToolArguments.of(arguments);
 			String partId = args.getString("part"); //$NON-NLS-1$
-			String shellTitle = args.getString("shellTitle"); //$NON-NLS-1$
+			String shellTitle = args.getString("shell") != null ? args.getString("shell") : args.getString("shellTitle"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 			String path = args.getString("path"); //$NON-NLS-1$
 			String pseudo = args.getString("pseudo"); //$NON-NLS-1$
 			List<String> properties = new ArrayList<>();

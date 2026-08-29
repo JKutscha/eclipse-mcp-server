@@ -2073,6 +2073,13 @@ The uniform-pixel check is what makes this safe rather than quietly wrong: SWT r
 `path` is a widget path from `eclipse_get_widget_tree` relative to the capture target, `bounds` is `x,y wxh` in points relative to the capture target, `color` is `#rrggbb` (default `#ff0066`, which reads on light and dark themes), `label` is drawn in a filled box above the rectangle, and `style` is `outline` (3 px, the default) or `fill` (translucent).
 Points are scaled by the zoom the capture was painted at and by the downscale to `maxWidth`, and the answer reports under `highlights` the pixel rectangle each one landed on, whether it was clipped, and the label's box, so a reader can verify the overlay against the image.
 The rectangle and the fill are written into the pixels directly rather than through a GC, so a monitor's scaling cannot shift them.
+**Selecting a shell.**
+`shellTitle` matches by title substring, which is ambiguous when shells share a title: the workbench window and the content assist popup both report the empty title, so `shellTitle: ""` picks the workbench.
+`shell` addresses one independent of title, and wins over `shellTitle`: `popup` picks the topmost visible untitled non-workbench shell (the content assist proposals, recognised by their `Table`), an index from `eclipse_list_ui_targets` (`1` or `#1`) picks that shell in the listed order, and the bounds as printed there (`151,334 402x255`) pick the shell at those bounds.
+`eclipse_screenshot`, `eclipse_get_widget_tree` and `eclipse_inspect_widget` all take it.
+`eclipse_list_ui_targets` reports each shell's `index`, `kind` (`workbench`, `dialog` or `popup`) and `firstControl` (the first `Table`, `Tree`, `StyledText`, `Browser` or `Text` inside it), so the proposal popup is recognisable without guessing from bounds.
+`eclipse_get_widget_tree` with `includeRows` enumerates the rows of a `Table` or `Tree` with an `r` prefixed path (`0/r2`), the row `bounds`, `boundsInShell` mapped to the shell, and `selected` for the row the widget has selected, which is how to outline the chosen content assist proposal on a `shell: "popup"` screenshot.
+
 `eclipse_get_text_bounds` and `eclipse_list_annotations` produce the `bounds` of a text range or of a squiggle in exactly this form.
 On a HiDPI monitor use a `part` capture (no `includeToolbar`) with the `inPart` bounds: a single part print is pixel-exact, while `includeToolbar` and `shell` captures render at twice the size and are unreliable there (see `docs/platform-bugs.md`).
 

@@ -139,11 +139,15 @@ public final class ScreenshotTools {
 		private static JsonObject collect(boolean includeAvailableViews, String filter, int maxResults) {
 			Display display = PlatformUI.getWorkbench().getDisplay();
 			JsonArray shells = new JsonArray();
-			for (Shell shell : display.getShells()) {
+			Shell[] ordered = display.getShells();
+			for (int i = 0; i < ordered.length; i++) {
+				Shell shell = ordered[i];
 				Rectangle bounds = shell.getBounds();
-				shells.add(new JsonObject().put("title", shell.getText()) //$NON-NLS-1$
-						.put("modal", (shell.getStyle() & (SWT.APPLICATION_MODAL | SWT.PRIMARY_MODAL //$NON-NLS-1$
-								| SWT.SYSTEM_MODAL)) != 0)
+				shells.add(new JsonObject().put("index", Integer.valueOf(i)) //$NON-NLS-1$
+						.put("title", shell.getText()) //$NON-NLS-1$
+						.put("kind", Shells.kind(shell)) //$NON-NLS-1$
+						.put("firstControl", Shells.firstControlName(shell)) //$NON-NLS-1$
+						.put("modal", Shells.isModal(shell)) //$NON-NLS-1$
 						.put("visible", shell.isVisible()) //$NON-NLS-1$
 						.put("bounds", bounds.x + "," + bounds.y + " " + bounds.width + "x" + bounds.height)); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
 			}
@@ -214,7 +218,8 @@ public final class ScreenshotTools {
 					  "properties": {
 					    "target":     {"type":"string","enum":["part","shell","display"],"default":"part"},
 					    "part":       {"type":"string","description":"Part id, e.g. org.eclipse.ui.views.ProblemView. Use eclipse_list_ui_targets to find it."},
-					    "shellTitle": {"type":"string","description":"Title of the shell to capture, or a substring of it. Omit for the active shell."},
+					    "shellTitle": {"type":"string","description":"Title of the shell to capture, or a substring. Ambiguous when several shells share a title, e.g. the empty title of the workbench and the content assist popup; use 'shell' then."},
+				    "shell":      {"type":"string","description":"Shell to capture, independent of title: 'popup' for the topmost untitled non-workbench shell (the content assist proposals), an index from eclipse_list_ui_targets ('1' or '#1'), or its bounds as printed ('151,334 402x255'). Wins over shellTitle."},
 					    "activate":   {"type":"boolean","default":false,"description":"Bring the part to the front first. This visibly rearranges the user's IDE, so it is off by default."},
 					    "maxWidth":   {"type":"integer","default":1200,"minimum":100,"maximum":4000,"description":"Downscale to this width. A full HD PNG is over a megabyte once base64 encoded."},
 					    "outputPath": {"type":"string","description":"Absolute file to write. Defaults to a temporary file."},
@@ -237,12 +242,13 @@ public final class ScreenshotTools {
 			String explicitTarget = args.getString("target"); //$NON-NLS-1$
 			// infer from whichever selector was given, so that passing shellTitle alone
 			// does not fail with "the target 'part' needs a 'part' id"
+			String shellSpec = args.getString("shell") != null ? args.getString("shell") : args.getString("shellTitle"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 			String target = explicitTarget != null ? explicitTarget
-					: args.getString("shellTitle") != null ? "shell" : "part"; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+					: shellSpec != null ? "shell" : "part"; //$NON-NLS-1$ //$NON-NLS-2$
 			if ("part".equals(target) && part == null) { //$NON-NLS-1$
 				return McpToolResult.error("The target 'part' needs a 'part' id. Use eclipse_list_ui_targets."); //$NON-NLS-1$
 			}
-			String shellTitle = args.getString("shellTitle"); //$NON-NLS-1$
+			String shellTitle = shellSpec;
 			boolean activate = args.getBoolean("activate", false); //$NON-NLS-1$
 			int maxWidth = args.getInt("maxWidth", 1200, 100, 4000); //$NON-NLS-1$
 			String outputPath = args.getString("outputPath"); //$NON-NLS-1$
@@ -746,30 +752,8 @@ public final class ScreenshotTools {
 			return -1;
 		}
 
-		static Shell findShell(Display display, String title) {
-			if (title == null) {
-				// the modal one is what is blocking, otherwise whatever is active
-				for (Shell candidate : display.getShells()) {
-					if (candidate.isVisible() && (candidate.getStyle()
-							& (SWT.APPLICATION_MODAL | SWT.PRIMARY_MODAL | SWT.SYSTEM_MODAL)) != 0) {
-						return candidate;
-					}
-				}
-				Shell active = display.getActiveShell();
-				if (active != null) {
-					return active;
-				}
-				// getActiveShell is null whenever the IDE does not have focus, which is
-				// the normal state when the call arrives over HTTP
-				IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
-				return window == null ? null : window.getShell();
-			}
-			for (Shell shell : display.getShells()) {
-				if (shell.getText() != null && shell.getText().contains(title)) {
-					return shell;
-				}
-			}
-			return null;
+		static Shell findShell(Display display, String spec) {
+			return Shells.select(display, spec);
 		}
 
 		/** The monitor's zoom in percent, which is the resolution a widget paints at. */
