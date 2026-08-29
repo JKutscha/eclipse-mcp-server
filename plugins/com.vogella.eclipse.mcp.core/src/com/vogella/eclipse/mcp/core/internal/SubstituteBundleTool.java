@@ -52,7 +52,7 @@ public final class SubstituteBundleTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Makes the IDE run a workspace project's bundle in place of the installed one at the next restart, by packing the project and pointing this installation's bundles.info line at the packed jar. CHANGES THE INSTALLATION, not the workspace, and runs as a dry run unless dryRun is set to false; the dry run shows the exact line before and after. THIS IS THE ONLY WAY IN FOR MOST OF THE SDK: a hot install through eclipse_install_bundle is invisible to anything that reads the registry once at startup, the theme engine among them, and the dropins directory cannot replace a bundle that belongs to an installed feature, because a feature demands its bundles at an exact version, which covers nearly everything in an SDK. THE RISK IS REAL: a bundles.info that names a jar which is not there leaves the bundles that need it unresolvable, and if that bundle is one the framework itself needs, the IDE does not start and no tool here can reach it; short of that the IDE still runs and action repair points such a line back at the installed jar. NEVER DELETE A PACKED JAR BY HAND: action cleanup does it and re-reads bundles.info first, because this file is rewritten at every start and by other sessions, so a jar that looks unreferenced can be the one the next start loads. The original line is recorded, so action restore needs nothing from the caller, and action status reports what is substituted right now, checked against bundles.info rather than believed from the record, including a substitution another session made and, under referencingSubstitutedJars, every line that points at a packed jar even when nothing here recorded it, which is what stops somebody debugging an IDE that is not running what its plugins directory holds. THE VERSION FIELD IS WHAT MAKES IT TAKE EFFECT: simpleconfigurator matches a bundle on symbolic name plus version, so a line that keeps the installed version and only changes the path is read as a bundle already installed and the path is never looked at, which is a substitution that does nothing while every check on the file says it is in force. The version of the substituted jar is therefore written into the line. Ask action status for the 'running' field, which reports what the framework has actually loaded rather than what the file says, and believe that one. The line may also be rewritten at a restart, so everything here matches on the bundle name, the one stable field."; //$NON-NLS-1$
+		return "Makes the IDE run a workspace project's bundle in place of the installed one at the next restart, by packing the project and pointing this installation's bundles.info line at the packed jar. CHANGES THE INSTALLATION, not the workspace, and runs as a dry run unless dryRun is set to false; the dry run shows the exact line before and after. THIS IS THE ONLY WAY IN FOR MOST OF THE SDK: a hot install through eclipse_install_bundle is invisible to anything that reads the registry once at startup, the theme engine among them, and the dropins directory cannot replace a bundle that belongs to an installed feature, because a feature demands its bundles at an exact version, which covers nearly everything in an SDK. THE RISK IS REAL: a bundles.info that names a jar which is not there leaves the bundles that need it unresolvable, and if that bundle is one the framework itself needs, the IDE does not start and no tool here can reach it; short of that the IDE still runs and action repair points such a line back at the installed jar. NEVER DELETE A PACKED JAR BY HAND: action cleanup does it and re-reads bundles.info first, because this file is rewritten at every start and by other sessions, so a jar that looks unreferenced can be the one the next start loads. The original line is recorded, so action restore needs nothing from the caller, and action status reports what is substituted right now, checked against bundles.info rather than believed from the record, including a substitution another session made and, under referencingSubstitutedJars, every line that points at a packed jar even when nothing here recorded it, which is what stops somebody debugging an IDE that is not running what its plugins directory holds. THE VERSION FIELD IS WHAT MAKES IT TAKE EFFECT: simpleconfigurator matches a bundle on symbolic name plus version, so a line that keeps the installed version and only changes the path is read as a bundle already installed and the path is never looked at, which is a substitution that does nothing while every check on the file says it is in force. The version of the substituted jar is therefore written into the line. Ask action status for the 'running' field, which reports what the framework has actually loaded, its version, its state and the jar it came from, rather than what the file says, and believe that one. The line may also be rewritten at a restart, so everything here matches on the bundle name, the one stable field."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -213,33 +213,45 @@ public final class SubstituteBundleTool implements IMcpTool {
 	 * is in force and every measurement taken is of the unchanged code. Only the
 	 * live bundle's own location settles it.
 	 */
-	private static JsonObject running(String symbolicName) {
-		org.osgi.framework.Bundle self = org.osgi.framework.FrameworkUtil.getBundle(SubstituteBundleTool.class);
-		if (self == null || self.getBundleContext() == null) {
-			// never a bare null: an empty field reads as "nothing to report" when it
-			// means "could not look", and this is the field a caller is meant to trust
-			// over the file
+	public static JsonObject running(String symbolicName) {
+		// Platform.getBundle rather than our own BundleContext: this bundle declares
+		// no activator and no lazy activation, so it never leaves RESOLVED and its
+		// context is null for the life of the IDE. The old code read that as "the
+		// server is still starting" and told every caller to ask again in a moment,
+		// which never came, so the one field meant to be trusted over the file was
+		// permanently unavailable
+		org.osgi.framework.Bundle bundle = org.eclipse.core.runtime.Platform.getBundle(symbolicName);
+		if (bundle == null) {
 			return new JsonObject().put("known", Boolean.FALSE) //$NON-NLS-1$
 					.put("reason", //$NON-NLS-1$
-							"This bundle has no framework context right now, which happens while the server is still starting, so what the IDE has loaded could not be read. Ask again in a moment."); //$NON-NLS-1$
+							"The framework has no bundle called '%s' at all, so nothing of that name is running, substituted or otherwise." //$NON-NLS-1$
+									.formatted(symbolicName));
 		}
-		for (org.osgi.framework.Bundle bundle : self.getBundleContext().getBundles()) {
-			if (symbolicName.equals(bundle.getSymbolicName())) {
-				String location = bundle.getLocation();
-				boolean substituted = location != null && location.contains(JARS);
-				return new JsonObject().put("known", Boolean.TRUE) //$NON-NLS-1$
-						.put("version", String.valueOf(bundle.getVersion())) //$NON-NLS-1$
-						.put("location", location) //$NON-NLS-1$
-						.put("isSubstitutedJar", Boolean.valueOf(substituted)) //$NON-NLS-1$
-						.put("note", substituted //$NON-NLS-1$
-								? "The framework holds the substituted jar, so this IDE really is running it." //$NON-NLS-1$
-								: "THE FRAMEWORK HOLDS THE ORIGINAL. Whatever bundles.info says, this IDE is running the installed bundle, so anything measured here describes unchanged code. A restart is needed, and if one has already happened the substitution did not take."); //$NON-NLS-1$
-			}
-		}
-		return new JsonObject().put("known", Boolean.FALSE) //$NON-NLS-1$
-				.put("reason", //$NON-NLS-1$
-						"The framework has no bundle called '%s' at all, so nothing of that name is running, substituted or otherwise." //$NON-NLS-1$
-								.formatted(symbolicName));
+		String location = bundle.getLocation();
+		boolean substituted = location != null && location.contains(JARS);
+		String state = stateOf(bundle.getState());
+		return new JsonObject().put("known", Boolean.TRUE) //$NON-NLS-1$
+				.put("version", String.valueOf(bundle.getVersion())) //$NON-NLS-1$
+				.put("state", state) //$NON-NLS-1$
+				.put("location", location) //$NON-NLS-1$
+				.put("isSubstitutedJar", Boolean.valueOf(substituted)) //$NON-NLS-1$
+				.put("note", substituted //$NON-NLS-1$
+						? "The framework holds the substituted jar, so this IDE really is running it." //$NON-NLS-1$
+						: "THE FRAMEWORK HOLDS THE ORIGINAL. Whatever bundles.info says, this IDE is running the installed bundle, so anything measured here describes unchanged code. A restart is needed, and if one has already happened the substitution did not take.") //$NON-NLS-1$
+				.put("stateNote", "RESOLVED means the bundle is wired and will run when something needs it, which is the ordinary state for a lazily activated bundle and says nothing against the substitution; what matters here is the version and the location."); //$NON-NLS-1$
+	}
+
+	/** The framework's state constants, which are a bit field of powers of two. */
+	private static String stateOf(int state) {
+		return switch (state) {
+		case org.osgi.framework.Bundle.UNINSTALLED -> "UNINSTALLED"; //$NON-NLS-1$
+		case org.osgi.framework.Bundle.INSTALLED -> "INSTALLED"; //$NON-NLS-1$
+		case org.osgi.framework.Bundle.RESOLVED -> "RESOLVED"; //$NON-NLS-1$
+		case org.osgi.framework.Bundle.STARTING -> "STARTING"; //$NON-NLS-1$
+		case org.osgi.framework.Bundle.STOPPING -> "STOPPING"; //$NON-NLS-1$
+		case org.osgi.framework.Bundle.ACTIVE -> "ACTIVE"; //$NON-NLS-1$
+		default -> String.valueOf(state);
+		};
 	}
 
 	/** The line for a bundle, found by its name, which is the one stable field. */
