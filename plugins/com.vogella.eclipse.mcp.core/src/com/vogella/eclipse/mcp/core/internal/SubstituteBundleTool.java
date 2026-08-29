@@ -161,7 +161,11 @@ public final class SubstituteBundleTool implements IMcpTool {
 			referencing.add(new JsonObject().put("bundle", bundle) //$NON-NLS-1$
 					.put("line", line) //$NON-NLS-1$
 					.put("recorded", Boolean.valueOf(recorded)) //$NON-NLS-1$
-					.put("jarExists", Boolean.valueOf(jar != null && Files.isRegularFile(jar)))); //$NON-NLS-1$
+					.put("jarExists", Boolean.valueOf(jar != null && Files.isRegularFile(jar))) //$NON-NLS-1$
+					// this is the case where the question matters most: nothing here
+					// recorded the substitution, so the file is the only other evidence
+					// and it is exactly the evidence that can be stale
+					.put("running", running(bundle))); //$NON-NLS-1$
 		}
 		return new JsonObject().put("substituted", active) //$NON-NLS-1$
 				.put("count", Integer.valueOf(active.size())) //$NON-NLS-1$
