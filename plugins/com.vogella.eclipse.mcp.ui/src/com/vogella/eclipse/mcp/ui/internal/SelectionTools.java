@@ -37,6 +37,27 @@ public final class SelectionTools {
 	private SelectionTools() {
 	}
 
+	/**
+	 * A workspace path or a project name, for a caller that has no part to resolve
+	 * a widget row against. {@code null} when nothing of that name exists.
+	 */
+	public static Object resolveResource(String spec) {
+		String value = spec == null ? "" : spec.strip(); //$NON-NLS-1$
+		if (value.isEmpty()) {
+			return null;
+		}
+		if (value.startsWith("/")) { //$NON-NLS-1$
+			return ResourcesPlugin.getWorkspace().getRoot().findMember(value);
+		}
+		var project = ResourcesPlugin.getWorkspace().getRoot().getProject(value);
+		return project.exists() ? project : null;
+	}
+
+	/** One selected object as the other tools report it. */
+	public static JsonObject describe(Object element) {
+		return describeElement(element);
+	}
+
 	/** What the handler framework is looking at, which is not always the active part's viewer. */
 	private static JsonObject describeSelection(String source, Object selection) {
 		JsonObject result = new JsonObject().put("source", source); //$NON-NLS-1$
@@ -211,8 +232,15 @@ public final class SelectionTools {
 				if (activate) {
 					part.getSite().getPage().activate(part);
 				}
-				ISelection selection = elements.isEmpty() ? StructuredSelection.EMPTY
-						: new StructuredSelection(elements);
+				// a viewer selects its own model objects, and those are not always the
+				// resources a caller names: the Package Explorer holds an IJavaProject
+				// where the workspace holds an IProject, and setSelection drops what it
+				// does not recognise without saying so. Matching the requested resources
+				// against what the viewer actually shows keeps this working for any
+				// viewer without knowing about any one model
+				List<Object> asShown = matchToViewer(elements, part);
+				ISelection selection = asShown.isEmpty() ? StructuredSelection.EMPTY
+						: new StructuredSelection(asShown);
 				// only a Viewer can be told to reveal; a plain provider takes the
 				// selection alone, and reporting reveal as done would be a small lie
 				boolean revealed = false;
@@ -226,6 +254,7 @@ public final class SelectionTools {
 						.put("revealed", Boolean.valueOf(revealed)) //$NON-NLS-1$
 						.put("requested", Integer.valueOf(specs.size())) //$NON-NLS-1$
 						.put("resolved", Integer.valueOf(elements.size())) //$NON-NLS-1$
+						.put("matchedToViewerElements", Integer.valueOf(asShown.size())) //$NON-NLS-1$
 						.put("unresolved", unresolved) //$NON-NLS-1$
 						.put("previousSelection", before); //$NON-NLS-1$
 				result.put("after", currentState( //$NON-NLS-1$
@@ -236,6 +265,69 @@ public final class SelectionTools {
 				}
 				return result;
 			});
+		}
+
+		/**
+		 * The objects the viewer itself holds for the requested elements.
+		 * <p>
+		 * A resource is matched to the tree item whose data adapts to the same
+		 * resource, so the model object the viewer put there is what gets selected.
+		 * Anything with no item of its own is kept as it was, since a provider that
+		 * is not a tree may well accept it.
+		 */
+		private static List<Object> matchToViewer(List<Object> requested, IWorkbenchPart part) {
+			org.eclipse.swt.widgets.Tree tree = treeOf(part);
+			if (tree == null || requested.isEmpty()) {
+				return requested;
+			}
+			List<Object> shown = new ArrayList<>();
+			for (Object element : requested) {
+				IResource resource = Adapters.adapt(element, IResource.class);
+				Object match = resource == null ? null : findInTree(tree.getItems(), resource, 0);
+				shown.add(match == null ? element : match);
+			}
+			return shown;
+		}
+
+		/** The data of the item that stands for this resource, searched a few levels deep. */
+		private static Object findInTree(org.eclipse.swt.widgets.TreeItem[] items, IResource resource, int depth) {
+			if (depth > 2) {
+				return null;
+			}
+			for (org.eclipse.swt.widgets.TreeItem item : items) {
+				IResource shown = item.getData() == null ? null : Adapters.adapt(item.getData(), IResource.class);
+				if (shown != null && shown.getFullPath().equals(resource.getFullPath())) {
+					return item.getData();
+				}
+			}
+			for (org.eclipse.swt.widgets.TreeItem item : items) {
+				Object found = findInTree(item.getItems(), resource, depth + 1);
+				if (found != null) {
+					return found;
+				}
+			}
+			return null;
+		}
+
+		private static org.eclipse.swt.widgets.Tree treeOf(IWorkbenchPart part) {
+			org.eclipse.swt.widgets.Control control = ScreenshotTools.Capture.controlOf(part);
+			return control == null ? null : firstTree(control, 0);
+		}
+
+		private static org.eclipse.swt.widgets.Tree firstTree(org.eclipse.swt.widgets.Control control, int depth) {
+			if (control instanceof org.eclipse.swt.widgets.Tree tree) {
+				return tree;
+			}
+			if (depth > 6 || !(control instanceof org.eclipse.swt.widgets.Composite composite)) {
+				return null;
+			}
+			for (org.eclipse.swt.widgets.Control child : composite.getChildren()) {
+				org.eclipse.swt.widgets.Tree found = firstTree(child, depth + 1);
+				if (found != null) {
+					return found;
+				}
+			}
+			return null;
 		}
 
 		/**

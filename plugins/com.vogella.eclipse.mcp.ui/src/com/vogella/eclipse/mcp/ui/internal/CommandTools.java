@@ -190,6 +190,7 @@ public final class CommandTools {
 					    "command":        {"type":"string","description":"Command id, or the label a person reads in the menu. Use eclipse_list_commands."},
 					    "parameters":     {"type":"object","additionalProperties":{"type":"string"},"description":"Parameter id to string value, for commands that take them."},
 					    "dryRun":         {"type":"boolean","default":false,"description":"Resolve the command and report handled, enabled and its parameters without executing anything."},
+				    "selection":      {"type":"array","items":{"type":"string"},"description":"Ask the enablement for THIS selection instead of the one the IDE currently has, as workspace paths ('/org.eclipse.compare') or project names ('g'). dryRun only. The command is evaluated against a context built from these elements and the IDE's selection is not touched, so an enablement can be tested for a selection no viewer here can even show, a closed project among open ones for instance. Reports enabledForSelection beside the ambient enabled."},
 					    "timeoutSeconds": {"type":"integer","default":10,"minimum":1,"maximum":25,"description":"How long to wait for the handler before reporting a probable dialog."}
 					  },
 					  "additionalProperties": false
@@ -208,6 +209,14 @@ public final class CommandTools {
 				return McpToolResult.error(refusal);
 			}
 			boolean dryRun = args.getBoolean("dryRun", false); //$NON-NLS-1$
+			List<String> selection = new ArrayList<>();
+			if (arguments.get("selection") instanceof List<?> given) { //$NON-NLS-1$
+				given.forEach(value -> selection.add(String.valueOf(value)));
+			}
+			if (!selection.isEmpty() && !dryRun) {
+				return McpToolResult.error(
+						"'selection' only applies to a dryRun: it answers what the enablement would be, and executing a command against a selection the IDE does not have would run it on the wrong thing."); //$NON-NLS-1$
+			}
 			long timeoutSeconds = args.getInt("timeoutSeconds", 10, 1, 25); //$NON-NLS-1$
 			Map<String, String> parameters = parameterMap(arguments.get("parameters")); //$NON-NLS-1$
 			if (!PlatformUI.isWorkbenchRunning()) {
@@ -218,7 +227,7 @@ public final class CommandTools {
 			CompletableFuture<String> pending = new CompletableFuture<>();
 			PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
 				try {
-					pending.complete(execute(wanted, parameters, dryRun, recorder).toString());
+					pending.complete(execute(wanted, parameters, dryRun, selection, recorder).toString());
 				} catch (RuntimeException e) {
 					pending.completeExceptionally(e);
 				}
@@ -251,7 +260,7 @@ public final class CommandTools {
 		 * apart from one that already finished.
 		 */
 		private static JsonObject execute(String wanted, Map<String, String> parameters, boolean dryRun,
-				ExecutionRecorder recorder) {
+				List<String> selection, ExecutionRecorder recorder) {
 			long started = System.nanoTime();
 			ICommandService service = PlatformUI.getWorkbench().getService(ICommandService.class);
 			List<Command> matches = match(service, wanted);
@@ -285,6 +294,9 @@ public final class CommandTools {
 									.formatted(requiredParameters(command))));
 				}
 				if (dryRun) {
+					if (!selection.isEmpty()) {
+						answer.put("forSelection", enablementFor(command, selection)); //$NON-NLS-1$
+					}
 					return recorder.reportInto(answer.put("dryRun", Boolean.TRUE).put("note", "Nothing was executed.") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 							.put("elapsedMillis", elapsed(started))); //$NON-NLS-1$
 				}
@@ -321,6 +333,65 @@ public final class CommandTools {
 			} finally {
 				command.removeExecutionListener(recorder);
 			}
+		}
+
+		/**
+		 * The command's enablement for a selection the IDE does not have.
+		 * <p>
+		 * The handler is asked against a context built for these elements, so the
+		 * question can be put for a selection no viewer here shows: a lazily
+		 * populated tree materialises only what is on screen, and a view can filter
+		 * a closed project out entirely, which leaves clicking unable to express the
+		 * very case an enablement test is about. The IDE's own selection is not
+		 * touched, and the command's enablement is put back afterwards.
+		 */
+		private static JsonObject enablementFor(Command command, List<String> specs) {
+			JsonArray unresolved = new JsonArray();
+			List<Object> elements = new ArrayList<>();
+			JsonArray described = new JsonArray();
+			for (String spec : specs) {
+				Object resolved = SelectionTools.resolveResource(spec);
+				if (resolved == null) {
+					unresolved.add(spec);
+				} else {
+					elements.add(resolved);
+					described.add(SelectionTools.describe(resolved));
+				}
+			}
+			JsonObject result = new JsonObject().put("requested", Integer.valueOf(specs.size())) //$NON-NLS-1$
+					.put("resolved", Integer.valueOf(elements.size())) //$NON-NLS-1$
+					.put("unresolved", unresolved) //$NON-NLS-1$
+					.put("elements", described); //$NON-NLS-1$
+			if (elements.isEmpty()) {
+				return result.put("enabledForSelection", null) //$NON-NLS-1$
+						.put("reason", "Nothing resolved, so no selection could be built."); //$NON-NLS-1$ //$NON-NLS-2$
+			}
+			IHandlerService handlers = PlatformUI.getWorkbench().getService(IHandlerService.class);
+			org.eclipse.core.expressions.IEvaluationContext snapshot = handlers.createContextSnapshot(false);
+			org.eclipse.core.expressions.EvaluationContext context = new org.eclipse.core.expressions.EvaluationContext(
+					snapshot, elements);
+			org.eclipse.jface.viewers.IStructuredSelection structured = new org.eclipse.jface.viewers.StructuredSelection(
+					elements);
+			context.addVariable(org.eclipse.ui.ISources.ACTIVE_CURRENT_SELECTION_NAME, structured);
+			context.addVariable(org.eclipse.ui.ISources.ACTIVE_MENU_SELECTION_NAME, structured);
+			context.setAllowPluginActivation(true);
+			try {
+				command.setEnabled(context);
+				result.put("enabledForSelection", Boolean.valueOf(command.isEnabled())) //$NON-NLS-1$
+						.put("handled", Boolean.valueOf(command.isHandled())); //$NON-NLS-1$
+			} catch (RuntimeException e) {
+				result.put("enabledForSelection", null).put("reason", "The handler threw while being asked: " + e); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+			} finally {
+				// put the ambient enablement back, so a later question about the real
+				// selection is not answered from this hypothetical one
+				try {
+					command.setEnabled(handlers.createContextSnapshot(false));
+				} catch (RuntimeException e) {
+					result.put("restoreFailed", String.valueOf(e)); //$NON-NLS-1$
+				}
+			}
+			return result.put("note", //$NON-NLS-1$
+					"This is the enablement for the selection above, evaluated without touching what the IDE has selected. 'enabled' elsewhere in this answer is the ambient one."); //$NON-NLS-1$
 		}
 
 		private static JsonObject base(Command command, long started) {
