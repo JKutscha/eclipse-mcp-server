@@ -78,14 +78,23 @@ pid=
 
 cleanup() {
   local status=$?
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-    kill -TERM "$pid" 2>/dev/null || true
+  # the whole process group, not the launcher: the native launcher spawns the
+  # JVM as a child and may exit itself, so killing the recorded pid left a full
+  # IDE running with nobody to notice. setsid below makes pid the group leader
+  if [ -n "$pid" ]; then
+    kill -TERM -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
     for _ in $(seq 1 20); do
-      kill -0 "$pid" 2>/dev/null || break
+      kill -0 -"$pid" 2>/dev/null || break
       sleep 1
     done
-    kill -9 "$pid" 2>/dev/null || true
+    kill -9 -"$pid" 2>/dev/null || true
   fi
+  # and anything still holding this workspace, whatever its group
+  for stray in $(ps -C java -o pid= 2>/dev/null); do
+    if tr '\0' ' ' < "/proc/$stray/cmdline" 2>/dev/null | grep -qF -- "-data $workspace"; then
+      kill -9 "$stray" 2>/dev/null || true
+    fi
+  done
   if [ "$keep" = "0" ]; then
     rm -rf "$workspace"
   else
@@ -97,12 +106,12 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "starting $ide on $workspace, port $port"
-"$ide/eclipse" -data "$workspace" -nosplash > "$workspace/launch.log" 2>&1 &
+setsid "$ide/eclipse" -data "$workspace" -nosplash > "$workspace/launch.log" 2>&1 &
 pid=$!
 
 deadline=$((SECONDS + timeout))
 until [ -f "$endpoint" ] && curl -s -o /dev/null --max-time 2 "http://127.0.0.1:$port/mcp"; do
-  if ! kill -0 "$pid" 2>/dev/null; then
+  if ! kill -0 -"$pid" 2>/dev/null && ! kill -0 "$pid" 2>/dev/null; then
     echo "the IDE exited before the server came up; last lines of its log:" >&2
     tail -20 "$workspace/launch.log" >&2 || true
     [ -f "$log" ] && tail -20 "$log" >&2

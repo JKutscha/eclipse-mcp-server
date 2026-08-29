@@ -107,7 +107,7 @@ class Client:
         return text, bool(result.get("isError"))
 
 
-def run(client, path, quiet):
+def run(client, path, quiet, verbose=False):
     """Runs one script file and returns (name, seconds, steps, failure or None)."""
     script = json.loads(pathlib.Path(path).read_text())
     started = time.time()
@@ -127,11 +127,17 @@ def run(client, path, quiet):
             print("   %s %-28s %sms" % (mark, str(step.get("label"))[:28], step.get("millis")))
             for bad in step.get("expectationsFailed") or []:
                 print("        %s: expected %s, found %s" % (bad.get("path"), bad.get("expected"), bad.get("found")))
+            if verbose and step.get("ok"):
+                shown = step.get("answer")
+                text = json.dumps(shown, indent=1) if isinstance(shown, (dict, list)) else str(shown)
+                print("        answer: " + text[:600].replace("\n", "\n        "))
             if step.get("ran") and not step.get("ok"):
                 # the expectation says what did not hold; the answer says why, and
                 # without it a CI failure is a puzzle rather than a report
-                answer = step.get("answer")
-                rendered = json.dumps(answer, indent=1) if isinstance(answer, (dict, list)) else str(answer)
+                # not named answer: that is the script's answer, and shadowing it
+                # here made the summary read this step's and report no failures
+                detail = step.get("answer")
+                rendered = json.dumps(detail, indent=1) if isinstance(detail, (dict, list)) else str(detail)
                 print("        answer: " + rendered[:600].replace("\n", "\n        "))
     failure = None
     if answer.get("failed"):
@@ -171,6 +177,8 @@ def main():
     parser.add_argument("--junit")
     parser.add_argument("--timeout", type=float, default=120)
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Print every step's answer, which is how a script is debugged.")
     args = parser.parse_args()
 
     url, token = discover(args)
@@ -180,7 +188,7 @@ def main():
     except (urllib.error.URLError, OSError) as e:
         sys.exit("Could not reach %s: %s" % (url, e))
 
-    results = [run(client, path, args.quiet) for path in args.scripts]
+    results = [run(client, path, args.quiet, args.verbose) for path in args.scripts]
     if args.junit:
         junit(results, args.junit)
     failed = [name for name, _, _, failure in results if failure]

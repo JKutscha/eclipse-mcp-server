@@ -2,6 +2,20 @@
  "atomic": false,
  "steps": [
   {
+   "tool": "eclipse_set_shell_bounds",
+   "label": "give the window a known size",
+   "arguments": {
+    "width": 1200,
+    "height": 800,
+    "maximized": false
+   },
+   "expect": {
+    "bounds": {
+     "exists": true
+    }
+   }
+  },
+  {
    "tool": "eclipse_list_ui_targets",
    "label": "the workbench is up",
    "expect": {
@@ -55,9 +69,9 @@
   },
   {
    "tool": "eclipse_screenshot",
-   "label": "that view can be captured",
+   "label": "the window can be captured",
    "arguments": {
-    "part": "org.eclipse.ui.views.ProblemView",
+    "target": "shell",
     "maxWidth": 600
    },
    "expect": {
