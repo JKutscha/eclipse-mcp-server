@@ -2131,7 +2131,7 @@ Runs several tools in order and reports what each answered.
 Leave it off for long steps, since the UI is blocked for the whole batch.
 
 `expect` turns a sequence into a check that passes or fails rather than a transcript somebody has to read, which is what makes a scripted IDE test possible from outside.
-A path walks the answer with dots and list indices (`widgets.0.selected`).
+A path walks the answer with dots and list indices (`widgets.0.selected`), and `name[key=value]` picks an entry of a list by one of its fields (`items[command=org.eclipse.ui.edit.undo].enabled`), which is what keeps a script from breaking when the list gains an entry; the search descends into nested lists, so an item in a submenu needs no path through every level.
 A plain value means equality; `{"contains": "x"}` a substring; `{"matches": "regex"}` a regular expression; `{"exists": true}` presence; `{"size": n}` the length of a list.
 A failed expectation is reported with the path, what was expected and what was there.
 

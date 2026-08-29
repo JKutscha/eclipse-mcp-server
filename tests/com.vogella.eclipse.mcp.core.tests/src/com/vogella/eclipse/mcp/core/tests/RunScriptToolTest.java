@@ -22,6 +22,20 @@ class RunScriptToolTest {
 
 	private static final String TOOL = "eclipse_run_script";
 
+	private static final String PROJECT = "RunScriptFixture";
+
+	private final TestFixture fixture = new TestFixture();
+
+	@org.junit.jupiter.api.AfterEach
+	void dispose() throws Exception {
+		fixture.dispose();
+	}
+
+	@org.junit.jupiter.api.BeforeEach
+	void createProject() throws Exception {
+		fixture.createProject(PROJECT);
+	}
+
 	@Test
 	@SuppressWarnings("unchecked")
 	void stepsRunInOrderAndTheAnswersAreKept() throws Exception {
@@ -78,6 +92,20 @@ class RunScriptToolTest {
 						"total", Map.of("exists", Boolean.TRUE),
 						"projects", Map.of("exists", Boolean.TRUE),
 						"nothingIsCalledThis", Map.of("exists", Boolean.FALSE))))));
+
+		List<Map<String, Object>> steps = (List<Map<String, Object>>) result.get("steps");
+		assertEquals(Boolean.TRUE, steps.get(0).get("ok"), "got " + steps.get(0).get("expectationsFailed"));
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void anEntryOfAListIsPickedByAFieldRatherThanByItsPosition() throws Exception {
+		// a position is a statement about the order of a list, and the question is
+		// almost always about the entry with a particular value in it
+		Map<String, Object> result = TestFixture.callAndParse(TOOL, Map.of("steps", List.of(
+				Map.of("tool", "eclipse_list_projects", "label", "by field", "expect", Map.of(
+						"projects[name=" + PROJECT + "].name", PROJECT,
+						"projects[name=no.such.project].name", Map.of("exists", Boolean.FALSE))))));
 
 		List<Map<String, Object>> steps = (List<Map<String, Object>>) result.get("steps");
 		assertEquals(Boolean.TRUE, steps.get(0).get("ok"), "got " + steps.get(0).get("expectationsFailed"));

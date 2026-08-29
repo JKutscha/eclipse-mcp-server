@@ -50,7 +50,7 @@ public final class RunScriptTool implements IMcpTool {
 				        "tool":            {"type":"string","description":"Tool name, e.g. eclipse_type_text."},
 				        "arguments":       {"type":"object","description":"Its arguments, exactly as the tool takes them."},
 				        "label":           {"type":"string","description":"A name for this step in the report."},
-				        "expect":          {"type":"object","description":"What the answer has to hold, as path to matcher. A path walks the answer with dots and list indices, as in 'widgets.0.selected'. A plain value means equality; {\\"contains\\":\\"x\\"} a substring; {\\"matches\\":\\"regex\\"} a regular expression; {\\"exists\\":true} presence; {\\"size\\":n} the length of a list."},
+				        "expect":          {"type":"object","description":"What the answer has to hold, as path to matcher. A path walks the answer with dots and list indices, as in 'widgets.0.selected', and picks an entry of a list by one of its fields with name[key=value], as in 'items[command=org.eclipse.ui.edit.undo].enabled', which is what keeps a script from breaking when the list gains an entry; the search descends into nested lists, so an item in a submenu needs no path through every level. A plain value means equality; {\\"contains\\":\\"x\\"} a substring; {\\"matches\\":\\"regex\\"} a regular expression; {\\"exists\\":true} presence; {\\"size\\":n} the length of a list."},
 				        "continueOnError": {"type":"boolean","default":false,"description":"Run the following steps even when this one fails."}
 				      },
 				      "required":["tool"],
@@ -256,12 +256,31 @@ public final class RunScriptTool implements IMcpTool {
 		return matcher == null ? null : String.valueOf(matcher);
 	}
 
-	/** Walks an answer by a dotted path, where a numeric segment indexes a list. */
+	/** {@code name[key=value]}, or {@code [key=value]} when the list is already at hand. */
+	private static final java.util.regex.Pattern SELECTOR = java.util.regex.Pattern
+			.compile("([^\\[\\]]*)\\[([^=\\]]+)=([^\\]]*)\\]"); //$NON-NLS-1$
+
+	/**
+	 * Walks an answer by a dotted path, where a numeric segment indexes a list and
+	 * {@code name[key=value]} picks the entry of a list by one of its fields.
+	 * <p>
+	 * The selector is what keeps a script from breaking when a list gains an entry:
+	 * asking for the sixth item of a context menu is a statement about the menu's
+	 * order, when the question was about the item carrying a particular command.
+	 */
 	static Object valueAt(Object answer, String path) {
 		Object current = answer;
 		for (String segment : path.split("\\.")) { //$NON-NLS-1$
 			if (current == null) {
 				return null;
+			}
+			java.util.regex.Matcher selector = SELECTOR.matcher(segment);
+			if (selector.matches()) {
+				String name = selector.group(1);
+				Object list = name.isEmpty() ? current
+						: current instanceof Map<?, ?> map ? map.get(name) : null;
+				current = firstWhere(list, selector.group(2), selector.group(3));
+				continue;
 			}
 			if (current instanceof Map<?, ?> map) {
 				current = map.get(segment);
@@ -277,5 +296,31 @@ public final class RunScriptTool implements IMcpTool {
 			}
 		}
 		return current;
+	}
+
+	/**
+	 * The first entry of a list whose field equals the value, searched into nested
+	 * lists as well, so an item in a submenu is reachable without naming each level.
+	 */
+	private static Object firstWhere(Object list, String key, String value) {
+		if (!(list instanceof List<?> entries)) {
+			return null;
+		}
+		for (Object entry : entries) {
+			if (entry instanceof Map<?, ?> map && equal(value, map.get(key))) {
+				return entry;
+			}
+		}
+		for (Object entry : entries) {
+			if (entry instanceof Map<?, ?> map) {
+				for (Object nested : map.values()) {
+					Object found = firstWhere(nested, key, value);
+					if (found != null) {
+						return found;
+					}
+				}
+			}
+		}
+		return null;
 	}
 }
