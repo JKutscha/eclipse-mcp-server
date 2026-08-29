@@ -367,31 +367,68 @@ public final class CommandTools {
 						.put("reason", "Nothing resolved, so no selection could be built."); //$NON-NLS-1$ //$NON-NLS-2$
 			}
 			IHandlerService handlers = PlatformUI.getWorkbench().getService(IHandlerService.class);
-			org.eclipse.core.expressions.IEvaluationContext snapshot = handlers.createContextSnapshot(false);
-			org.eclipse.core.expressions.EvaluationContext context = new org.eclipse.core.expressions.EvaluationContext(
-					snapshot, elements);
 			org.eclipse.jface.viewers.IStructuredSelection structured = new org.eclipse.jface.viewers.StructuredSelection(
 					elements);
-			context.addVariable(org.eclipse.ui.ISources.ACTIVE_CURRENT_SELECTION_NAME, structured);
-			context.addVariable(org.eclipse.ui.ISources.ACTIVE_MENU_SELECTION_NAME, structured);
-			context.setAllowPluginActivation(true);
+			org.eclipse.core.commands.IHandler handler = command.getHandler();
+			result.put("handlerClass", handler == null ? null : handler.getClass().getName()); //$NON-NLS-1$
+			// The handler the platform hands out is an e4 wrapper that evaluates
+			// against the LIVE context and ignores the IEvaluationContext it is given,
+			// so handing it a synthetic one answered for the ambient selection instead.
+			// The selection is therefore substituted in the context the handler really
+			// reads, and put back immediately; the swap is invisible because all of
+			// this runs in one turn of the UI thread.
+			org.eclipse.e4.core.contexts.IEclipseContext eclipseContext = eclipseContext();
+			if (eclipseContext == null) {
+				return result.put("enabledForSelection", null) //$NON-NLS-1$
+						.put("reason", "No e4 context to evaluate against."); //$NON-NLS-1$ //$NON-NLS-2$
+			}
+			String currentName = org.eclipse.ui.ISources.ACTIVE_CURRENT_SELECTION_NAME;
+			String menuName = org.eclipse.ui.ISources.ACTIVE_MENU_SELECTION_NAME;
+			Object previousCurrent = eclipseContext.getLocal(currentName);
+			Object previousMenu = eclipseContext.getLocal(menuName);
 			try {
-				command.setEnabled(context);
+				eclipseContext.set(currentName, structured);
+				eclipseContext.set(menuName, structured);
+				command.setEnabled(handlers.createContextSnapshot(true));
 				result.put("enabledForSelection", Boolean.valueOf(command.isEnabled())) //$NON-NLS-1$
 						.put("handled", Boolean.valueOf(command.isHandled())); //$NON-NLS-1$
 			} catch (RuntimeException e) {
 				result.put("enabledForSelection", null).put("reason", "The handler threw while being asked: " + e); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 			} finally {
+				restoreVariable(eclipseContext, currentName, previousCurrent);
+				restoreVariable(eclipseContext, menuName, previousMenu);
 				// put the ambient enablement back, so a later question about the real
 				// selection is not answered from this hypothetical one
 				try {
-					command.setEnabled(handlers.createContextSnapshot(false));
+					command.setEnabled(handlers.createContextSnapshot(true));
 				} catch (RuntimeException e) {
 					result.put("restoreFailed", String.valueOf(e)); //$NON-NLS-1$
 				}
 			}
 			return result.put("note", //$NON-NLS-1$
 					"This is the enablement for the selection above, evaluated without touching what the IDE has selected. 'enabled' elsewhere in this answer is the ambient one."); //$NON-NLS-1$
+		}
+
+		/** The context the handlers actually read, which is the active window's. */
+		private static org.eclipse.e4.core.contexts.IEclipseContext eclipseContext() {
+			org.eclipse.ui.IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
+			if (window != null) {
+				org.eclipse.e4.core.contexts.IEclipseContext fromWindow = window
+						.getService(org.eclipse.e4.core.contexts.IEclipseContext.class);
+				if (fromWindow != null) {
+					return fromWindow;
+				}
+			}
+			return PlatformUI.getWorkbench().getService(org.eclipse.e4.core.contexts.IEclipseContext.class);
+		}
+
+		private static void restoreVariable(org.eclipse.e4.core.contexts.IEclipseContext context, String name,
+				Object previous) {
+			if (previous == null) {
+				context.remove(name);
+			} else {
+				context.set(name, previous);
+			}
 		}
 
 		private static JsonObject base(Command command, long started) {
