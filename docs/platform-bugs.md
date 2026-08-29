@@ -286,10 +286,13 @@ leaves the current theme alone. It does not throw and corrupts nothing, but the
 warning goes where an MCP caller cannot read it, which is why
 `eclipse_set_theme` refuses unregistered ids itself instead of forwarding them.
 
-## `CTabFolder.print` paints its children at twice their size on GTK
+## `Control.print` on a HiDPI monitor doubles a composed capture, so `includeToolbar` is unreliable there
 
-Observed 2026-08-29 on GTK3 at 200 % zoom: printing a part stack (the e4 `CTabFolder`) through `Control.print` paints the tabs at the right scale and the children, the part composite with its rulers and text, at twice theirs, clipped to the folder, so the image holds the top left quarter of the editor magnified.
-Printing the same part composite on its own comes out at the right size, and nothing in the answer betrayed the difference: the painted pixels covered the whole canvas, so the filler checks passed.
+Observed 2026-08-29 on GTK3 at 200 % zoom: `eclipse_screenshot` with `includeToolbar` (the part stack, an e4 `CTabFolder`) renders the editor content at twice its size, so a highlight from `eclipse_get_text_bounds` `inPartStack` lands several lines off.
+A single top-level `Control.print` of one part is correct at any zoom, which is why a `part` capture (no `includeToolbar`) is pixel-exact and why `inPart` bounds enclose the text they name.
+Composing a capture from several prints, whether by printing the `CTabFolder` for its children or by printing each child into a sub-image and drawing it in, doubles: the print GC an `ImageGcDrawer` hands out already carries the monitor's 2x transform and the child print applies it again.
+Attempts to compose the stack (folder chrome plus per-child prints, with and without a translate) all reproduced the doubling and were reverted.
 
-Worked around in `ScreenshotTools.Capture.capture`: a folder is printed for its chrome and each child is then printed separately at its own bounds, the way a shell capture is composed; the answer reports `stackComposed`.
+For now `eclipse_screenshot` on a HiDPI monitor is trustworthy for `target: part` and `target: display`; a `part` capture already contains the whole `SourceViewer`, meaning the vertical ruler, the line numbers, the overview ruler, the squiggles and the caret, which is what a caller documenting editor drawing needs.
+`includeToolbar` and a `shell` capture keep the 2x limitation until the print path is understood.
 Nothing filed upstream yet.

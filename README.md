@@ -2074,6 +2074,7 @@ The uniform-pixel check is what makes this safe rather than quietly wrong: SWT r
 Points are scaled by the zoom the capture was painted at and by the downscale to `maxWidth`, and the answer reports under `highlights` the pixel rectangle each one landed on, whether it was clipped, and the label's box, so a reader can verify the overlay against the image.
 The rectangle and the fill are written into the pixels directly rather than through a GC, so a monitor's scaling cannot shift them.
 `eclipse_get_text_bounds` and `eclipse_list_annotations` produce the `bounds` of a text range or of a squiggle in exactly this form.
+On a HiDPI monitor use a `part` capture (no `includeToolbar`) with the `inPart` bounds: a single part print is pixel-exact, while `includeToolbar` and `shell` captures render at twice the size and are unreliable there (see `docs/platform-bugs.md`).
 
 ### `eclipse_get_text_bounds` and `eclipse_list_annotations`
 
@@ -2085,7 +2086,7 @@ A range that folding hides is reported as not `visible` rather than at a wrong p
 `eclipse_list_annotations` lists the annotations of the editor, which is what the squiggles, the ruler icons, the overview ruler marks and the folding markers are drawn from: `type` (`org.eclipse.jdt.ui.error`, `org.eclipse.ui.workbench.texteditor.spelling`, `org.eclipse.projection`, ...), `text`, `offset`, `length`, `startLine`, `endLine`, `collapsed` for folding annotations, and with `includeBounds` (the default) the same rectangles `eclipse_get_text_bounds` reports.
 Filter with `typePattern`, a regular expression matched anywhere in the type, and with `fromLine` and `toLine`; `maxResults` defaults to 100 and `total` and `truncated` are reported.
 
-The two together are what lets a client outline one squiggle: list the annotations, take `bounds.inPartStack` of the one it wants, and hand it to `eclipse_screenshot` as a highlight with `includeToolbar`.
+The two together are what lets a client outline one squiggle: list the annotations, take `bounds.inPart` of the one it wants, and hand it to `eclipse_screenshot` as a highlight on a `part` capture. The vertical ruler, line numbers, overview ruler, squiggles and caret are all inside the part, so `includeToolbar` is not needed for them.
 
 ### `eclipse_check_for_updates`, `eclipse_update`, `eclipse_install`, `eclipse_get_provisioning_status`
 

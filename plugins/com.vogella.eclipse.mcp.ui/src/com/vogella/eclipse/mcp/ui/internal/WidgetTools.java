@@ -137,20 +137,13 @@ public final class WidgetTools {
 	/**
 	 * Maps a rectangle into the coordinates a capture of {@code target} has.
 	 * <p>
-	 * {@code Display.map} answers relative to the target's client area, and a
-	 * CTabFolder's client area starts below its tabs while its capture starts at
-	 * its top edge, so the client area's own origin is added back. A shell is the
-	 * exception: its capture is composed from its client area, since the frame
-	 * around it belongs to the window manager.
+	 * A {@code part} capture prints the part from its top left corner, which is
+	 * where {@code Display.map} answers from, so the map is used as is. A stack
+	 * capture is not trustworthy on a HiDPI monitor (see docs/platform-bugs.md),
+	 * so no attempt is made to correct its client-area offset here.
 	 */
 	static Rectangle mapToCapture(Display display, Control from, Control target, Rectangle rectangle) {
-		Rectangle mapped = display.map(from, target, rectangle);
-		if (target instanceof org.eclipse.swt.widgets.Scrollable scrollable && !(target instanceof Shell)) {
-			Rectangle client = scrollable.getClientArea();
-			mapped.x += client.x;
-			mapped.y += client.y;
-		}
-		return mapped;
+		return display.map(from, target, rectangle);
 	}
 
 	private static Rectangle rectangleOf(Widget widget) {

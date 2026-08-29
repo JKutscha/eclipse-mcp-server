@@ -166,7 +166,7 @@ public final class TextBoundsTools {
 
 		@Override
 		public String getDescription() {
-			return "Reports where a range of text in an editor is on screen: its rectangle in points relative to the editor part, to the part stack (what eclipse_screenshot captures with includeToolbar), to the shell and to the text widget, plus the line height, the baseline and the placement of the text widget itself. Changes nothing. Give line (1-based) with an optional column and length, or a document offset with a length; the answer can be passed straight to eclipse_screenshot as a highlight's bounds. Folded regions are handled: a range that folding hides is reported as not visible rather than at a wrong place, and a range scrolled out of view is reported as scrolledOut with the rectangle it would occupy. Defaults to the active editor."; //$NON-NLS-1$
+			return "Reports where a range of text in an editor is on screen: its rectangle in points relative to the editor part (inPart), to the part stack, to the shell and to the text widget, plus the line height, the baseline and the placement of the text widget itself. Changes nothing. Give line (1-based) with an optional column and length, or a document offset with a length; the answer can be passed straight to eclipse_screenshot as a highlight's bounds. Folded regions are handled: a range that folding hides is reported as not visible rather than at a wrong place, and a range scrolled out of view is reported as scrolledOut with the rectangle it would occupy. Defaults to the active editor."; //$NON-NLS-1$
 		}
 
 		@Override
