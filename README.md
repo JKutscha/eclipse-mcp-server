@@ -2041,6 +2041,7 @@ Captures the IDE as a PNG, writes it to a file and returns the path.
 | `activate` | boolean | `false` | Bring the part forward first. |
 | `maxWidth` | integer, 100 to 4000 | 1200 | Downscale before writing. |
 | `outputPath` | string | a temporary file | |
+| `highlights` | array | | Rectangles to draw onto the image after the capture, see below. |
 | `includeBase64` | boolean | `false` | Also return the image inline. |
 
 Screenshots earn their place for UI work: layout, theming, dialog rendering, confirming a widget change looks right. For anything textual the other tools answer better and shorter, and a screenshot of the Problems view shows twenty rows of several thousand.
@@ -2066,6 +2067,25 @@ For `widgetPrint` the canvas is filled with magenta before printing, because any
 There is no fallback for `display`, since there is no single widget to paint, so on such a display only `part` and `shell` can be captured.
 
 The uniform-pixel check is what makes this safe rather than quietly wrong: SWT returns a blank image with no error at all on GTK4, and root capture returns blank under compositing, so a screenshot tool that trusts its own output writes an empty PNG and says it succeeded. Here a capture that is uniform after both attempts is refused and nothing is written.
+
+**Highlights.**
+`highlights` draws rectangles onto the captured image, each `{path, bounds, color, label, style}`:
+`path` is a widget path from `eclipse_get_widget_tree` relative to the capture target, `bounds` is `x,y wxh` in points relative to the capture target, `color` is `#rrggbb` (default `#ff0066`, which reads on light and dark themes), `label` is drawn in a filled box above the rectangle, and `style` is `outline` (3 px, the default) or `fill` (translucent).
+Points are scaled by the zoom the capture was painted at and by the downscale to `maxWidth`, and the answer reports under `highlights` the pixel rectangle each one landed on, whether it was clipped, and the label's box, so a reader can verify the overlay against the image.
+The rectangle and the fill are written into the pixels directly rather than through a GC, so a monitor's scaling cannot shift them.
+`eclipse_get_text_bounds` and `eclipse_list_annotations` produce the `bounds` of a text range or of a squiggle in exactly this form.
+
+### `eclipse_get_text_bounds` and `eclipse_list_annotations`
+
+Both read-only, both default to the active editor and accept `part` for another open editor.
+
+`eclipse_get_text_bounds` takes `line` (1-based) with an optional `column` and `length`, or a document `offset` with `length`, and reports the rectangle of that text in points relative to the editor part (`inPart`), to the part stack (`inPartStack`, what `eclipse_screenshot` captures with `includeToolbar`), to the shell and to the text widget, plus `lineHeight`, `baseline` and the placement of the text widget itself.
+A range that folding hides is reported as not `visible` rather than at a wrong place; a range scrolled out of view is `scrolledOut` with the rectangle it would occupy.
+
+`eclipse_list_annotations` lists the annotations of the editor, which is what the squiggles, the ruler icons, the overview ruler marks and the folding markers are drawn from: `type` (`org.eclipse.jdt.ui.error`, `org.eclipse.ui.workbench.texteditor.spelling`, `org.eclipse.projection`, ...), `text`, `offset`, `length`, `startLine`, `endLine`, `collapsed` for folding annotations, and with `includeBounds` (the default) the same rectangles `eclipse_get_text_bounds` reports.
+Filter with `typePattern`, a regular expression matched anywhere in the type, and with `fromLine` and `toLine`; `maxResults` defaults to 100 and `total` and `truncated` are reported.
+
+The two together are what lets a client outline one squiggle: list the annotations, take `bounds.inPartStack` of the one it wants, and hand it to `eclipse_screenshot` as a highlight with `includeToolbar`.
 
 ### `eclipse_check_for_updates`, `eclipse_update`, `eclipse_install`, `eclipse_get_provisioning_status`
 

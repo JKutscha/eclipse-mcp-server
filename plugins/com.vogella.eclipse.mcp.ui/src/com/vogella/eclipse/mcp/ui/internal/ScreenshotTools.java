@@ -219,6 +219,7 @@ public final class ScreenshotTools {
 					    "maxWidth":   {"type":"integer","default":1200,"minimum":100,"maximum":4000,"description":"Downscale to this width. A full HD PNG is over a megabyte once base64 encoded."},
 					    "outputPath": {"type":"string","description":"Absolute file to write. Defaults to a temporary file."},
 					    "includeBase64": {"type":"boolean","default":false,"description":"Also return the image inline. Large; prefer reading the file."},
+				    "highlights": {"type":"array","description":"Rectangles to draw onto the image after the capture, each {path?, bounds?, color?, label?, style?}: path is a widget path from eclipse_get_widget_tree relative to the capture target, bounds is 'x,y wxh' in points relative to the capture target, color is #rrggbb (default #ff0066, which reads on light and dark themes), label is drawn in a filled box above the rectangle, style is outline (default, 3 px) or fill (translucent). The answer reports the pixel rectangle each one landed on.","items":{"type":"object","properties":{"path":{"type":"string"},"bounds":{"type":"string"},"color":{"type":"string"},"label":{"type":"string"},"style":{"type":"string","enum":["outline","fill"]}},"additionalProperties":false}},
 				    "includeToolbar": {"type":"boolean","default":false,"description":"For a part, capture the whole part stack instead: the tabs and any sibling view sharing the stack. KNOWN GAP: it does NOT paint the CTabFolder's topRight children, which are the view toolbar, the view menu and the min and max buttons, and nothing in the answer says they are missing. To see those, capture target=shell and crop to the bounds eclipse_get_widget_tree reports for them."}
 					  },
 					  "additionalProperties": false
@@ -247,12 +248,13 @@ public final class ScreenshotTools {
 			String outputPath = args.getString("outputPath"); //$NON-NLS-1$
 			boolean includeBase64 = args.getBoolean("includeBase64", false); //$NON-NLS-1$
 
+			Object highlights = arguments.get("highlights"); //$NON-NLS-1$
 			return onUi(() -> capture(target, part, shellTitle, activate, maxWidth, outputPath, includeBase64,
-					args.getBoolean("includeToolbar", false)), JsonObject::toString); //$NON-NLS-1$
+					args.getBoolean("includeToolbar", false), highlights), JsonObject::toString); //$NON-NLS-1$
 		}
 
 		private static JsonObject capture(String target, String partId, String shellTitle, boolean activate,
-				int maxWidth, String outputPath, boolean includeBase64, boolean includeToolbar) {
+				int maxWidth, String outputPath, boolean includeBase64, boolean includeToolbar, Object highlights) {
 			Display display = PlatformUI.getWorkbench().getDisplay();
 			Rectangle area;
 			// the bounds of what the caller named, which the answer reports even when
@@ -300,6 +302,7 @@ public final class ScreenshotTools {
 				return failure("The capture area is empty."); //$NON-NLS-1$
 			}
 
+			List<Overlays.Highlight> overlays = Overlays.resolve(display, printable, highlights);
 			Image image = new Image(display, area.width, area.height);
 			String method = "rootCapture"; //$NON-NLS-1$
 			int zoom = 100;
@@ -376,8 +379,8 @@ public final class ScreenshotTools {
 				if (unpainted != null && insidePieces[0] > 0) {
 					unpainted = unpainted.plus(insidePieces[0]);
 				}
-				JsonObject written = write(display, image, data, area, maxWidth, outputPath, includeBase64)
-						.put("method", method) //$NON-NLS-1$
+				JsonObject written = write(display, image, data, area, maxWidth, outputPath, includeBase64, overlays,
+						zoom).put("method", method) //$NON-NLS-1$
 						.put("zoom", Integer.valueOf(zoom)) //$NON-NLS-1$
 						.put("requestedArea", describe(requested)); //$NON-NLS-1$
 				if (!requested.equals(area)) {
@@ -562,12 +565,18 @@ public final class ScreenshotTools {
 		}
 
 		private static JsonObject write(Display display, Image image, ImageData data, Rectangle area, int maxWidth,
-				String outputPath, boolean includeBase64) {
+				String outputPath, boolean includeBase64, List<Overlays.Highlight> overlays, int zoom) {
 			ImageData scaled = data;
 			int snapped = crispWidth(data.width, maxWidth);
 			if (data.width > snapped) {
 				int height = Math.max(1, data.height * snapped / data.width);
 				scaled = data.scaledTo(snapped, height);
+			}
+			JsonArray highlighted = null;
+			if (!overlays.isEmpty()) {
+				// points to pixels: the zoom the widget painted at, then the downscale
+				double scale = zoom / 100.0 * scaled.width / data.width;
+				highlighted = Overlays.draw(display, scaled, overlays, scale);
 			}
 			ImageLoader loader = new ImageLoader();
 			loader.data = new ImageData[] { scaled };
@@ -595,6 +604,9 @@ public final class ScreenshotTools {
 						.put("scaleFactor", Math.round(scaled.width * 1000.0 / data.width) / 1000.0) //$NON-NLS-1$
 						.put("maxWidthSnappedTo", snapped == maxWidth ? null : Integer.valueOf(snapped)) //$NON-NLS-1$
 						.put("bytes", bytes.size()); //$NON-NLS-1$
+				if (highlighted != null) {
+					result.put("highlights", highlighted); //$NON-NLS-1$
+				}
 				if (includeBase64) {
 					result.put("base64", Base64.getEncoder().encodeToString(bytes.toByteArray())); //$NON-NLS-1$
 				}

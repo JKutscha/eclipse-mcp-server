@@ -68,7 +68,7 @@ public final class WidgetTools {
 	 * than names, because most SWT widgets have no stable name at all, and the tree
 	 * dump is what a caller reads them from.
 	 */
-	private static Widget resolve(Control root, String path) {
+	static Widget resolve(Control root, String path) {
 		if (path == null || path.isBlank() || "/".equals(path)) { //$NON-NLS-1$
 			return root;
 		}
@@ -117,6 +117,50 @@ public final class WidgetTools {
 		case org.eclipse.swt.widgets.Table table -> table.getColumns();
 		case org.eclipse.swt.widgets.Tree tree -> tree.getColumns();
 		default -> new Widget[0];
+		};
+	}
+
+	/** The bounds of a widget in the coordinates of a capture of {@code target}, {@code null} when it has none. */
+	static Rectangle boundsRelativeTo(Display display, Widget widget, Control target) {
+		if (widget == target) {
+			Rectangle own = target.getBounds();
+			return new Rectangle(0, 0, own.width, own.height);
+		}
+		Rectangle own = rectangleOf(widget);
+		Control parent = parentOf(widget);
+		if (own == null || parent == null) {
+			return null;
+		}
+		return mapToCapture(display, parent, target, own);
+	}
+
+	/**
+	 * Maps a rectangle into the coordinates a capture of {@code target} has.
+	 * <p>
+	 * {@code Display.map} answers relative to the target's client area, and a
+	 * CTabFolder's client area starts below its tabs while its capture starts at
+	 * its top edge, so the client area's own origin is added back. A shell is the
+	 * exception: its capture is composed from its client area, since the frame
+	 * around it belongs to the window manager.
+	 */
+	static Rectangle mapToCapture(Display display, Control from, Control target, Rectangle rectangle) {
+		Rectangle mapped = display.map(from, target, rectangle);
+		if (target instanceof org.eclipse.swt.widgets.Scrollable scrollable && !(target instanceof Shell)) {
+			Rectangle client = scrollable.getClientArea();
+			mapped.x += client.x;
+			mapped.y += client.y;
+		}
+		return mapped;
+	}
+
+	private static Rectangle rectangleOf(Widget widget) {
+		return switch (widget) {
+		case Control control -> control.getBounds();
+		case org.eclipse.swt.widgets.ToolItem item -> item.getBounds();
+		case org.eclipse.swt.custom.CTabItem item -> item.getBounds();
+		case org.eclipse.swt.widgets.TabItem item -> item.getBounds();
+		case org.eclipse.swt.widgets.CoolItem item -> item.getBounds();
+		default -> null;
 		};
 	}
 
