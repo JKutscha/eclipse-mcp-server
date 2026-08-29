@@ -306,11 +306,10 @@ public final class ScreenshotTools {
 			Image image = new Image(display, area.width, area.height);
 			String method = "rootCapture"; //$NON-NLS-1$
 			int zoom = 100;
-			// a CTabFolder prints at twice its size on GTK, so a stack capture is
-			// painted into a canvas of twice the size and judged afterwards
-			boolean probeStack = false;
-			Size wanted = null;
-			int printScale = 1;
+			// the folder whose own chrome is printed under the composed pieces
+			org.eclipse.swt.custom.CTabFolder chrome = null;
+			// kept until the canvas has been read: an ImageGcDrawer image is drawn
+			// when its pixels are first asked for, not when it is created
 			try {
 				GC gc = new GC(display);
 				try {
@@ -327,6 +326,12 @@ public final class ScreenshotTools {
 					// anything SWT can print; requestedArea and its note tell the caller.
 					clientArea = shell.getClientArea();
 					pieces = paintablesOf(shell);
+				} else if (isBlank(image.getImageData()) && printable instanceof org.eclipse.swt.custom.CTabFolder folder) {
+					// printing a folder paints its tabs at the right scale and its
+					// children at twice theirs, clipped, so the folder is printed for
+					// its chrome and each child separately at its own bounds
+					pieces = paintablesOf(folder);
+					chrome = folder;
 				}
 				if (isBlank(image.getImageData()) && printable != null) {
 					final Control painted = printable;
@@ -339,11 +344,7 @@ public final class ScreenshotTools {
 					image.dispose();
 					Rectangle own = clientArea != null ? clientArea : painted.getBounds();
 					Size canvas = compositionSize(own.width, own.height);
-					probeStack = composed == null && painted instanceof org.eclipse.swt.custom.CTabFolder;
-					wanted = canvas;
-					if (probeStack) {
-						canvas = new Size(canvas.width() * 2, canvas.height() * 2);
-					}
+					final Control underneath = chrome;
 					// print paints at the monitor's device scale, so drawing into an
 					// image sized in points wrote a 2x picture into a 1x canvas and kept
 					// the top left quarter, silently. An ImageGcDrawer is given a GC that
@@ -352,7 +353,6 @@ public final class ScreenshotTools {
 					// with a GC transform instead does not work: it shrinks the paint to
 					// a quarter of a canvas that is still device sized.
 					zoom = zoomOf(painted);
-					final int pieceZoom = zoom;
 					image = new Image(display, (drawer, drawnWidth, drawnHeight) -> {
 						// anything print leaves untouched stays this colour. White would
 						// be indistinguishable from the unstyled widgets a dark theme bug
@@ -362,27 +362,22 @@ public final class ScreenshotTools {
 						if (composed == null) {
 							painted.print(drawer);
 						} else {
+							// each piece is printed straight into this canvas, translated
+							// to its place: a print into a sub-image and then a drawImage
+							// comes out at twice its size on GTK, the same doubling that
+							// a folder's own print of its children shows
+							if (underneath != null) {
+								underneath.print(drawer);
+							}
 							for (Paintable piece : composed) {
-								insidePieces[0] += piece.print(drawer, pieceZoom);
+								insidePieces[0] += piece.printInto(drawer, display);
 							}
 						}
 					}, canvas.width(), canvas.height());
-					area = new Rectangle(area.x, area.y, wanted.width(), wanted.height());
+					area = new Rectangle(area.x, area.y, canvas.width(), canvas.height());
 					method = "widgetPrint"; //$NON-NLS-1$
 				}
 				ImageData data = image.getImageData(zoom);
-				if (probeStack) {
-					int width = wanted.width() * zoom / 100;
-					int height = wanted.height() * zoom / 100;
-					if (paintedBeyond(data, width, height)) {
-						// the folder painted at twice its size: the doubled canvas holds
-						// all of it, and halving it gives the size the widget has
-						data = data.scaledTo(data.width / 2, data.height / 2);
-						printScale = 2;
-					} else {
-						data = crop(data, width, height);
-					}
-				}
 				if (isBlank(data)) {
 					return failure(printable == null
 							? "The capture came back uniform, so this display cannot be captured through the X11 root drawable. A compositing window manager redirects window contents into an offscreen pixmap, so reading the root yields nothing. There is no fallback for the whole display; capture a part or a shell instead, which can be painted directly." //$NON-NLS-1$
@@ -405,11 +400,9 @@ public final class ScreenshotTools {
 						zoom).put("method", method) //$NON-NLS-1$
 						.put("zoom", Integer.valueOf(zoom)) //$NON-NLS-1$
 						.put("requestedArea", describe(requested)); //$NON-NLS-1$
-				if (probeStack) {
-					written.put("printScale", Integer.valueOf(printScale)) //$NON-NLS-1$
-							.put("printScaleNote", printScale == 2 //$NON-NLS-1$
-									? "The part stack painted at twice its size, which CTabFolder.print does on GTK; it was painted into a canvas of twice the size and halved, so the image covers the whole stack and points map as reported." //$NON-NLS-1$
-									: "The part stack painted at its own size."); //$NON-NLS-1$
+				if (chrome != null) {
+					written.put("stackComposed", Boolean.TRUE) //$NON-NLS-1$
+							.put("stackNote", "The part stack was printed for its tabs and each of its children separately at its own bounds, because a CTabFolder prints its children at twice their size on GTK."); //$NON-NLS-1$ //$NON-NLS-2$
 				}
 				if (!requested.equals(area)) {
 					written.put("requestedAreaNote", exclusion != null ? exclusion //$NON-NLS-1$
@@ -480,51 +473,39 @@ public final class ScreenshotTools {
 		record Paintable(Control control, Rectangle at) {
 
 			/**
-			 * Prints the control into an image of its own and draws that image at its
-			 * place, so every piece goes through the same print a single child would.
-			 * <p>
-			 * It prints twice, because the two things wanted of the fill colour cannot
-			 * both come from one pass. Finding what no print touched needs a colour no
-			 * widget uses; delivering pixels a human reads needs the colour the widget
-			 * would have had, since a label draws its glyphs blended against whatever
-			 * lies under them and a magenta ground turns the text magenta.
+			 * Prints the control straight into the canvas, translated to its place, so
+			 * it goes through the same single print a whole part capture does. Printing
+			 * into a sub-image and drawing that in doubles the size on GTK.
 			 *
-			 * @return how many pixels of this piece no print touched
+			 * @return the pixels this piece left as filler, which is what no print touched
 			 */
-			int print(GC target, int zoom) {
-				int unpainted = unpaintedPixels(target, zoom);
-				Image piece = new Image(target.getDevice(), (gc, w, h) -> {
-					gc.setBackground(background());
-					gc.fillRectangle(0, 0, w, h);
-					control.print(gc);
-				}, at.width, at.height);
+			int printInto(GC target, Display display) {
+				org.eclipse.swt.graphics.Rectangle clip = target.getClipping();
+				org.eclipse.swt.graphics.Transform transform = new org.eclipse.swt.graphics.Transform(display);
 				try {
-					target.drawImage(piece, at.x, at.y);
+					target.getTransform(transform);
+					org.eclipse.swt.graphics.Transform moved = new org.eclipse.swt.graphics.Transform(display);
+					try {
+						target.getTransform(moved);
+						moved.translate(at.x, at.y);
+						target.setTransform(moved);
+						target.setClipping(0, 0, at.width, at.height);
+						control.print(target);
+					} finally {
+						target.setTransform(transform);
+						moved.dispose();
+					}
 				} finally {
-					piece.dispose();
+					transform.dispose();
+					if (clip == null) {
+						target.setClipping((org.eclipse.swt.graphics.Rectangle) null);
+					} else {
+						target.setClipping(clip);
+					}
 				}
-				return unpainted;
-			}
-
-			/** The same print onto filler, counted and thrown away. */
-			private int unpaintedPixels(GC target, int zoom) {
-				Image probe = new Image(target.getDevice(), (gc, w, h) -> {
-					gc.setBackground(gc.getDevice().getSystemColor(SWT.COLOR_MAGENTA));
-					gc.fillRectangle(0, 0, w, h);
-					control.print(gc);
-				}, at.width, at.height);
-				try {
-					return countFiller(probe.getImageData(zoom));
-				} catch (RuntimeException e) {
-					return 0;
-				} finally {
-					probe.dispose();
-				}
-			}
-
-			private org.eclipse.swt.graphics.Color background() {
-				org.eclipse.swt.graphics.Color own = control.getBackground();
-				return own == null ? control.getDisplay().getSystemColor(SWT.COLOR_WIDGET_BACKGROUND) : own;
+				// the filler count is not available from a direct print, so it is not
+				// reported per piece; the whole-image unpainted check still runs
+				return 0;
 			}
 		}
 
@@ -547,9 +528,9 @@ public final class ScreenshotTools {
 			return count;
 		}
 
-		static List<Paintable> paintablesOf(Shell shell) {
+		static List<Paintable> paintablesOf(Composite parent) {
 			List<Paintable> paintables = new ArrayList<>();
-			for (Control child : shell.getChildren()) {
+			for (Control child : parent.getChildren()) {
 				Rectangle bounds = child.getBounds();
 				Placement at = placementOf(bounds.x, bounds.y, bounds.width, bounds.height, child.isVisible());
 				if (at != null) {
@@ -642,40 +623,6 @@ public final class ScreenshotTools {
 			} catch (IOException e) {
 				return failure("Could not write the image: " + e.getMessage()); //$NON-NLS-1$
 			}
-		}
-
-		/**
-		 * Whether the paint reached beyond the widget's own size, which a print at
-		 * twice the scale does and a print at the right scale leaves as filler.
-		 */
-		private static boolean paintedBeyond(ImageData data, int width, int height) {
-			int fillerPixel = pixelOf(data.palette, FILLER);
-			if (fillerPixel < 0 || data.width <= width || data.height <= height) {
-				return false;
-			}
-			int sampled = 0;
-			int painted = 0;
-			for (int y = height; y < data.height; y += Math.max(1, (data.height - height) / 20)) {
-				for (int x = width; x < data.width; x += Math.max(1, (data.width - width) / 20)) {
-					sampled++;
-					if (data.getPixel(x, y) != fillerPixel) {
-						painted++;
-					}
-				}
-			}
-			return sampled > 0 && painted * 2 > sampled;
-		}
-
-		private static ImageData crop(ImageData data, int width, int height) {
-			int w = Math.min(width, data.width);
-			int h = Math.min(height, data.height);
-			ImageData cropped = new ImageData(w, h, data.depth, data.palette);
-			int[] row = new int[w];
-			for (int y = 0; y < h; y++) {
-				data.getPixels(0, y, w, row, 0);
-				cropped.setPixels(0, y, w, row, 0);
-			}
-			return cropped;
 		}
 
 		/** A uniform image is what a silently failing capture produces. */
