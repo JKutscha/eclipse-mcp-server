@@ -127,6 +127,12 @@ def run(client, path, quiet):
             print("   %s %-28s %sms" % (mark, str(step.get("label"))[:28], step.get("millis")))
             for bad in step.get("expectationsFailed") or []:
                 print("        %s: expected %s, found %s" % (bad.get("path"), bad.get("expected"), bad.get("found")))
+            if step.get("ran") and not step.get("ok"):
+                # the expectation says what did not hold; the answer says why, and
+                # without it a CI failure is a puzzle rather than a report
+                answer = step.get("answer")
+                rendered = json.dumps(answer, indent=1) if isinstance(answer, (dict, list)) else str(answer)
+                print("        answer: " + rendered[:600].replace("\n", "\n        "))
     failure = None
     if answer.get("failed"):
         failure = "%d of %d steps failed" % (answer.get("failed"), answer.get("total"))

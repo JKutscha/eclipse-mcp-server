@@ -1,0 +1,83 @@
+{
+ "atomic": false,
+ "steps": [
+  {
+   "tool": "eclipse_list_ui_targets",
+   "label": "the workbench is up",
+   "expect": {
+    "shells.0.kind": {
+     "exists": true
+    },
+    "parts": {
+     "exists": true
+    }
+   }
+  },
+  {
+   "tool": "eclipse_list_projects",
+   "label": "the workspace answers",
+   "expect": {
+    "total": {
+     "exists": true
+    }
+   }
+  },
+  {
+   "tool": "eclipse_get_preferences",
+   "label": "preferences are readable",
+   "arguments": {
+    "qualifier": "org.eclipse.core.resources"
+   },
+   "expect": {
+    "qualifier": "org.eclipse.core.resources"
+   }
+  },
+  {
+   "tool": "eclipse_show_view",
+   "label": "a view opens",
+   "arguments": {
+    "view": "org.eclipse.ui.views.ProblemView",
+    "activate": true
+   },
+   "expect": {
+    "shown": true
+   }
+  },
+  {
+   "tool": "eclipse_wait_until_quiet",
+   "label": "let the view lay out",
+   "arguments": {
+    "timeoutSeconds": 20
+   },
+   "expect": {
+    "state": "quiet"
+   }
+  },
+  {
+   "tool": "eclipse_screenshot",
+   "label": "that view can be captured",
+   "arguments": {
+    "part": "org.eclipse.ui.views.ProblemView",
+    "maxWidth": 600
+   },
+   "expect": {
+    "captured": true,
+    "path": {
+     "contains": ".png"
+    }
+   }
+  },
+  {
+   "tool": "eclipse_get_selection",
+   "label": "the selection is readable",
+   "expect": {
+    "handlerSelection": {
+     "exists": true
+    },
+    "serviceSelection": {
+     "exists": true
+    }
+   }
+  }
+ ]
+}

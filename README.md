@@ -162,6 +162,28 @@ It declares the `tools` capability with `listChanged: false`, which means it ans
 Everything else, `resources/list`, `prompts/list`, `logging/setLevel` and `completion/complete` among them, is answered with method not found.
 Sessions are carried in the `mcp-session-id` header, a `GET` opens the server-to-client SSE stream and a `DELETE` ends the session.
 
+## Scripting the IDE from outside
+
+The server is a plain HTTP JSON-RPC endpoint, so anything that can POST JSON can drive the IDE; `eclipse_run_script` turns a sequence into one call with assertions, and two scripts in `releng` turn that into something a build can run.
+
+```bash
+# against the IDE you are working in
+releng/mcp-script.py releng/scripts/content-assist.json
+
+# against a throwaway IDE, on a workspace and a port of its own
+releng/mcp-test-ide.sh --ide /path/to/eclipse --junit results.xml releng/scripts/smoke.json
+```
+
+`mcp-script.py` finds the endpoint and the bearer token the way any client does, runs the file, prints each step with its timing and the expectations that failed, exits non-zero when any did, and writes JUnit XML so a CI server shows the steps as test cases.
+It is deliberately thin: the expectations are evaluated in the server, so an LLM client asking for the same script gets the same verdict.
+
+`mcp-test-ide.sh` starts the IDE on a temporary workspace with the server preference written **before** the first start, which is the only way out of a circle: whether the server runs is an instance preference, so a workspace nobody has switched it on in comes up with nothing listening and no way left to ask why.
+It waits for the discovery file, runs the scripts, and takes the IDE down again, so a working IDE is never touched.
+
+**The installation is reused, not copied.** Only the workspace is fresh, 120 KB against a 553 MB install, so workspace state is isolated and installed bundles are not: a bundle substituted into that installation is what the test IDE runs too. Give it an installation of its own when that matters.
+
+**Scripts have to be deterministic to be worth running.** The smoke script waits with `eclipse_wait_until_quiet` before capturing a view it has just opened, because the first version captured 28 ms after opening it and passed or failed depending on the machine.
+
 ## Tools
 
 Every tool returns a single text block containing pretty-printed JSON.
