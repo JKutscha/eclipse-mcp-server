@@ -4,3 +4,7 @@ bin/
 .polyglot.*
 .playwright-mcp/
 .claude/settings.local.json
+
+# Tycho writes these beside every module during a build
+.tycho-consumer-pom.xml
+pom.tycho
