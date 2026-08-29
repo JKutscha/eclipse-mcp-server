@@ -1,5 +1,6 @@
 package com.vogella.eclipse.mcp.ui.internal;
 
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -9,6 +10,7 @@ import java.util.function.Supplier;
 import org.eclipse.ui.PlatformUI;
 
 import com.vogella.eclipse.mcp.core.McpToolResult;
+import com.vogella.eclipse.mcp.core.UiDispatch;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
 /**
@@ -98,6 +100,32 @@ public final class UiThread {
 			return new TimedOutcome(null, false, failure(e));
 		}
 	}
+
+	/**
+	 * The executor core tools reach the UI thread through. Inline without a
+	 * workbench, so a headless run behaves as if nothing were registered.
+	 */
+	static final UiDispatch.Executor EXECUTOR = new UiDispatch.Executor() {
+		@Override
+		public <T> T call(Callable<T> work, int timeoutSeconds) throws Exception {
+			if (!PlatformUI.isWorkbenchRunning()) {
+				return work.call();
+			}
+			CompletableFuture<T> pending = new CompletableFuture<>();
+			PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
+				try {
+					pending.complete(work.call());
+				} catch (Throwable e) {
+					pending.completeExceptionally(e);
+				}
+			});
+			try {
+				return pending.get(timeoutSeconds, TimeUnit.SECONDS);
+			} catch (ExecutionException e) {
+				throw e.getCause() instanceof Exception cause ? cause : e;
+			}
+		}
+	};
 
 	static McpToolResult call(long timeoutSeconds, Supplier<JsonObject> work) {
 		Outcome outcome = run(timeoutSeconds, work);

@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.core.resources.IWorkspace;
 import org.eclipse.core.resources.IWorkspaceDescription;
@@ -14,6 +17,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import com.vogella.eclipse.mcp.core.McpToolResult;
+import com.vogella.eclipse.mcp.core.UiDispatch;
 
 class SetPreferenceToolTest {
 
@@ -43,6 +47,39 @@ class SetPreferenceToolTest {
 		InstanceScope.INSTANCE.getNode(THEME_QUALIFIER).remove("themeid");
 		InstanceScope.INSTANCE.getNode(THEME_QUALIFIER).flush();
 		fixture.dispose();
+	}
+
+	@Test
+	void writesThroughTheRegisteredUiExecutor() throws Exception {
+		// a preference write fires its listeners on the writing thread, and editors
+		// answer with widget calls, so the write has to go where the UI registered it
+		AtomicInteger dispatched = new AtomicInteger();
+		UiDispatch.Executor recording = new UiDispatch.Executor() {
+			@Override
+			public <T> T call(Callable<T> work, int timeoutSeconds) throws Exception {
+				dispatched.incrementAndGet();
+				return work.call();
+			}
+		};
+		UiDispatch.set(recording);
+		try {
+			Map<String, Object> result = TestFixture.callAndParse(TOOL,
+					Map.of("qualifier", QUALIFIER, "key", KEY, "value", "dispatched"));
+			assertEquals("dispatched", result.get("effective"));
+			assertEquals(1, dispatched.get(), "the write has to go through the executor exactly once");
+
+			UiDispatch.set(new UiDispatch.Executor() {
+				@Override
+				public <T> T call(Callable<T> work, int timeoutSeconds) throws Exception {
+					throw new TimeoutException();
+				}
+			});
+			McpToolResult timedOut = TestFixture.call(TOOL, Map.of("qualifier", QUALIFIER, "key", KEY, "value", "late"));
+			assertTrue(timedOut.isError() && timedOut.text().contains("eclipse_get_preferences"),
+					"a UI that did not get to it has to be an answer, got " + timedOut.text());
+		} finally {
+			UiDispatch.set(null);
+		}
 	}
 
 	@Test

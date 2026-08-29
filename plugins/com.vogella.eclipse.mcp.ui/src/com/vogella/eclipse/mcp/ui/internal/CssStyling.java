@@ -84,6 +84,13 @@ final class CssStyling {
 					"No CSS engine is attached to this widget, so nothing was computed for it."); //$NON-NLS-1$
 			return;
 		}
+		if (engine.getElement(widget) == null) {
+			// retrieveCSSProperty dereferences the element without checking, so a
+			// widget the engine never wrapped has to be answered here
+			into.put("computedNote", //$NON-NLS-1$
+					"The CSS engine has no element for this widget, so nothing was computed for it."); //$NON-NLS-1$
+			return;
+		}
 		Map<String, String> cascade = cascade(engine, widget, pseudo);
 		JsonObject computed = new JsonObject();
 		JsonObject declared = new JsonObject();

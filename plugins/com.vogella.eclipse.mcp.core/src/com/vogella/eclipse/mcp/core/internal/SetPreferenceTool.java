@@ -1,6 +1,7 @@
 package com.vogella.eclipse.mcp.core.internal;
 
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
 import org.eclipse.core.resources.IWorkspace;
 import org.eclipse.core.resources.IWorkspaceDescription;
@@ -11,10 +12,12 @@ import org.eclipse.core.runtime.preferences.IEclipsePreferences;
 import org.eclipse.core.runtime.preferences.IScopeContext;
 import org.osgi.service.prefs.BackingStoreException;
 
+import com.vogella.eclipse.mcp.core.CallBudget;
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolException;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.ToolArguments;
+import com.vogella.eclipse.mcp.core.UiDispatch;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
 /**
@@ -95,15 +98,26 @@ public final class SetPreferenceTool implements IMcpTool {
 		if (AUTOBUILD_QUALIFIER.equals(qualifier) && AUTOBUILD_KEY.equals(key)) {
 			return setAutoBuilding(value, previous);
 		}
-		if (value == null) {
-			node.remove(key);
-		} else {
-			node.put(key, value);
-		}
+		// the write fires its listeners synchronously, and editors answer a change
+		// by touching widgets, so it has to happen on the UI thread when there is one
 		try {
-			node.flush();
+			UiDispatch.call(() -> {
+				if (value == null) {
+					node.remove(key);
+				} else {
+					node.put(key, value);
+				}
+				node.flush();
+				return null;
+			}, CallBudget.maxWaitSeconds());
+		} catch (TimeoutException e) {
+			return McpToolResult.error(
+					"The Eclipse UI did not process the write of %s/%s within %d seconds. It is still queued and may land later; read it back with eclipse_get_preferences." //$NON-NLS-1$
+							.formatted(qualifier, key, Integer.valueOf(CallBudget.maxWaitSeconds())));
 		} catch (BackingStoreException e) {
 			throw new McpToolException("Could not save the preference %s/%s".formatted(qualifier, key), e); //$NON-NLS-1$
+		} catch (Exception e) {
+			throw new McpToolException("Could not write the preference %s/%s".formatted(qualifier, key), e); //$NON-NLS-1$
 		}
 		Map<String, IEclipsePreferences> nodes = PreferenceScopes.nodes(qualifier, projectName);
 		String effective = null;

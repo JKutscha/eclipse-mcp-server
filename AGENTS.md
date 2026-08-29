@@ -70,6 +70,11 @@ A tool that can outlast that timeout must not block on it; start a job and hand 
 **Optional JDK and platform packages are isolated in one class.**
 `CssStyling` holds every reference to the e4 CSS engine, `GitContent` every reference to jgit, and `FlightRecording` every reference to `jdk.jfr`, all imported optionally so callers catch `LinkageError`. A JVM or an IDE without them then costs a refusal that names what is missing, rather than a failure somewhere unrelated.
 
+**A preference write fires its listeners on the writing thread.**
+`EclipsePreferences.put` calls every listener synchronously, and editors answer a colour change by touching widgets, so a write from a Jetty worker thread ends in "Invalid thread access", an error dialog from `SafeRunnableDialog`, and editors that never repaint.
+`SetPreferenceTool` writes through `UiDispatch`, the same hook shape as `LogClearedHandlers`: core declares it, `McpUiPlugin` registers `UiThread.EXECUTOR`, and headless the work runs inline.
+Any new core tool that writes something UI listeners react to goes through it as well.
+
 **Every list-returning tool honours `maxResults` and reports `total` and `truncated`.**
 A new tool that returns a list without those fields is incomplete.
 

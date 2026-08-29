@@ -8,6 +8,7 @@ import org.eclipse.ui.preferences.ScopedPreferenceStore;
 import org.osgi.framework.BundleContext;
 
 import com.vogella.eclipse.mcp.core.LogClearedHandlers;
+import com.vogella.eclipse.mcp.core.UiDispatch;
 import com.vogella.eclipse.mcp.server.McpPreferences;
 
 /**
@@ -30,11 +31,15 @@ public class McpUiPlugin extends AbstractUIPlugin {
 		// the core bundle clears the log file and must not know about any view, so
 		// the part that empties the view is registered from this side
 		LogClearedHandlers.set(errorLogRefresh);
+		// a preference write from a worker thread reaches editor listeners that
+		// assume the UI thread, so core writes through this
+		UiDispatch.set(UiThread.EXECUTOR);
 	}
 
 	@Override
 	public void stop(BundleContext context) throws Exception {
 		LogClearedHandlers.unset(errorLogRefresh);
+		UiDispatch.unset(UiThread.EXECUTOR);
 		// a hidden window has no menu to bring it back, so the plug-in going away
 		// must not be the moment the IDE becomes unrecoverable
 		VisibilityTool.restoreIfHidden();
