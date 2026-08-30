@@ -312,7 +312,11 @@ public final class ScreenshotTools {
 				printable = control;
 			}
 			if (area.width <= 0 || area.height <= 0) {
-				return failure("The capture area is empty."); //$NON-NLS-1$
+				// zero bounds have two quite different causes and the caller can only
+				// act on one of them, so name both rather than saying "empty"
+				return failure(
+						"The capture area is empty: the target reports %dx%d. Either the widget has never been laid out, which is what a shell that has not been shown yet reports, or the part is behind another one and is therefore not rendered at all. A part behind another tab has no area until it is brought forward; pass activate for that. Use eclipse_list_ui_targets to see which shells and parts are visible." //$NON-NLS-1$
+								.formatted(Integer.valueOf(area.width), Integer.valueOf(area.height)));
 			}
 
 			List<Overlays.Highlight> overlays = Overlays.resolve(display, printable, highlights);

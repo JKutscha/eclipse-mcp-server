@@ -221,7 +221,7 @@ public final class SelectionTools {
 					  "type": "object",
 					  "properties": {
 					    "part":     {"type":"string","description":"Part id whose selection to set, e.g. org.eclipse.jdt.ui.PackageExplorer. Defaults to the active part."},
-					    "elements": {"type":"array","items":{"type":"string"},"description":"What to select: workspace paths ('/org.eclipse.compare'), project names ('g'), or widget tree row paths ('0/0/0/r7'). An empty array clears the selection."},
+					    "elements": {"type":"array","items":{"type":"string"},"description":"What to select: workspace paths ('/org.eclipse.compare'), project names ('g'), or widget tree row paths ('0/0/1/r4'). A ROW PATH COMES FROM eclipse_get_widget_tree WITH includeRows TRUE, which is a different flag from includeItems: includeItems enumerates ToolItems and CTabItems and reports no tree rows at all, so a tree looks empty and the path has to be guessed. Guessing does not work, and a row path that names nothing is reported in unresolved rather than selected. An empty array clears the selection."},
 					    "reveal":   {"type":"boolean","default":true,"description":"Scroll the viewer to the selection."},
 					    "activate": {"type":"boolean","default":true,"description":"Activate the part first, so the selection reaches the handler evaluation context. Without it a command asked afterwards may still see the old active part's selection."}
 					  },
@@ -383,10 +383,19 @@ public final class SelectionTools {
 				return member;
 			}
 			if (value.matches("[0-9]+(/[ir]?[0-9]+)*")) { //$NON-NLS-1$
-				Object fromRow = rowData(value, part);
-				if (fromRow != null) {
-					return fromRow;
-				}
+				// a widget path that names no row is unresolved and nothing else. It
+				// used to fall through to getProject below, which throws
+				// IllegalArgumentException on a name with more than one segment, so a
+				// row path that missed came back as "The request failed:
+				// java.lang.IllegalArgumentException: Path for project must have only
+				// one segment" and read as the row form not being implemented at all
+				return rowData(value, part);
+			}
+			if (value.indexOf('/') >= 0) {
+				// same crash by another route: a relative path is neither a workspace
+				// path, which starts with a slash, nor a project name, which cannot
+				// contain one
+				return null;
 			}
 			var project = ResourcesPlugin.getWorkspace().getRoot().getProject(value);
 			return project.exists() ? project : null;
