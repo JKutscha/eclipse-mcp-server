@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -45,15 +46,37 @@ class AddGitRepositoryToolTest {
 		}
 	}
 
+	/**
+	 * Removes the temporary repository, and never fails the test for not managing
+	 * it.
+	 * <p>
+	 * jgit keeps a repository it has opened in its own cache and writes to the
+	 * {@code .git} directory afterwards, so a file can appear between the walk and
+	 * the delete and the directory is then not empty when its turn comes. That
+	 * surfaced only on CI, as {@code DirectoryNotEmptyException} out of
+	 * {@code @AfterEach}, which JUnit reports as an error on a test whose body
+	 * passed. A leftover directory under the system temp folder is not worth a red
+	 * build, so this retries once and then gives up quietly.
+	 */
 	@AfterEach
-	void deleteRepository() throws Exception {
-		if (directory == null || !Files.exists(directory)) {
-			return;
+	void deleteRepository() {
+		for (int attempt = 0; attempt < 2 && directory != null && Files.exists(directory); attempt++) {
+			deleteQuietly(directory);
 		}
-		try (var walk = Files.walk(directory)) {
+	}
+
+	private static void deleteQuietly(Path root) {
+		try (var walk = Files.walk(root)) {
 			for (Path path : walk.sorted(Comparator.reverseOrder()).toList()) {
-				Files.deleteIfExists(path);
+				try {
+					Files.deleteIfExists(path);
+				} catch (IOException e) {
+					// something reopened it; the next attempt or the operating system
+					// gets it, and either way the test itself has already answered
+				}
 			}
+		} catch (IOException e) {
+			// the tree went away underneath us, which is the outcome we wanted
 		}
 	}
 
