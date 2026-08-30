@@ -141,10 +141,16 @@ public final class GetInstallationTool implements IMcpTool {
 					.put("note", //$NON-NLS-1$
 							"The running bundles could not be read, so everything above is the p2 profile's view alone and nothing here confirms the IDE is running it."); //$NON-NLS-1$
 		}
-		Map<String, String> inProfile = new java.util.HashMap<>();
+		// EVERY version, not the first one found. An installation legitimately carries
+		// several versions of a bundle, junit-jupiter-api 5 and 6 side by side here,
+		// and the framework resolves one of them. Keeping a single version per id
+		// reported each of those as a mismatch, which is nine false alarms out of
+		// twelve on this machine and exactly the noise that makes a check unusable.
+		Map<String, java.util.Set<String>> inProfile = new java.util.HashMap<>();
 		for (IInstallableUnit unit : profile.query(QueryUtil.createIUAnyQuery(), monitor)) {
 			// a bundle IU carries the symbolic name as its id, so this is the join
-			inProfile.putIfAbsent(unit.getId(), unit.getVersion().toString());
+			inProfile.computeIfAbsent(unit.getId(), id -> new java.util.HashSet<>())
+					.add(unit.getVersion().toString());
 		}
 		JsonArray mismatches = new JsonArray();
 		int checked = 0;
@@ -154,19 +160,21 @@ public final class GetInstallationTool implements IMcpTool {
 			if (name == null) {
 				continue;
 			}
-			String expected = inProfile.get(name);
+			java.util.Set<String> expected = inProfile.get(name);
 			if (expected == null) {
 				continue;
 			}
 			checked++;
 			String running = bundle.getVersion().toString();
-			if (expected.equals(running)) {
+			if (expected.contains(running)) {
 				continue;
 			}
 			diverged++;
 			if (mismatches.size() < maxResults && (needle == null || name.toLowerCase(Locale.ROOT).contains(needle))) {
+				List<String> versions = new ArrayList<>(expected);
+				versions.sort(null);
 				mismatches.add(new JsonObject().put("bundle", name) //$NON-NLS-1$
-						.put("profileSays", expected) //$NON-NLS-1$
+						.put("profileSays", String.join(", ", versions)) //$NON-NLS-1$ //$NON-NLS-2$
 						.put("actuallyRunning", running)); //$NON-NLS-1$
 			}
 		}
