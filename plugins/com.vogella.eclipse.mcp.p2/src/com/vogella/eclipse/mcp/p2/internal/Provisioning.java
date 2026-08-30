@@ -90,6 +90,9 @@ final class Provisioning {
 					.put("message", message) //$NON-NLS-1$
 					.put("previousConfiguration", previousConfiguration) //$NON-NLS-1$
 					.put("trustedUnsigned", trustedUnsigned) //$NON-NLS-1$
+					// one key whatever happened: naming it after the intention hid what
+					// p2 had actually asked about when the operation then failed on trust
+					.put("trustPrompts", trustPrompts) //$NON-NLS-1$
 					.put(trustedUnsigned ? "trustedContent" : "refusedTrust", trustPrompts); //$NON-NLS-1$ //$NON-NLS-2$
 			if (changesTotal >= 0) {
 				json.put("total", Integer.valueOf(changesTotal)).put("truncated", Boolean.valueOf(changesTruncated)); //$NON-NLS-1$ //$NON-NLS-2$

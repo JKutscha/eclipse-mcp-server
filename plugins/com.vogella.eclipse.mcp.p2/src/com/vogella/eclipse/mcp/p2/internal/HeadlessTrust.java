@@ -2,7 +2,12 @@ package com.vogella.eclipse.mcp.p2.internal;
 
 import java.security.cert.Certificate;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+
+import org.bouncycastle.openpgp.PGPPublicKey;
 
 import org.eclipse.equinox.p2.core.IProvisioningAgent;
 import org.eclipse.equinox.p2.core.UIServices;
@@ -42,32 +47,70 @@ final class HeadlessTrust extends UIServices {
 		return List.copyOf(prompts);
 	}
 
-	/**
-	 * The PGP flavour of this callback is concrete on {@link UIServices} and delegates
-	 * here, so overriding it as well would only pull a restricted BouncyCastle type
-	 * into this bundle.
-	 */
 	@Override
 	public TrustInfo getTrustInfo(Certificate[][] untrustedChains, String[] unsignedDetail) {
-		return trust(untrustedChains, unsignedDetail);
+		return trust(untrustedChains, List.of(), unsignedDetail);
 	}
 
-	private TrustInfo trust(Certificate[][] untrustedChains, String[] unsignedDetail) {
+	/**
+	 * The overload p2 actually reaches for a signed artifact.
+	 * <p>
+	 * Its default implementation on {@link UIServices} drops the PGP keys and calls
+	 * the pair above, which then answered "no key is trusted" and cancelled the
+	 * install: a locally built repository could not be installed however the caller
+	 * asked. It has to be overridden rather than inherited.
+	 */
+	@Override
+	public TrustInfo getTrustInfo(Certificate[][] untrustedChains, Collection<PGPPublicKey> untrustedKeys,
+			String[] unsignedDetail) {
+		return trust(untrustedChains, untrustedKeys, unsignedDetail);
+	}
+
+	private TrustInfo trust(Certificate[][] untrustedChains, Collection<PGPPublicKey> untrustedKeys,
+			String[] unsignedDetail) {
 		prompted = true;
+		List<Certificate> certificates = new ArrayList<>();
+		if (untrustedChains != null) {
+			for (Certificate[] chain : untrustedChains) {
+				if (chain != null && chain.length > 0) {
+					// the leaf is what signed the artifact; trusting the whole chain
+					// would accept everything the issuer ever signed
+					certificates.add(chain[0]);
+				}
+			}
+		}
+		Set<PGPPublicKey> keys = new LinkedHashSet<>(untrustedKeys == null ? List.of() : untrustedKeys);
 		synchronized (this) {
 			if (unsignedDetail != null) {
 				for (String detail : unsignedDetail) {
-					prompts.add(detail);
+					prompts.add(trustUnsigned ? "unsigned: " + detail : "REFUSED, unsigned: " + detail);
 				}
 			}
-			if (untrustedChains != null && untrustedChains.length > 0) {
-				prompts.add("%d artifact(s) signed by a certificate this IDE does not trust"
-						.formatted(untrustedChains.length));
+			for (Certificate certificate : certificates) {
+				prompts.add((trustUnsigned ? "certificate: " : "REFUSED, certificate: ") + describe(certificate));
+			}
+			for (PGPPublicKey key : keys) {
+				prompts.add((trustUnsigned ? "PGP key: " : "REFUSED, PGP key: ")
+						+ Long.toHexString(key.getKeyID()));
 			}
 		}
-		// trust no certificate and persist nothing: the opt-in covers unsigned content
-		// for this one call only, and must not quietly widen what the IDE trusts
-		return new TrustInfo(new Certificate[0], false, trustUnsigned);
+		if (!trustUnsigned) {
+			// refuse everything, which is what the caller asked for
+			return new TrustInfo(List.of(), List.of(), false, false);
+		}
+		// trust exactly what was presented, for this operation only. persistTrust
+		// stays false so nothing reaches the IDE's permanent trust store, and
+		// trustAlways is never returned because p2 writes that into a preference and
+		// a switch flipped once is never flipped back
+		return new TrustInfo(certificates, keys, false, true);
+	}
+
+	/** Enough of a certificate to recognise it in an answer. */
+	private static String describe(Certificate certificate) {
+		if (certificate instanceof java.security.cert.X509Certificate x509) {
+			return String.valueOf(x509.getSubjectX500Principal());
+		}
+		return certificate.getType();
 	}
 
 	@Override
