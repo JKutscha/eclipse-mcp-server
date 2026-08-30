@@ -109,11 +109,18 @@ public final class WidgetTools {
 	 * them as its own stylable element. Enumerating them is what lets the inspector
 	 * address one, pseudo classes included.
 	 */
-	/** The rows of a Table or Tree, which an r prefixed path segment addresses. */
+	/**
+	 * The rows of a Table or Tree, which an r prefixed path segment addresses.
+	 * <p>
+	 * A TreeItem answers its own children, so a nested row is addressable as
+	 * {@code 0/0/1/r1/r2}. Without that a path could only ever name a top level
+	 * row, and everything under a node was unreachable however it got expanded.
+	 */
 	static Widget[] rowsOf(Widget widget) {
 		return switch (widget) {
 		case org.eclipse.swt.widgets.Table table -> table.getItems();
 		case org.eclipse.swt.widgets.Tree tree -> tree.getItems();
+		case org.eclipse.swt.widgets.TreeItem row -> row.getItems();
 		default -> new Widget[0];
 		};
 	}
@@ -236,7 +243,7 @@ public final class WidgetTools {
 					    "filter":     {"type":"string","description":"Only report widgets whose simple class name contains this text, case insensitive, e.g. 'Tree' or 'ToolBar'. The walk still descends through everything."},
 				    "includeToolbar": {"type":"boolean","default":false,"description":"Start from the surrounding part stack rather than the part. A view's toolbar is built in the stack's CTabFolder, not in the part, so it is in no plain part tree at all; this is how to reach it."},
 					    "includeItems": {"type":"boolean","default":false,"description":"Also enumerate Items, which are not Controls and are therefore in no plain walk: ToolItems, CTabItems, TabItems, CoolItems, MenuItems and the columns of a Table or Tree. Their paths carry an i prefix, as in 2/i0, and that is the only way eclipse_inspect_widget can address one. Off by default because a Menu can be large."},
-				    "includeRows": {"type":"boolean","default":false,"description":"Also enumerate the rows of a Table or Tree, with an r prefixed path (0/r2) that eclipse_inspect_widget and eclipse_set_selection accept and, beside the row bounds, boundsInShell mapped to the shell so a row can be highlighted on a shell=popup screenshot. selected marks the row the widget has selected. This is how to outline the chosen content assist proposal. Off by default because a big Table has many rows."},
+				    "includeRows": {"type":"boolean","default":false,"description":"Also enumerate the rows of a Table or Tree, with an r prefixed path (0/r2) that eclipse_inspect_widget, eclipse_set_selection and eclipse_expand_row accept and, beside the row bounds, boundsInShell mapped to the shell so a row can be highlighted on a shell=popup screenshot. selected marks the row the widget has selected. ONLY THE ROWS THE TREE HAS CREATED ARE ROWS: the children of a collapsed node do not exist yet and have no path, so a view that comes up collapsed reports two or three entries and looks complete. Each tree row therefore carries childCount and expanded, and a collapsed node with children says so; open it with eclipse_expand_row and ask again. The children of an expanded node ARE reported, nested under its own path. Off by default because a big Table has many rows."},
 				    "maxDepth":   {"type":"integer","default":6,"minimum":1,"maximum":30,"description":"How far down the widget hierarchy to walk. A whole workbench window is dozens of levels deep, so the default stops well short of it."},
 					    "maxResults": {"type":"integer","default":200,"minimum":1,"maximum":2000}
 					  },
@@ -322,30 +329,30 @@ public final class WidgetTools {
 			}
 		}
 
-		/** The rows of a Table or Tree, with bounds and the shell-relative bounds. */
+		/**
+		 * The rows of a Table or Tree, with bounds and the shell-relative bounds.
+		 * <p>
+		 * Descends into the children of an EXPANDED tree node, so a nested row has a
+		 * path of its own. A collapsed node is reported with childCount and expanded
+		 * false rather than descended into, because SWT has not created its children
+		 * yet and asking for them would answer zero either way. That distinction is
+		 * the whole point: this used to report only top level rows, so a collapsed
+		 * Outline looked like a tree with two entries and a caller had no way to tell
+		 * a leaf from a node with everything it wanted underneath it.
+		 */
 		private static void addRows(Widget widget, String path, String needle, int maxResults, JsonArray into,
 				int[] total) {
 			org.eclipse.swt.widgets.Item[] rows;
 			org.eclipse.swt.widgets.Control table;
-			// the indices rather than getSelectionIndex, which is a single index and
-			// answers -1 on a multi selection, so every row read as unselected exactly
-			// where a caller was looking at several
-			Set<Integer> selected = new HashSet<>();
+			Set<Widget> selected = new HashSet<>();
 			if (widget instanceof org.eclipse.swt.widgets.Table t) {
 				rows = t.getItems();
 				table = t;
-				for (int index : t.getSelectionIndices()) {
-					selected.add(Integer.valueOf(index));
-				}
+				selected.addAll(Arrays.asList(t.getSelection()));
 			} else if (widget instanceof org.eclipse.swt.widgets.Tree t) {
 				rows = t.getItems();
 				table = t;
-				List<org.eclipse.swt.widgets.TreeItem> chosen = Arrays.asList(t.getSelection());
-				for (int i = 0; i < rows.length; i++) {
-					if (chosen.contains(rows[i])) {
-						selected.add(Integer.valueOf(i));
-					}
-				}
+				selected.addAll(Arrays.asList(t.getSelection()));
 			} else {
 				return;
 			}
@@ -355,24 +362,48 @@ public final class WidgetTools {
 			if (!wanted) {
 				return;
 			}
+			emitRows(rows, table, path, selected, maxResults, into, total);
+		}
+
+		/** One level of rows, then the children of whichever of them are open. */
+		private static void emitRows(org.eclipse.swt.widgets.Item[] rows, org.eclipse.swt.widgets.Control table,
+				String path, Set<Widget> selected, int maxResults, JsonArray into, int[] total) {
 			Shell shell = table.getShell();
 			for (int i = 0; i < rows.length; i++) {
+				String rowPath = (path.isEmpty() ? "" : path) + "/r" + i; //$NON-NLS-1$ //$NON-NLS-2$
 				org.eclipse.swt.graphics.Rectangle rowBounds = rowBounds(rows[i]);
 				if (rowBounds == null) {
 					continue;
 				}
+				boolean node = rows[i] instanceof org.eclipse.swt.widgets.TreeItem;
+				int children = node ? ((org.eclipse.swt.widgets.TreeItem) rows[i]).getItemCount() : 0;
+				boolean expanded = node && ((org.eclipse.swt.widgets.TreeItem) rows[i]).getExpanded();
 				total[0]++;
-				if (into.size() >= maxResults) {
-					continue;
+				if (into.size() < maxResults) {
+					org.eclipse.swt.graphics.Rectangle inShell = table.getDisplay().map(table, shell, rowBounds);
+					JsonObject row = new JsonObject().put("path", rowPath) //$NON-NLS-1$
+							.put("kind", "row") //$NON-NLS-1$ //$NON-NLS-2$
+							.put("class", rows[i].getClass().getName()) //$NON-NLS-1$
+							.put("text", rows[i].getText()) //$NON-NLS-1$
+							.put("selected", Boolean.valueOf(selected.contains(rows[i]))) //$NON-NLS-1$
+							.put("bounds", //$NON-NLS-1$
+									rowBounds.x + "," + rowBounds.y + " " + rowBounds.width + "x" + rowBounds.height) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+							.put("boundsInShell", //$NON-NLS-1$
+									inShell.x + "," + inShell.y + " " + inShell.width + "x" + inShell.height); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+					if (node) {
+						row.put("childCount", Integer.valueOf(children)) //$NON-NLS-1$
+								.put("expanded", Boolean.valueOf(expanded)); //$NON-NLS-1$
+						if (children > 0 && !expanded) {
+							row.put("collapsedNote", //$NON-NLS-1$
+									"This node has children that are NOT rows yet, so no path here addresses them. Open it with eclipse_expand_row and ask again."); //$NON-NLS-1$
+						}
+					}
+					into.add(row);
 				}
-				org.eclipse.swt.graphics.Rectangle inShell = table.getDisplay().map(table, shell, rowBounds);
-				into.add(new JsonObject().put("path", (path.isEmpty() ? "" : path) + "/r" + i) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-						.put("kind", "row") //$NON-NLS-1$ //$NON-NLS-2$
-						.put("class", rows[i].getClass().getName()) //$NON-NLS-1$
-						.put("text", rows[i].getText()) //$NON-NLS-1$
-						.put("selected", Boolean.valueOf(selected.contains(Integer.valueOf(i)))) //$NON-NLS-1$
-						.put("bounds", rowBounds.x + "," + rowBounds.y + " " + rowBounds.width + "x" + rowBounds.height) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
-						.put("boundsInShell", inShell.x + "," + inShell.y + " " + inShell.width + "x" + inShell.height)); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+				if (expanded && children > 0) {
+					emitRows(((org.eclipse.swt.widgets.TreeItem) rows[i]).getItems(), table, rowPath, selected,
+							maxResults, into, total);
+				}
 			}
 		}
 
@@ -392,6 +423,111 @@ public final class WidgetTools {
 	}
 
 	/** Reports one widget, its ancestry and what the CSS engine computed for it. */
+	/** Opens or closes a tree row, so what is under it becomes addressable. */
+	public static final class ExpandRow implements IMcpTool {
+
+		@Override
+		public String getName() {
+			return "eclipse_expand_row"; //$NON-NLS-1$
+		}
+
+		@Override
+		public String getDescription() {
+			return "Expands or collapses a row of a Tree, addressed by the r prefixed path eclipse_get_widget_tree reports with includeRows. CHANGES WHAT IS ON SCREEN, and is visible to whoever is at the IDE. THIS IS WHAT MAKES A NESTED ELEMENT REACHABLE AT ALL: only the rows a tree has actually created are rows, so everything under a collapsed node has no path, and a view that comes up collapsed, the Java Outline among them, looks like a tree of two or three entries. A row reports childCount and expanded, so a node with hidden children is visible as such before it is opened. It fires the SWT Expand event as a real click does rather than only setting the flag, because a JFace viewer creates the child rows in its own listener and setting expanded alone leaves an open node with nothing under it. depth opens that many levels, so one call can reach a member two levels down. Ask eclipse_get_widget_tree with includeRows again afterwards: the paths of the new rows did not exist before this ran."; //$NON-NLS-1$
+		}
+
+		@Override
+		public String getInputSchema() {
+			return """
+					{
+					  "type": "object",
+					  "required": ["path"],
+					  "properties": {
+					    "part":       {"type":"string","description":"Part id the path is rooted in, e.g. org.eclipse.ui.views.ContentOutline."},
+					    "shellTitle": {"type":"string","description":"Shell to root the path in, by title substring; omit both for the active shell."},
+					    "shell":      {"type":"string","description":"Shell independent of title: 'popup', an index from eclipse_list_ui_targets, or its bounds. Wins over shellTitle."},
+					    "path":       {"type":"string","description":"Row path from eclipse_get_widget_tree with includeRows, such as 0/0/1/r1. A nested row is addressed by chaining, as in 0/0/1/r1/r2."},
+					    "expand":     {"type":"boolean","default":true,"description":"False collapses the row instead."},
+					    "depth":      {"type":"integer","default":1,"minimum":1,"maximum":10,"description":"How many levels to open below this row. 1 opens the row itself."}
+					  },
+					  "additionalProperties": false
+					}"""; //$NON-NLS-1$
+		}
+
+		@Override
+		public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
+			ToolArguments args = ToolArguments.of(arguments);
+			String partId = args.getString("part"); //$NON-NLS-1$
+			String shellTitle = args.getString("shell") != null ? args.getString("shell") : args.getString("shellTitle"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+			String path = args.getString("path"); //$NON-NLS-1$
+			if (path == null || path.isBlank()) {
+				return McpToolResult.error(
+						"The argument 'path' is required; eclipse_get_widget_tree with includeRows reports the row paths."); //$NON-NLS-1$
+			}
+			boolean expand = args.getBoolean("expand", true); //$NON-NLS-1$
+			int depth = args.getInt("depth", 1, 1, 10); //$NON-NLS-1$
+			return UiThread.call(15, () -> apply(partId, shellTitle, path, expand, depth));
+		}
+
+		private static JsonObject apply(String partId, String shellTitle, String path, boolean expand, int depth) {
+			Control root = rootOf(partId, shellTitle, false);
+			if (root == null) {
+				return new JsonObject().put("expanded", Boolean.FALSE) //$NON-NLS-1$
+						.put("reason", "No such part or shell, or the part is not open. Use eclipse_list_ui_targets."); //$NON-NLS-1$ //$NON-NLS-2$
+			}
+			Widget target = resolve(root, path);
+			if (target == null) {
+				return new JsonObject().put("expanded", Boolean.FALSE) //$NON-NLS-1$
+						.put("reason", //$NON-NLS-1$
+								"The path '%s' does not resolve under this part. Only rows a tree has created have a path, so a row under a collapsed node cannot be named until its parent is opened." //$NON-NLS-1$
+										.formatted(path));
+			}
+			if (!(target instanceof org.eclipse.swt.widgets.TreeItem row)) {
+				return new JsonObject().put("expanded", Boolean.FALSE) //$NON-NLS-1$
+						.put("reason", //$NON-NLS-1$
+								"'%s' is a %s, not a tree row. Row paths carry an r prefix and come from eclipse_get_widget_tree with includeRows." //$NON-NLS-1$
+										.formatted(path, target.getClass().getSimpleName()));
+			}
+			int before = row.getItemCount();
+			int opened = expand ? open(row, depth) : 0;
+			if (!expand) {
+				row.setExpanded(false);
+			}
+			return new JsonObject().put("expanded", Boolean.valueOf(row.getExpanded())) //$NON-NLS-1$
+					.put("path", path) //$NON-NLS-1$
+					.put("text", row.getText()) //$NON-NLS-1$
+					.put("childCountBefore", Integer.valueOf(before)) //$NON-NLS-1$
+					.put("childCount", Integer.valueOf(row.getItemCount())) //$NON-NLS-1$
+					.put("rowsOpened", Integer.valueOf(opened)) //$NON-NLS-1$
+					.put("note", //$NON-NLS-1$
+							"The child rows exist now and did not before, so their paths are new: ask eclipse_get_widget_tree with includeRows again to read them, then eclipse_set_selection to select one."); //$NON-NLS-1$
+		}
+
+		/**
+		 * Opens a row and, to {@code depth} levels, whatever it turned out to hold.
+		 * <p>
+		 * The Expand event is fired before the flag is set because a JFace viewer
+		 * creates the child rows in its own SWT.Expand listener; setting the flag
+		 * alone leaves a node that looks open with nothing under it, which is exactly
+		 * the state a caller cannot tell from a genuine leaf.
+		 */
+		private static int open(org.eclipse.swt.widgets.TreeItem row, int depth) {
+			if (depth <= 0) {
+				return 0;
+			}
+			org.eclipse.swt.widgets.Event event = new org.eclipse.swt.widgets.Event();
+			event.item = row;
+			event.widget = row.getParent();
+			row.getParent().notifyListeners(org.eclipse.swt.SWT.Expand, event);
+			row.setExpanded(true);
+			int opened = 1;
+			for (org.eclipse.swt.widgets.TreeItem child : row.getItems()) {
+				opened += open(child, depth - 1);
+			}
+			return opened;
+		}
+	}
+
 	/** Selects a tab, whatever kind of editor happens to be behind it. */
 	public static final class SelectTab implements IMcpTool {
 

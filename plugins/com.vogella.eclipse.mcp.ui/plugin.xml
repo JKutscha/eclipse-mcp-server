@@ -9,6 +9,7 @@
       <tool class="com.vogella.eclipse.mcp.ui.internal.WidgetTools$GetWidgetTree"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.WidgetTools$InspectWidget"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.WidgetTools$SelectTab"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.WidgetTools$ExpandRow"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.ApplyCssTool"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.ThemeTools$ListThemes"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.ThemeTools$SetTheme"/>
