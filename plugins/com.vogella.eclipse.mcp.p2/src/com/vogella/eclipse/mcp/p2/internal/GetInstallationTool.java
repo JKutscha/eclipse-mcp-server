@@ -37,7 +37,7 @@ public final class GetInstallationTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Reports the product, the installed feature groups with their versions, and the configuration timestamps this installation can be reverted to. Changes nothing. This is what confirms that an install or an update actually landed, and it answers 'which version of the MCP server is this IDE running', neither of which the other tools can: eclipse_check_for_updates only reports units that HAVE an update, so it says nothing at all when everything is current, and eclipse_get_bundle_info describes the active TARGET PLATFORM rather than the running installation, which looks like the same question and is not. Use 'filter' to narrow the list, because an SDK installs a lot of feature groups. currentTimestamp is the one eclipse_update reports as previousConfiguration, so a caller can name what a revert would go back to."; //$NON-NLS-1$
+		return "Reports the product, the installed feature groups with their versions, the configuration timestamps this installation can be reverted to, and whether the bundles that ACTUALLY STARTED match what p2 records. Changes nothing. The feature list is the p2 profile's view, which is what p2 believes is installed rather than what the framework loaded; those are the same answer only while nothing has gone wrong, and when they differ the profile is the confident one and the wrong one. So 'runtime' compares every bundle p2 knows about against the live OSGi framework and reports each disagreement as profileSays versus actuallyRunning, because an update reported as landed while the IDE goes on running the previous build is the failure this tool exists to catch. It confirms that an install or an update actually landed, and answers 'which version of the MCP server is this IDE running', neither of which the other tools can: eclipse_check_for_updates only reports units that HAVE an update, so it says nothing at all when everything is current, and eclipse_get_bundle_info describes the active TARGET PLATFORM rather than the running installation, which looks like the same question and is not. Use 'filter' to narrow the list, because an SDK installs a lot of feature groups. currentTimestamp is the one eclipse_update reports as previousConfiguration, so a caller can name what a revert would go back to."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -101,6 +101,7 @@ public final class GetInstallationTool implements IMcpTool {
 				.put("matched", Integer.valueOf(matched.size())) //$NON-NLS-1$
 				.put("truncated", Boolean.valueOf(matched.size() > features.size())) //$NON-NLS-1$
 				.put("features", features); //$NON-NLS-1$
+		result.put("runtime", runtimeCheck(profile, monitor, needle, maxResults)); //$NON-NLS-1$
 		if (args.getBoolean("timestamps", false)) { //$NON-NLS-1$
 			JsonArray stamps = new JsonArray();
 			long[] values = registry.listProfileTimestamps(IProfileRegistry.SELF);
@@ -113,6 +114,72 @@ public final class GetInstallationTool implements IMcpTool {
 			result.put("revertPoints", stamps); //$NON-NLS-1$
 		}
 		return McpToolResult.of(result.toString());
+	}
+
+	/**
+	 * What the framework actually started, compared against what the profile says.
+	 * <p>
+	 * Everything above this comes out of the p2 profile, which is what p2 BELIEVES
+	 * is installed. That is the same question as what is running only while nothing
+	 * has gone sideways, and when it has, the profile is the more confident of the
+	 * two and the wrong one: it was reported as a landed update while the IDE went
+	 * on running the previous build. A surrogate profile pointing at a deleted
+	 * shared install did exactly that here for a day. A hot
+	 * {@code eclipse_install_bundle}, a dropin and a bundle the reconciler refused
+	 * all produce the same divergence for other reasons.
+	 * <p>
+	 * The live {@code BundleContext} cannot be wrong about this, so it is what
+	 * decides. Bundles p2 does not know are skipped rather than reported as
+	 * mismatches, since a dropin or a hot install is legitimately outside the
+	 * profile and saying so for hundreds of them would bury the real ones.
+	 */
+	private static JsonObject runtimeCheck(IProfile profile, IProgressMonitor monitor, String needle, int maxResults) {
+		Bundle self = org.osgi.framework.FrameworkUtil.getBundle(GetInstallationTool.class);
+		org.osgi.framework.BundleContext context = self == null ? null : self.getBundleContext();
+		if (context == null) {
+			return new JsonObject().put("checked", Integer.valueOf(0)) //$NON-NLS-1$
+					.put("note", //$NON-NLS-1$
+							"The running bundles could not be read, so everything above is the p2 profile's view alone and nothing here confirms the IDE is running it."); //$NON-NLS-1$
+		}
+		Map<String, String> inProfile = new java.util.HashMap<>();
+		for (IInstallableUnit unit : profile.query(QueryUtil.createIUAnyQuery(), monitor)) {
+			// a bundle IU carries the symbolic name as its id, so this is the join
+			inProfile.putIfAbsent(unit.getId(), unit.getVersion().toString());
+		}
+		JsonArray mismatches = new JsonArray();
+		int checked = 0;
+		int diverged = 0;
+		for (Bundle bundle : context.getBundles()) {
+			String name = bundle.getSymbolicName();
+			if (name == null) {
+				continue;
+			}
+			String expected = inProfile.get(name);
+			if (expected == null) {
+				continue;
+			}
+			checked++;
+			String running = bundle.getVersion().toString();
+			if (expected.equals(running)) {
+				continue;
+			}
+			diverged++;
+			if (mismatches.size() < maxResults && (needle == null || name.toLowerCase(Locale.ROOT).contains(needle))) {
+				mismatches.add(new JsonObject().put("bundle", name) //$NON-NLS-1$
+						.put("profileSays", expected) //$NON-NLS-1$
+						.put("actuallyRunning", running)); //$NON-NLS-1$
+			}
+		}
+		JsonObject runtime = new JsonObject().put("checked", Integer.valueOf(checked)) //$NON-NLS-1$
+				.put("diverged", Integer.valueOf(diverged)) //$NON-NLS-1$
+				.put("agrees", Boolean.valueOf(diverged == 0)) //$NON-NLS-1$
+				.put("mismatches", mismatches); //$NON-NLS-1$
+		if (diverged > 0) {
+			runtime.put("warning", //$NON-NLS-1$
+					"THE VERSIONS ABOVE ARE NOT ALL RUNNING. %d of the %d bundles p2 knows about are running a different version than the profile records, so a feature version listed above may describe an install that never took effect. actuallyRunning is the truth; profileSays is what p2 believes. Causes: an update whose bundles were written somewhere the framework does not load from, a hot eclipse_install_bundle, a dropin, or a bundle the reconciler refused. Compare against configuration/org.eclipse.equinox.simpleconfigurator/bundles.info, and restart with -clean if bundles.info is already correct." //$NON-NLS-1$
+							.formatted(Integer.valueOf(diverged), Integer.valueOf(checked)));
+		}
+		return runtime;
 	}
 
 	private static boolean contains(IInstallableUnit unit, String needle) {
