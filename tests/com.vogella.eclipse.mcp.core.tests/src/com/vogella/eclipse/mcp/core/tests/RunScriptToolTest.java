@@ -112,6 +112,19 @@ class RunScriptToolTest {
 	}
 
 	@Test
+	@SuppressWarnings("unchecked")
+	void aSelectorValueMayContainDots() throws Exception {
+		// a command id is the usual selector value, and splitting the path on every
+		// dot tore it into pieces that matched nothing while looking well formed
+		Map<String, Object> result = TestFixture.callAndParse(TOOL, Map.of("steps", List.of(
+				Map.of("tool", "eclipse_list_projects", "label", "dotted value", "expect", Map.of(
+						"projects[name=" + PROJECT + "].open", Boolean.TRUE)))));
+
+		List<Map<String, Object>> steps = (List<Map<String, Object>>) result.get("steps");
+		assertEquals(Boolean.TRUE, steps.get(0).get("ok"), "got " + steps.get(0).get("expectationsFailed"));
+	}
+
+	@Test
 	void anUnknownToolIsRefusedBeforeAnythingRuns() throws Exception {
 		McpToolResult result = TestFixture.call(TOOL,
 				Map.of("steps", List.of(Map.of("tool", "eclipse_no_such_tool"))));

@@ -270,7 +270,7 @@ public final class RunScriptTool implements IMcpTool {
 	 */
 	static Object valueAt(Object answer, String path) {
 		Object current = answer;
-		for (String segment : path.split("\\.")) { //$NON-NLS-1$
+		for (String segment : segments(path)) {
 			if (current == null) {
 				return null;
 			}
@@ -296,6 +296,33 @@ public final class RunScriptTool implements IMcpTool {
 			}
 		}
 		return current;
+	}
+
+	/**
+	 * Splits a path on the dots that separate its segments, which is not every dot:
+	 * a selector's value is usually a command id, and splitting inside the brackets
+	 * tore 'items[command=org.eclipse.ui.edit.undo]' into six meaningless pieces.
+	 */
+	static List<String> segments(String path) {
+		List<String> segments = new ArrayList<>();
+		StringBuilder current = new StringBuilder();
+		int depth = 0;
+		for (int i = 0; i < path.length(); i++) {
+			char c = path.charAt(i);
+			if (c == '[') {
+				depth++;
+			} else if (c == ']') {
+				depth--;
+			}
+			if (c == '.' && depth <= 0) {
+				segments.add(current.toString());
+				current.setLength(0);
+			} else {
+				current.append(c);
+			}
+		}
+		segments.add(current.toString());
+		return segments;
 	}
 
 	/**
