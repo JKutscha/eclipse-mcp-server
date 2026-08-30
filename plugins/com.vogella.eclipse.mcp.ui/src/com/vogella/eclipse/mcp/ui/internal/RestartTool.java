@@ -380,46 +380,13 @@ public final class RestartTool implements IMcpTool {
 		if (cannot != null) {
 			return new JsonObject().put("restarting", Boolean.FALSE).put("reason", "Refused: " + cannot); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 		}
-		JsonArray modal = new JsonArray();
-		for (Shell shell : PlatformUI.getWorkbench().getDisplay().getShells()) {
-			boolean isModal = (shell.getStyle()
-					& (SWT.APPLICATION_MODAL | SWT.PRIMARY_MODAL | SWT.SYSTEM_MODAL)) != 0;
-			if (isModal && shell.isVisible()) {
-				modal.add(shell.getText());
-			}
-		}
-		JsonObject discarded = null;
-		if (save) {
-			saveEverything();
-		} else if (force) {
-			// the platform's close prompts for every dirty part and a veto leaves the
-			// JVM running, so force has to leave nothing to prompt about rather than
-			// hoping the close is quiet
-			discarded = discardEverything();
-		}
-		JsonArray dirty = dirtyEditorTitles();
-		List<MPart> dirtyModelParts = dirtyParts();
-		if (!force && (dirty.size() > 0 || !dirtyModelParts.isEmpty() || modal.size() > 0)) {
-			// compose from whichever guard actually fired: naming unsaved work when the
-			// blocker is a dialog sends the caller to save, which changes nothing
-			StringBuilder reason = new StringBuilder("Refused: "); //$NON-NLS-1$
-			if (dirty.size() > 0 || !dirtyModelParts.isEmpty()) {
-				reason.append("there are unsaved changes, which restarting would discard. Pass save to save them first, or force to discard them."); //$NON-NLS-1$
-			}
-			if (modal.size() > 0) {
-				if (dirty.size() > 0 || !dirtyModelParts.isEmpty()) {
-					reason.append(' ');
-				}
-				reason.append("a modal dialog is open, and restarting under one loses whatever is in it. Close it with eclipse_dismiss_dialog, or pass force."); //$NON-NLS-1$
-			}
-			JsonObject refusal = new JsonObject().put("restarting", Boolean.FALSE) //$NON-NLS-1$
-					.put("dirtyEditors", dirty) //$NON-NLS-1$
-					.put("dirtyParts", names(dirtyModelParts)) //$NON-NLS-1$
-					.put("openModalDialogs", modal) //$NON-NLS-1$
-					.put("reason", reason.toString()); //$NON-NLS-1$
+		CloseGuard guard = guard(save, force, "restarting", "restarting"); //$NON-NLS-1$ //$NON-NLS-2$
+		if (guard.refusal() != null) {
+			JsonObject refusal = guard.refusal().put("restarting", Boolean.FALSE); //$NON-NLS-1$
 			addLastFailure(refusal);
 			return refusal;
 		}
+		JsonObject discarded = guard.discarded();
 		// before the restart, and deliberately not by waiting for either of them. A
 		// build has nothing worth saving across a restart, and a launched JVM that
 		// outlives the IDE keeps its workspace lock with nobody left who knows where
@@ -469,6 +436,76 @@ public final class RestartTool implements IMcpTool {
 										: " THIS IS A DIFFERENT WORKSPACE: check what came up before measuring anything in it, because a workspace another IDE holds open is refused by the lock and the chooser opens instead. previousWorkspace is the way back.")); //$NON-NLS-1$
 		addLastFailure(result);
 		return result;
+	}
+
+	/**
+	 * What the save-or-discard step did, and why the close must not go ahead.
+	 *
+	 * @param refusal  the answer to return instead of closing, or {@code null}
+	 * @param discarded what {@code force} threw away, or {@code null}
+	 */
+	record CloseGuard(JsonObject refusal, JsonObject discarded) {
+	}
+
+	/**
+	 * Saves or discards unsaved work, then decides whether the close can proceed.
+	 * <p>
+	 * Shared by {@code eclipse_restart} and {@code eclipse_exit} because both end
+	 * in the same cancellable close: {@code Workbench.saveAllParts} prompts for
+	 * every dirty part in every window, and a veto leaves the JVM up, so both have
+	 * to leave nothing to prompt about rather than hoping the close is quiet.
+	 *
+	 * @param discardVerb what the unsaved work would be lost to, for the refusal
+	 * @param underVerb   what would happen under an open dialog, for the refusal
+	 */
+	static CloseGuard guard(boolean save, boolean force, String discardVerb, String underVerb) {
+		JsonArray modal = new JsonArray();
+		for (Shell shell : PlatformUI.getWorkbench().getDisplay().getShells()) {
+			boolean isModal = (shell.getStyle()
+					& (SWT.APPLICATION_MODAL | SWT.PRIMARY_MODAL | SWT.SYSTEM_MODAL)) != 0;
+			if (isModal && shell.isVisible()) {
+				modal.add(shell.getText());
+			}
+		}
+		JsonObject discarded = null;
+		if (save) {
+			saveEverything();
+		} else if (force) {
+			discarded = discardEverything();
+		}
+		JsonArray dirty = dirtyEditorTitles();
+		List<MPart> dirtyModelParts = dirtyParts();
+		if (!force && (dirty.size() > 0 || !dirtyModelParts.isEmpty() || modal.size() > 0)) {
+			// compose from whichever guard actually fired: naming unsaved work when the
+			// blocker is a dialog sends the caller to save, which changes nothing
+			StringBuilder reason = new StringBuilder("Refused: "); //$NON-NLS-1$
+			if (dirty.size() > 0 || !dirtyModelParts.isEmpty()) {
+				reason.append("there are unsaved changes, which %s would discard. Pass save to save them first, or force to discard them." //$NON-NLS-1$
+						.formatted(discardVerb));
+			}
+			if (modal.size() > 0) {
+				if (dirty.size() > 0 || !dirtyModelParts.isEmpty()) {
+					reason.append(' ');
+				}
+				reason.append("a modal dialog is open, and %s under one loses whatever is in it. Close it with eclipse_dismiss_dialog, or pass force." //$NON-NLS-1$
+						.formatted(underVerb));
+			}
+			return new CloseGuard(new JsonObject().put("dirtyEditors", dirty) //$NON-NLS-1$
+					.put("dirtyParts", names(dirtyModelParts)) //$NON-NLS-1$
+					.put("openModalDialogs", modal) //$NON-NLS-1$
+					.put("reason", reason.toString()), discarded); //$NON-NLS-1$
+		}
+		return new CloseGuard(null, discarded);
+	}
+
+	/** Cancels builds and terminates this server's launches, for a restart or an exit. */
+	static JsonObject clearTheWayForShutdown() {
+		return clearTheWay();
+	}
+
+	/** The workspace path for an answer, or {@code null} when there is none. */
+	static String workspaceLocationForAnswer() {
+		return workspaceLocation();
 	}
 
 	/** The part names for an answer, since an MPart's toString is not one. */

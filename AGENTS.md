@@ -73,6 +73,7 @@ A tool that can outlast that timeout must not block on it; start a job and hand 
 
 **Optional JDK and platform packages are isolated in one class.**
 `CssStyling` holds every reference to the e4 CSS engine, `GitContent` every reference to jgit, and `FlightRecording` every reference to `jdk.jfr`, all imported optionally so callers catch `LinkageError`. A JVM or an IDE without them then costs a refusal that names what is missing, rather than a failure somewhere unrelated.
+`DisplayScaling` is the same shape for SWT's own internals: `org.eclipse.swt.internal.DPIUtil` has changed shape across releases and `org.eclipse.swt.internal.gtk.GTK` exists on one window system only, so a direct call would make this bundle GTK-only. Both are reached by name there, and an IDE without them costs a null in one field of `eclipse_get_display_info` rather than a failing tool.
 
 **A preference write fires its listeners on the writing thread.**
 `EclipsePreferences.put` calls every listener synchronously, and editors answer a colour change by touching widgets, so a write from a Jetty worker thread ends in "Invalid thread access", an error dialog from `SafeRunnableDialog`, and editors that never repaint.
@@ -242,7 +243,8 @@ The tool falls back to PDE's own context and then to a readable error, rather th
 
 **The ui bundle is required by `com.vogella.eclipse.mcp.core.tests`, and that run is headless.**
 It is there so the registry tests cover the ui tools' names and schemas, and so the argument handling that happens before the UI thread is reached can be tested at all.
-Nothing in that bundle may call a ui tool that needs a workbench, and nothing there may ever call `eclipse_restart`, which is registered in that run even though the smoke test that would reach it lives elsewhere.
+Nothing in that bundle may call a ui tool that needs a workbench, and nothing there may ever call `eclipse_restart` or `eclipse_exit`, both registered in that run even though the smoke test that would reach them lives elsewhere.
+`eclipse_exit` is the worse of the two: a restart would at least come back, while an exit ends the JVM the suite is running in, and `ShutdownGuardsTest` covers both by reading their declarations and by checking that they refuse without a workbench, never by calling them for real.
 Loading a ui tool class headlessly is safe; every one of them refuses with "There is no running workbench" rather than touching `PlatformUI`.
 
 **The provisioning tools can be covered only by their declarations.**

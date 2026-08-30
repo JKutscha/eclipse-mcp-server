@@ -10,7 +10,7 @@ Those are the capabilities exposed here.
 
 Built and maintained by [vogella GmbH](https://vogella.com/services/), and used in our consulting and in our AI based Java cleanup services [for legacy code and code optimization](https://vogella.com/services/).
 
-Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration, `eclipse_set_project_state` opens and closes projects, `eclipse_set_bree` rewrites plug-in manifests, `eclipse_add_repository` and `eclipse_remove_repository` change the configured update sites, `eclipse_run_command` runs arbitrary commands in directories that same preference page has to name first, `eclipse_run_workbench_command` runs whatever workbench command it is given, and `eclipse_manage_window` and `eclipse_log_status` open and close windows and write log entries.
+Most tools are read-only. The exceptions are marked as such below: `eclipse_organize_imports` and `eclipse_format` rewrite the file they are pointed at, `eclipse_build` runs the project's builders, `eclipse_set_preference` changes IDE configuration, `eclipse_set_project_state` opens and closes projects, `eclipse_set_bree` rewrites plug-in manifests, `eclipse_add_repository` and `eclipse_remove_repository` change the configured update sites, `eclipse_run_command` runs arbitrary commands in directories that same preference page has to name first, `eclipse_run_workbench_command` runs whatever workbench command it is given, `eclipse_manage_window` and `eclipse_log_status` open and close windows and write log entries, and `eclipse_exit` shuts the IDE down.
 The debugger tools change things too, in narrower ways that each description states: `eclipse_set_breakpoint` edits the breakpoint list, `eclipse_debug_launch` starts a process under the debugger, `eclipse_debug_evaluate` runs an expression inside the debugged program, and `eclipse_debug_control` steps and terminates it.
 There is no general file writing and no refactoring.
 Commands run only in directories the user has named, and the git operations are a branch switch and a pull request fetch, both through EGit.
@@ -2065,6 +2065,19 @@ Only views move. An editor belongs to the editor area, and there is no meaningfu
 
 The splits build the states that need a particular layout and that nothing else here can reach: a stack with several tabs against one with a single tab, a column narrow enough for the tabs to overflow into the chevron, and a detached view, which is its own shell and is drawn by a different set of CSS selectors again.
 
+### `eclipse_get_display_info`
+
+**Read-only.** Reports the DPI and scaling state of the running IDE: `deviceZoom`, `nativeDeviceZoom`, `effectiveAutoScaleValue`, `customAutoScale`, the display `dpi`, every monitor with its bounds, client area, zoom and primary flag, the SWT platform and version, the GTK version, and the values of `GDK_SCALE`, `GDK_DPI_SCALE`, `GDK_BACKEND`, `WAYLAND_DISPLAY`, `XDG_SESSION_TYPE` and `DISPLAY` as the process actually sees them. It takes no arguments.
+
+**This is the only way to assert that a scaling variant took effect.**
+The `zoom` field of `eclipse_screenshot` is `capturedPixels / areaInPoints`, and on GTK that stays 100 even when the device zoom is 200, because SWT points map one to one to device pixels there: what changes is how much logical content fits, not the size of the capture. A visual regression suite that runs the same scenario under several scaling variants and checks the capture's zoom therefore cannot tell a variant that applied from one that was silently ignored, so it compares against the right baseline and proves nothing. `deviceZoom` is the number that moves.
+
+Measured against an identical 100% baseline, on GTK: `GDK_SCALE=2` with `swt.autoScale=100` changed 14.9% of pixels, `GDK_SCALE=2` with autoScale unset changed 1.3%, and `swt.autoScale=200` with no `GDK_SCALE` changed 1.3%. The capture stayed 1600x1000 in all three. `GDK_SCALE` is what scales the layout; `swt.autoScale` on its own rescales images and pins `deviceZoom` to its value, which then hides whatever the display underneath is doing, so setting it globally is a trap.
+
+`customAutoScale` is what separates "the flag was never set" from "the flag was set and had no effect", which the effective value alone cannot say, since an explicit setting and a default of the same number read identically. The monitor list matters as much as the zoom: on a headless Xvfb run it is the only way to tell a virtual screen that came up at the wrong geometry from a scaling flag that was ignored.
+
+`DPIUtil` and the GTK version are reached reflectively, in `DisplayScaling`, because both are SWT internals: one has changed shape across releases and the other exists on a single window system. An IDE where they cannot be reached loses those fields and says so in `scalingNote` rather than failing.
+
 ### `eclipse_screenshot`
 
 Captures the IDE as a PNG, writes it to a file and returns the path.
@@ -2263,6 +2276,22 @@ Each change entry is tagged `removed` or `added`.
 
 Applying runs as a job and returns an `operationId` polled through `eclipse_get_provisioning_status`.
 Like every install here, the removal takes effect on the next IDE restart; `eclipse_restart` works independently of this tool, including after a half applied operation that took this bundle with it.
+
+### `eclipse_exit`
+
+**Shuts the IDE down. Nothing here can start it again.**
+That is the whole difference from `eclipse_restart`: the process ends, this server ends with it, and bringing it back is the caller's job from outside. It exists for a harness that starts a throwaway IDE per run and has to take it down afterwards; the alternative was killing the process group, which is harder than it sounds, because the Eclipse launcher execs a JVM and the direct child exits first, so a naive waiter concludes the IDE is gone while it keeps running and holds the port and the workspace lock.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `save` | boolean | `false` | Save dirty editors first. |
+| `force` | boolean | `false` | Exit anyway, discarding unsaved work. |
+
+The answer reports what was requested, never the outcome, for the same reason the restart answer does: it goes out two seconds before the shutdown, so a dropped connection right after a successful result is expected. Confirm the exit from outside by watching the process or the port, not by asking this server.
+
+It shares the guard with `eclipse_restart`, and for the same reason. `IWorkbench.close` is a cancellable close that prompts for every dirty part in every window, and a veto leaves the JVM up, so an unguarded exit on an IDE nobody is watching stalls in an invisible dialog rather than failing. `force` discards that work outright so the platform has nothing to prompt about, and a modal dialog is better cleared with `eclipse_dismiss_dialog` than forced past. Builds are cancelled and launches this server started are terminated first, because a launched JVM that outlives the IDE keeps its workspace lock with nobody left who knows where it came from.
+
+An exit the platform vetoes leaves the IDE running and goes to the Error Log, and is reported as `previousExitFailed` by the next call if there is one.
 
 ### `eclipse_restart`
 

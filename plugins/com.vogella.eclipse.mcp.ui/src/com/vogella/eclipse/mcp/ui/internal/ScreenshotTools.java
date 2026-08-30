@@ -207,7 +207,7 @@ public final class ScreenshotTools {
 
 		@Override
 		public String getDescription() {
-			return "Captures the IDE as a PNG and writes it to a file, returning the path. Targets are a workbench part by id, a shell by title, or the whole display; passing part or shellTitle selects the target on its own. Omitting both shellTitle and part captures the active workbench window's shell, which is also what a target of shell without a title does; the display target must be asked for explicitly. The answer reports which method worked: rootCapture reads the real screen pixels, widgetPrint paints the widget hierarchy instead, which is the fallback on a compositing window manager where reading the X11 root yields nothing. A shell capture is sized to the shell's client area and composes every visible child of the shell into one image, so the trim bars are in it; the window decorations, meaning the title bar and the frame, are drawn by the window manager and are present only when rootCapture succeeded. requestedArea names the bounds of what was asked for, and when the capture covers less than that, requestedAreaNote says what was excluded and why. For method widgetPrint the areas between parts that no print paints are replaced with the widget background colour before the image is written, and the answer counts them in unpaintedPixels, so a whole shell capture does not arrive outlined in filler colour. Use it for UI work such as layout, theming and dialog rendering; for anything textual the other tools answer better and shorter. A part that is not visible is refused rather than captured blank, unless activate is set. On a HiDPI monitor widgetPrint captures at the monitor's zoom, so the image is larger than the widget's size in points: capturedArea is the pixels returned, areaInPoints is the widget, and zoom is the percentage between them. Set includeToolbar to capture a part together with its surrounding stack, but note that the stack's topRight children, the view toolbar among them, are not painted by any widget print rooted inside the window; capture the shell and crop to the bounds from eclipse_get_widget_tree for those."; //$NON-NLS-1$
+			return "Captures the IDE as a PNG and writes it to a file, returning the path. Targets are a workbench part by id, a shell by title, or the whole display; passing part or shellTitle selects the target on its own. Omitting both shellTitle and part captures the active workbench window's shell, which is also what a target of shell without a title does; the display target must be asked for explicitly. The answer reports which method worked: rootCapture reads the real screen pixels, widgetPrint paints the widget hierarchy instead, which is the fallback on a compositing window manager where reading the X11 root yields nothing. A shell capture is sized to the shell's client area and composes every visible child of the shell into one image, so the trim bars are in it; the window decorations, meaning the title bar and the frame, are drawn by the window manager and are present only when rootCapture succeeded. requestedArea names the bounds of what was asked for, and when the capture covers less than that, requestedAreaNote says what was excluded and why. For method widgetPrint the areas between parts that no print paints are replaced with the widget background colour before the image is written, and the answer counts them in unpaintedPixels, so a whole shell capture does not arrive outlined in filler colour. coverage says in words how much of the requested area the print actually covered, and says outright when a capture holds too much filler to be evidence about the UI, rather than leaving that judgement to be computed from the fraction. On a HiDPI or scaled display use eclipse_get_display_info to assert which scaling is in force: the zoom reported here is the capture's own ratio and does not move with the device zoom. Use it for UI work such as layout, theming and dialog rendering; for anything textual the other tools answer better and shorter. A part that is not visible is refused rather than captured blank, unless activate is set. On a HiDPI monitor widgetPrint captures at the monitor's zoom, so the image is larger than the widget's size in points: capturedArea is the pixels returned, areaInPoints is the widget, and zoom is the percentage between them. Set includeToolbar to capture a part together with its surrounding stack, but note that the stack's topRight children, the view toolbar among them, are not painted by any widget print rooted inside the window; capture the shell and crop to the bounds from eclipse_get_widget_tree for those."; //$NON-NLS-1$
 		}
 
 		@Override
@@ -401,7 +401,8 @@ public final class ScreenshotTools {
 				if (unpainted != null) {
 					written.put("unpaintedPixels", Integer.valueOf(unpainted.pixels())) //$NON-NLS-1$
 							.put("unpaintedFraction", Double.valueOf(unpainted.fraction())) //$NON-NLS-1$
-							.put("unpaintedFilledWith", unpainted.fillDescription()); //$NON-NLS-1$
+							.put("unpaintedFilledWith", unpainted.fillDescription()) //$NON-NLS-1$
+							.put("coverage", unpainted.coverage()); //$NON-NLS-1$
 				}
 				if ("widgetPrint".equals(method)) { //$NON-NLS-1$
 					written.put("printNote", "The widget print does not paint the sash and margin areas between parts. Those carry the background colour of the part they sit in, and unpaintedPixels counts them; a composed shell capture measures each piece against a filler colour and then repaints it against its own background, so no text in the image is blended against the filler."); //$NON-NLS-1$ //$NON-NLS-2$
@@ -645,6 +646,32 @@ public final class ScreenshotTools {
 
 			double fraction() {
 				return width * height == 0 ? 0.0 : Math.round(pixels * 1000.0 / (width * height)) / 10.0;
+			}
+
+			/**
+			 * How much of the requested area the print actually covered, in words.
+			 * <p>
+			 * The fraction alone leaves the caller to decide what counts as too much
+			 * filler, and a capture that is mostly filler is not evidence about the UI
+			 * however honestly it is measured. Saying so is what stops a visual check
+			 * from being run against a picture of nothing. The sash and margin areas
+			 * between parts account for a few percent on any healthy shell capture,
+			 * which is why the quiet case says nothing at all.
+			 */
+			JsonObject coverage() {
+				double painted = Math.round((100.0 - fraction()) * 10.0) / 10.0;
+				JsonObject json = new JsonObject().put("paintedFraction", Double.valueOf(painted)); //$NON-NLS-1$
+				if (fraction() >= 50.0) {
+					return json.put("note", //$NON-NLS-1$
+							"The print covered only %s%% of the requested area; the rest was never painted. THIS IMAGE IS NOT EVIDENCE ABOUT THE UI: most of it is filler, so do not read a layout or a theme off it. A widget print leaves this much unpainted when the target was not laid out, was not visible, or was printed at a scale the canvas does not match." //$NON-NLS-1$
+									.formatted(Double.valueOf(painted)));
+				}
+				if (fraction() >= 10.0) {
+					return json.put("note", //$NON-NLS-1$
+							"The print covered %s%% of the requested area. That is more filler than the sashes and margins between parts account for, so treat anything in the unpainted regions as absent from the capture rather than absent from the UI." //$NON-NLS-1$
+									.formatted(Double.valueOf(painted)));
+				}
+				return json;
 			}
 
 			String fillDescription() {
