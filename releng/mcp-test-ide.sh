@@ -20,11 +20,16 @@
 #   --shared-config  Use the installation's own configuration area, so the test
 #                    IDE runs whatever is substituted into it. Off by default.
 #
-# The installation is REUSED, not copied. Only the workspace and the
-# configuration area are fresh: the configuration is 3 MB of the 553 MB, and it
-# is where bundles.info lives, which is the file a substitution edits. So the
-# test IDE shares every bundle jar and still runs the shipped ones, whatever
+# The installation is REUSED, not copied. Only the workspace, the configuration
+# area and the p2 data area are fresh: the configuration is 3 MB of the 553 MB,
+# and it is where bundles.info lives, which is the file a substitution edits. So
+# the test IDE shares every bundle jar and still runs the shipped ones, whatever
 # anybody has substituted into the installation somebody works in.
+#
+# The p2 data area has to be its own, and that is not an optimisation. Sharing
+# the installation's one made p2 treat the installation as a shared install and
+# rewrite its SDKProfile into a surrogate pointing at this temporary workspace,
+# which broke provisioning in the real IDE as soon as the workspace was deleted.
 
 set -euo pipefail
 
@@ -91,12 +96,28 @@ import pathlib, re, sys
 
 install, config = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
 
-# p2's data area is written relative to the configuration directory, so it has
-# to be pinned to the installation or the copy would look for a p2 area of its
-# own that is not there
+# p2's data area is written relative to the configuration directory, so a
+# configuration of our own has to say where it is. It gets one of its OWN, and
+# that is the whole point rather than a detail: pinning it at the installation
+# is what this script used to do, and it corrupted the installation it was
+# reusing. A configuration area outside the installation plus a profile
+# registry inside it is exactly the shared-install shape p2 is built for, so p2
+# built a surrogate profile for the temporary workspace and wrote the surrogate
+# markers into the real SDKProfile. A surrogate profile does not own the base
+# units, it references them from the shared install, so once the temporary
+# workspace was deleted the installation's own profile pointed at nothing and
+# every later `p2.director` run failed with "Missing requirement:
+# org.eclipse.core.runtime ... could not be found".
+# The cost of a private p2 area is that p2's picture of the installation is
+# empty inside the test IDE, so eclipse_get_installation and the provisioning
+# tools have nothing to report there. That is the right trade: those tools must
+# never run in a throwaway IDE anyway, and the alternative was writing to the
+# profile of the installation somebody works in.
+p2 = config / "p2"
+p2.mkdir(parents=True, exist_ok=True)
 ini = config / "config.ini"
 ini.write_text(re.sub(r"(?m)^eclipse\.p2\.data\.area=.*$",
-                      "eclipse.p2.data.area=" + str(install / "p2") + "/", ini.read_text()))
+                      "eclipse.p2.data.area=" + str(p2) + "/", ini.read_text()))
 
 # and any line pointing at a substituted jar goes back to the shipped one, so a
 # test never silently measures somebody else's patched bundle
