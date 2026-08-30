@@ -84,7 +84,11 @@ public final class ContextMenuTool implements IMcpTool {
 			}
 			show(menu, shown);
 			JsonArray items = new JsonArray();
+			// counted at every depth, like total, because the top level array holds
+			// only the top level and comparing the two called an untruncated answer
+			// truncated whenever a submenu was walked
 			int[] total = { 0 };
+			int[] emitted = { 0 };
 			Menu start = menu;
 			String reported = path;
 			if (path != null && !path.isBlank()) {
@@ -97,12 +101,13 @@ public final class ContextMenuTool implements IMcpTool {
 							.put("topLevel", labels(menu)); //$NON-NLS-1$
 				}
 			}
-			walk(start, 0, maxDepth, maxResults, items, total, shown);
+			walk(start, 0, maxDepth, maxResults, items, total, emitted, shown);
 			return new JsonObject().put("part", part.getSite().getId()) //$NON-NLS-1$
 					.put("found", Boolean.TRUE) //$NON-NLS-1$
 					.put("path", reported) //$NON-NLS-1$
 					.put("total", Integer.valueOf(total[0])) //$NON-NLS-1$
-					.put("truncated", Boolean.valueOf(total[0] > items.size())) //$NON-NLS-1$
+					.put("reported", Integer.valueOf(emitted[0])) //$NON-NLS-1$
+					.put("truncated", Boolean.valueOf(total[0] > emitted[0])) //$NON-NLS-1$
 					.put("items", items) //$NON-NLS-1$
 					.put("note", //$NON-NLS-1$
 							"Built for the selection the part has now, and taken down again; nothing was shown on screen. An item with no command is a contribution that carries none, a separator or a submenu."); //$NON-NLS-1$
@@ -211,10 +216,10 @@ public final class ContextMenuTool implements IMcpTool {
 	}
 
 	private static void walk(Menu menu, int depth, int maxDepth, int maxResults, JsonArray into, int[] total,
-			List<Menu> shown) {
+			int[] emitted, List<Menu> shown) {
 		for (MenuItem item : menu.getItems()) {
 			total[0]++;
-			if (into.size() >= maxResults) {
+			if (emitted[0] >= maxResults) {
 				continue;
 			}
 			boolean separator = (item.getStyle() & SWT.SEPARATOR) != 0;
@@ -228,10 +233,11 @@ public final class ContextMenuTool implements IMcpTool {
 			if (item.getMenu() != null && depth + 1 < maxDepth) {
 				show(item.getMenu(), shown);
 				JsonArray children = new JsonArray();
-				walk(item.getMenu(), depth + 1, maxDepth, maxResults, children, total, shown);
+				walk(item.getMenu(), depth + 1, maxDepth, maxResults, children, total, emitted, shown);
 				entry.put("items", children); //$NON-NLS-1$
 			}
 			into.add(entry);
+			emitted[0]++;
 		}
 	}
 
