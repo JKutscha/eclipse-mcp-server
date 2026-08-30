@@ -180,7 +180,13 @@ It is deliberately thin: the expectations are evaluated in the server, so an LLM
 `mcp-test-ide.sh` starts the IDE on a temporary workspace with the server preference written **before** the first start, which is the only way out of a circle: whether the server runs is an instance preference, so a workspace nobody has switched it on in comes up with nothing listening and no way left to ask why.
 It waits for the discovery file, runs the scripts, and takes the IDE down again, so a working IDE is never touched.
 
-**The installation is reused, not copied.** Only the workspace is fresh, 120 KB against a 553 MB install, so workspace state is isolated and installed bundles are not: a bundle substituted into that installation is what the test IDE runs too. Give it an installation of its own when that matters.
+**The installation is reused, not copied, and the test IDE is still pristine.**
+Only the workspace and the configuration area are fresh, 2.2 MB against a 553 MB install.
+That works because of how the two are split: `bundles.info` lives in the configuration area, while the paths inside it are relative to the installation, so a configuration of its own shares all 429 MB of `plugins/` and still decides for itself which jars to load.
+Any line pointing at a substituted jar is rewritten back to the shipped one before the IDE starts, so a test never silently measures a bundle somebody else patched into the installation being worked in.
+`--shared-config` turns that off and runs whatever the installation is currently configured with.
+
+A p2 bundle pool would achieve the same sharing for genuinely separate installations, and is the right answer when the test IDE has to install or uninstall features of its own; for running scripts against the shipped bundles the private configuration area is smaller and needs no pool to be set up.
 
 **Scripts have to be deterministic to be worth running.** The smoke script waits with `eclipse_wait_until_quiet` before capturing a view it has just opened, because the first version captured 28 ms after opening it and passed or failed depending on the machine.
 

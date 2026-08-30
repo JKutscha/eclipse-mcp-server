@@ -17,12 +17,14 @@
 #                    log after a failure.
 #   --junit FILE     Passed to the runner.
 #   --timeout SEC    How long to wait for the server to come up, default 180.
+#   --shared-config  Use the installation's own configuration area, so the test
+#                    IDE runs whatever is substituted into it. Off by default.
 #
-# The installation is REUSED, not copied: only the workspace is fresh, which is
-# 120 KB against a 553 MB install. So the workspace state is isolated and the
-# installed bundles are not, and a bundle somebody substituted into that
-# installation is what this IDE runs too. Pass an installation of its own, or
-# add -configuration <dir>, when a test must not see that.
+# The installation is REUSED, not copied. Only the workspace and the
+# configuration area are fresh: the configuration is 3 MB of the 553 MB, and it
+# is where bundles.info lives, which is the file a substitution edits. So the
+# test IDE shares every bundle jar and still runs the shipped ones, whatever
+# anybody has substituted into the installation somebody works in.
 
 set -euo pipefail
 
@@ -32,6 +34,7 @@ workspace=
 keep=0
 junit=
 timeout=180
+isolate=1
 scripts=()
 
 while [ $# -gt 0 ]; do
@@ -40,6 +43,7 @@ while [ $# -gt 0 ]; do
     --port) port=$2; shift 2;;
     --workspace) workspace=$2; keep=1; shift 2;;
     --keep) keep=1; shift;;
+    --shared-config) isolate=0; shift;;
     --junit) junit=$2; shift 2;;
     --timeout) timeout=$2; shift 2;;
     -h|--help) sed -n '2,22p' "$0"; exit 0;;
@@ -71,6 +75,50 @@ enabled=true
 port=$port
 callTimeoutSeconds=60
 PREFS
+
+launch_args=()
+if [ "$isolate" = "1" ]; then
+  # bundles.info lives in the configuration area and its bundle paths are
+  # relative to the installation, so a configuration of our own shares every jar
+  # and still decides for itself which ones to load
+  config="$workspace/configuration"
+  mkdir -p "$config/org.eclipse.equinox.simpleconfigurator"
+  cp "$ide/configuration/config.ini" "$config/config.ini"
+  cp "$ide/configuration/org.eclipse.equinox.simpleconfigurator/bundles.info" \
+     "$config/org.eclipse.equinox.simpleconfigurator/bundles.info"
+  python3 - "$ide" "$config" <<'PY'
+import pathlib, re, sys
+
+install, config = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+
+# p2's data area is written relative to the configuration directory, so it has
+# to be pinned to the installation or the copy would look for a p2 area of its
+# own that is not there
+ini = config / "config.ini"
+ini.write_text(re.sub(r"(?m)^eclipse\.p2\.data\.area=.*$",
+                      "eclipse.p2.data.area=" + str(install / "p2") + "/", ini.read_text()))
+
+# and any line pointing at a substituted jar goes back to the shipped one, so a
+# test never silently measures somebody else's patched bundle
+info = config / "org.eclipse.equinox.simpleconfigurator" / "bundles.info"
+out, restored = [], []
+for line in info.read_text().splitlines():
+    parts = line.split(",")
+    if len(parts) >= 3 and "mcp-substituted" in parts[2]:
+        shipped = sorted((install / "plugins").glob(parts[0] + "_*.jar"))
+        if shipped:
+            jar = shipped[-1]
+            version = jar.stem.split("_", 1)[1]
+            parts[1], parts[2] = version, "plugins/" + jar.name
+            restored.append(parts[0])
+            line = ",".join(parts)
+    out.append(line)
+info.write_text("\n".join(out) + "\n")
+if restored:
+    print("restored to the shipped jar: " + ", ".join(restored))
+PY
+  launch_args+=(-configuration "$config")
+fi
 
 endpoint="$workspace/.metadata/.plugins/com.vogella.eclipse.mcp.server/endpoint.json"
 log="$workspace/.metadata/.log"
@@ -106,7 +154,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "starting $ide on $workspace, port $port"
-setsid "$ide/eclipse" -data "$workspace" -nosplash > "$workspace/launch.log" 2>&1 &
+setsid "$ide/eclipse" -data "$workspace" "${launch_args[@]}" -nosplash > "$workspace/launch.log" 2>&1 &
 pid=$!
 
 deadline=$((SECONDS + timeout))
