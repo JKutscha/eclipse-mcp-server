@@ -63,7 +63,16 @@ public final class ExitTool implements IMcpTool {
 		ToolArguments args = ToolArguments.of(arguments);
 		boolean save = args.getBoolean("save", false); //$NON-NLS-1$
 		boolean force = args.getBoolean("force", false); //$NON-NLS-1$
-		return UiThread.call(UI_TIMEOUT_SECONDS, () -> prepare(save, force));
+		// a refusal has to arrive as an error, the way eclipse_restart's does: a
+		// client that only checks isError would otherwise read "exiting: false" as a
+		// shutdown in progress and wait for a process that is not going anywhere
+		UiThread.Outcome outcome = UiThread.run(UI_TIMEOUT_SECONDS, () -> prepare(save, force));
+		if (outcome.error() != null) {
+			return McpToolResult.error(outcome.error());
+		}
+		JsonObject result = outcome.value();
+		return Boolean.TRUE.equals(result.remove("exiting")) ? McpToolResult.of(result.toString()) //$NON-NLS-1$
+				: McpToolResult.error(result.toString());
 	}
 
 	private static JsonObject prepare(boolean save, boolean force) {
