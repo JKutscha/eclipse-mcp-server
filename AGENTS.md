@@ -220,6 +220,13 @@ That is measured, not argued: the theme session wrote `SHOW_MEMORY_MONITOR` into
 The hazard it was aimed at is real and is handled by reporting instead: a wrongly set compiler or formatter preference is invisible and long-lived, and `previous` in the answer is the only record of what it was.
 Auto-build goes through `IWorkspaceDescription.setAutoBuilding`, not through a raw write of `description.autobuilding`, which is the usual way to get it subtly wrong.
 
+**`eclipse_run_command` has no directory allowlist either, and removing it was the same lesson twice.**
+It was gated behind a list of roots configured in the preference page, empty by default, so the tool answered "running commands is switched off" until somebody filled it in.
+What that produced was not a command that did not run. The client has its own shell: it ran the same command outside the IDE, in the same account, with the same rights, and this server lost the only thing it was adding, which is that the build and the workspace are one picture.
+So the guard cost the visibility rather than the capability, and it took the audit trail with it: a command run through this tool is recorded, pollable through `eclipse_get_command_output` and bounded by a directory the caller had to name, while the one that went around it is none of those.
+`directory` stays required, absolute and checked to exist. That is not a boundary and must not be described as one; it stops a command inheriting whatever working directory the IDE happens to have.
+The preference key and `CommandRoots` are gone rather than left unread, because a preference the page still shows and nothing enforces is worse than none.
+
 **Platform mismatch is read from `Eclipse-PlatformFilter`, not from the project name.**
 `PlatformFilters` parses the manifest header as an OSGi filter and matches it against `osgi.ws`, `osgi.os` and `osgi.arch`.
 The name heuristic is the fallback for projects without the header, and the reason string says which of the two was used.

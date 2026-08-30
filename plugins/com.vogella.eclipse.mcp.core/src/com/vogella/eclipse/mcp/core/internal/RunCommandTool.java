@@ -29,7 +29,7 @@ public final class RunCommandTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Runs a command and captures its output, so that a build a client cannot otherwise reach, such as a Maven or Tycho run that produces a p2 repository, becomes part of one workflow. RUNS ARBITRARY CODE with the rights of the user running the IDE, which is more than anything else this server does: it is the one tool that is not the IDE acting on itself. It is OFF unless the person at the IDE has listed directories commands may run in, under Preferences > General > MCP Server, and a working directory outside those is refused. Runs as a job and returns a commandId to poll through eclipse_get_command_output, because a build takes minutes and the call timeout is 30 seconds by default. Output is merged from stdout and stderr, so a failure appears next to the step that caused it, and the last 2000 lines are kept, because a build log is long and the useful part is at the end."; //$NON-NLS-1$
+		return "Runs a command and captures its output, so that a build a client cannot otherwise reach, such as a Maven or Tycho run that produces a p2 repository, becomes part of one workflow. RUNS ARBITRARY CODE with the rights of the user running the IDE, which is more than anything else this server does: it is the one tool that is not the IDE acting on itself. The working directory is required and absolute, and the command runs there and nowhere else. Runs as a job and returns a commandId to poll through eclipse_get_command_output, because a build takes minutes and the call timeout is 30 seconds by default. Output is merged from stdout and stderr, so a failure appears next to the step that caused it, and the last 2000 lines are kept, because a build log is long and the useful part is at the end."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -40,7 +40,7 @@ public final class RunCommandTool implements IMcpTool {
 				  "properties": {
 				    "command":   {"type":"string","description":"Command line, run through the shell, e.g. 'mvn clean verify -DskipTests'. Use args instead when a value contains characters the shell would interpret."},
 				    "args":      {"type":"array","items":{"type":"string"},"description":"Command and arguments given one by one, executed without a shell. Takes precedence over command, and is the safer form for paths with spaces."},
-				    "directory": {"type":"string","description":"Absolute working directory. Required, and it has to be under one of the allowed roots."},
+				    "directory": {"type":"string","description":"Absolute working directory. Required: the command runs here and nowhere else, so name the project or build tree it belongs to rather than a parent of it."},
 				    "environment": {"type":"object","additionalProperties":{"type":"string"},"description":"Extra environment variables, merged over the IDE's own."},
 				    "wait":      {"type":"boolean","default":false,"description":"Wait for the command instead of returning a handle. Only for something that finishes in seconds; the server aborts any call that outlasts the configured call timeout."},
 				    "timeoutSeconds": {"type":"integer","default":25,"minimum":1,"maximum":3600,"description":"How long to wait when wait is true. Bounded in practice by the server's own call timeout."}
@@ -68,10 +68,6 @@ public final class RunCommandTool implements IMcpTool {
 		if (!Files.isDirectory(directory)) {
 			return McpToolResult.error("There is no directory at '%s'.".formatted(directory)); //$NON-NLS-1$
 		}
-		if (!CommandRoots.allows(directory)) {
-			return McpToolResult.error(CommandRoots.refusal(directory));
-		}
-
 		CommandRegistry.Execution execution = CommandRegistry.getInstance().start(command, directory,
 				environment(arguments));
 		int requested = args.getInt("timeoutSeconds", 25, 1, 3600); //$NON-NLS-1$

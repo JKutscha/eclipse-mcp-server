@@ -20,15 +20,6 @@ public final class McpPreferences {
 	public static final String KEY_CALL_TIMEOUT_SECONDS = "callTimeoutSeconds"; //$NON-NLS-1$
 
 	/**
-	 * Directories a client may run commands in, one per line.
-	 * <p>
-	 * Empty by default, which switches the command tools off. Running a command is
-	 * the one thing this server does that is not the IDE acting on itself, and it
-	 * can do anything the user can.
-	 */
-	public static final String KEY_COMMAND_ROOTS = "commandRoots"; //$NON-NLS-1$
-
-	/**
 	 * Whether this plug-in replaces the IDE's splash screen.
 	 * <p>
 	 * Held in the CONFIGURATION scope and not the instance scope, unlike everything

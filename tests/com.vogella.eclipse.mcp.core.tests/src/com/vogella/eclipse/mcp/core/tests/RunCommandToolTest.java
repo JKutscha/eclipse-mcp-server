@@ -8,56 +8,20 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
-import org.eclipse.core.runtime.preferences.InstanceScope;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.osgi.service.prefs.BackingStoreException;
 
 import com.vogella.eclipse.mcp.core.McpToolResult;
 
+/**
+ * What {@code eclipse_run_command} still checks now that the root allowlist is
+ * gone: that the directory is named, absolute and real.
+ */
 class RunCommandToolTest {
-
-	private static final String QUALIFIER = "com.vogella.eclipse.mcp.server";
-
-	private static final String KEY = "commandRoots";
-
-	@AfterEach
-	void clearRoots() throws BackingStoreException {
-		InstanceScope.INSTANCE.getNode(QUALIFIER).remove(KEY);
-		InstanceScope.INSTANCE.getNode(QUALIFIER).flush();
-	}
-
-	private static void allow(String roots) throws BackingStoreException {
-		InstanceScope.INSTANCE.getNode(QUALIFIER).put(KEY, roots);
-		InstanceScope.INSTANCE.getNode(QUALIFIER).flush();
-	}
-
-	@Test
-	void refusesWhenNoDirectoryIsAllowed() throws Exception {
-		McpToolResult result = TestFixture.call("eclipse_run_command",
-				Map.of("command", "echo hello", "directory", System.getProperty("java.io.tmpdir")));
-
-		assertTrue(result.isError(), "got " + result.text());
-		assertTrue(result.text().contains("switched off"), "got " + result.text());
-	}
-
-	@Test
-	void refusesADirectoryOutsideTheAllowedRoots() throws Exception {
-		Path allowed = Files.createTempDirectory("mcp-command-allowed");
-		allow(allowed.toString());
-
-		McpToolResult result = TestFixture.call("eclipse_run_command",
-				Map.of("command", "echo hello", "directory", System.getProperty("user.dir")));
-
-		assertTrue(result.isError(), "got " + result.text());
-		assertTrue(result.text().contains("not under any directory"), "got " + result.text());
-	}
 
 	@Test
 	@SuppressWarnings("unchecked")
-	void runsAnAllowedCommandAndCapturesItsOutput() throws Exception {
+	void runsACommandAndCapturesItsOutput() throws Exception {
 		Path directory = Files.createTempDirectory("mcp-command-run");
-		allow(directory.toString());
 
 		Map<String, Object> result = TestFixture.callAndParse("eclipse_run_command",
 				Map.of("args", List.of("echo", "from the command"), "directory", directory.toString(),
@@ -76,7 +40,6 @@ class RunCommandToolTest {
 	@Test
 	void reportsAFailingCommandAsFailedWithItsExitCode() throws Exception {
 		Path directory = Files.createTempDirectory("mcp-command-fail");
-		allow(directory.toString());
 
 		Map<String, Object> result = TestFixture.callAndParse("eclipse_run_command",
 				Map.of("args", List.of("sh", "-c", "echo broken >&2; exit 3"), "directory",
@@ -95,5 +58,24 @@ class RunCommandToolTest {
 
 		assertTrue(result.isError(), "got " + result.text());
 		assertTrue(result.text().contains("no directory"), "got " + result.text());
+	}
+
+	@Test
+	void refusesARelativeDirectory() throws Exception {
+		McpToolResult result = TestFixture.call("eclipse_run_command",
+				Map.of("command", "echo hello", "directory", "some/relative/path"));
+
+		assertTrue(result.isError(), "got " + result.text());
+		assertTrue(result.text().contains("not absolute"), "got " + result.text());
+	}
+
+	@Test
+	void refusesWithNoDirectoryAtAll() throws Exception {
+		// the directory stays required: it is what keeps a command from inheriting
+		// whatever the IDE's own working directory happens to be
+		McpToolResult result = TestFixture.call("eclipse_run_command", Map.of("command", "echo hello"));
+
+		assertTrue(result.isError(), "got " + result.text());
+		assertTrue(result.text().contains("directory"), "got " + result.text());
 	}
 }

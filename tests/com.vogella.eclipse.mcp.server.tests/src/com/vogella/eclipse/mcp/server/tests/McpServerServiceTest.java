@@ -81,10 +81,6 @@ class McpServerServiceTest {
 	@BeforeAll
 	static void startServer() throws Exception {
 		InstanceScope.INSTANCE.getNode(McpPreferences.QUALIFIER).putInt(McpPreferences.KEY_PORT, TEST_PORT);
-		// the command tools are off until a directory is allowed, so the smoke test
-		// allows a temporary one rather than asserting that every tool refuses
-		InstanceScope.INSTANCE.getNode(McpPreferences.QUALIFIER).put(McpPreferences.KEY_COMMAND_ROOTS,
-				System.getProperty("java.io.tmpdir"));
 		McpServerService.getInstance().start();
 		assertNotNull(endpoint(), "The server did not report an endpoint");
 		createSampleProject();
@@ -158,7 +154,6 @@ class McpServerServiceTest {
 		}
 		McpServerService.getInstance().stop();
 		InstanceScope.INSTANCE.getNode(McpPreferences.QUALIFIER).remove(McpPreferences.KEY_PORT);
-		InstanceScope.INSTANCE.getNode(McpPreferences.QUALIFIER).remove(McpPreferences.KEY_COMMAND_ROOTS);
 		InstanceScope.INSTANCE.getNode(McpPreferences.QUALIFIER).flush();
 	}
 

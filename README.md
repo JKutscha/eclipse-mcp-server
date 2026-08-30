@@ -69,7 +69,6 @@ Pushing a `v<version>` tag runs the same workflow and additionally creates the G
 * **Enable MCP server**, off by default
 * **Port**, `8642` by default
 * **Tool call timeout**, `30` seconds by default, between 5 and 3600
-* **Directories commands may run in**, empty by default, one path per line. Empty switches `eclipse_run_command` off entirely.
 
 The setting takes effect immediately, and the server also starts on the next IDE startup while it stays enabled.
 
@@ -826,12 +825,18 @@ And `read` or `write` on a type or a method is an error rather than an empty ans
 **Runs arbitrary code**, with the rights of the user running the IDE.
 This is the one tool here that is not the IDE acting on itself, and it exists because a build that produces a p2 repository, a Maven or Tycho run, is otherwise out of reach: with it the chain becomes build, `eclipse_add_repository`, `eclipse_install`, `eclipse_restart`.
 
-**It is off** until the person at the IDE lists the directories commands may run in, under *Preferences > General > MCP Server*. That field is empty by default, and a working directory outside it is refused.
-Paths are compared after resolving symbolic links, so neither `../` nor a link pointing out of an allowed tree gets past it.
+**There is no allowlist of directories, and the one that used to stand here was removed.**
+It gated the tool behind a list of roots that had to be filled in under *Preferences > General > MCP Server*, empty by default, and the effect was not safety.
+A client that is refused here still has its own shell: it runs the same command outside the IDE, in the same account, with the same rights, and the server loses the one thing it was contributing, which is that the build and the workspace are the same picture.
+That is measured rather than argued. The refusal read as "running commands is switched off", and what followed it was the command running anyway somewhere this server could not see.
+So the guard never removed the capability, it removed the visibility, and the audit trail with it: what runs through this tool is recorded, pollable through `eclipse_get_command_output`, and bounded by a working directory the caller had to name.
+This is the same conclusion the `eclipse_set_preference` allowlist reached, for the same reason.
+
+The directory stays required, absolute and real, which is not a boundary and is not meant as one: it keeps a command from inheriting whatever working directory the IDE happens to have, so a relative path in a build script resolves where the caller meant.
 
 | Argument | Type | Default | Meaning |
 |---|---|---|---|
-| `directory` | string, required | | Absolute working directory, under an allowed root. |
+| `directory` | string, required | | Absolute working directory. The command runs here and nowhere else. |
 | `command` | string | | Command line, run through the shell. |
 | `args` | array of string | | Command and arguments one by one, no shell. Wins over `command`. |
 | `environment` | object | | Extra variables, merged over the IDE's own. |
@@ -2324,7 +2329,6 @@ Whether the server runs at all is an *instance* preference, so it belongs to the
 Switching into a workspace that has never had the server switched on would bring the IDE up with nothing listening and no way left to ask why, so the enabled flag, the port and the call timeout are written into the target workspace before the relaunch.
 The answer reports that under `server`, with `carriedOver` false when the workspace already had settings of its own, which are then left alone.
 The bearer token is not copied because it does not need to be: it lives in user scope and is the same in every workspace.
-The directories `eclipse_run_command` may use are deliberately not carried over, since that permission was given for one workspace.
 
 The discovery file is per workspace too, so a client that reads `endpoint.json` has to read the one under the new workspace's `.metadata` after the switch.
 The port does not change, which means reaching `8642` proves nothing on its own: compare `startedAt`, and compare it against the *target's* previous value, since a workspace switched into twice still holds the file from the first visit.

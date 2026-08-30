@@ -288,9 +288,7 @@ public final class RestartTool implements IMcpTool {
 	 * workspace and not to the installation: an untouched workspace has no server
 	 * in it, and the IDE would come up unreachable with nothing left to ask why.
 	 * The bearer token is not copied because it does not have to be, living under
-	 * the user location rather than in a workspace, and the directories commands
-	 * may run in are deliberately left behind: that permission was given for one
-	 * workspace.
+	 * the user location rather than in a workspace.
 	 */
 	public static JsonObject carryTheServerOver(Path workspace) {
 		Path settings = settingsFile(workspace);
@@ -322,7 +320,7 @@ public final class RestartTool implements IMcpTool {
 		}
 		return json.put("carriedOver", Boolean.TRUE) //$NON-NLS-1$
 				.put("note", //$NON-NLS-1$
-						"The server is switched on for that workspace with the same port. The bearer token is the same, it belongs to the user rather than to a workspace, but the discovery file is per workspace and the new one is written under its .metadata. The directories eclipse_run_command may use are NOT carried over."); //$NON-NLS-1$
+						"The server is switched on for that workspace with the same port. The bearer token is the same, it belongs to the user rather than to a workspace, but the discovery file is per workspace and the new one is written under its .metadata."); //$NON-NLS-1$
 	}
 
 	/**
