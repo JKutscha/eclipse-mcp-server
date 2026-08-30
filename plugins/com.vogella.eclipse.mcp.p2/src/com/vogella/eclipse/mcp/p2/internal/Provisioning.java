@@ -69,6 +69,9 @@ final class Provisioning {
 		private volatile boolean changesTruncated;
 		private volatile String previousConfiguration;
 		private volatile JsonArray trustPrompts = new JsonArray();
+
+		/** How many p2 asked about, which is more than the list keeps. */
+		private volatile int trustPromptCount;
 		private volatile boolean trustedUnsigned;
 		private volatile Job job;
 
@@ -93,7 +96,8 @@ final class Provisioning {
 					// one key whatever happened: naming it after the intention hid what
 					// p2 had actually asked about when the operation then failed on trust
 					.put("trustPrompts", trustPrompts) //$NON-NLS-1$
-					.put(trustedUnsigned ? "trustedContent" : "refusedTrust", trustPrompts); //$NON-NLS-1$ //$NON-NLS-2$
+					.put("trustPromptsTotal", Integer.valueOf(trustPromptCount)) //$NON-NLS-1$
+					.put("trustPromptsTruncated", Boolean.valueOf(trustPromptCount > trustPrompts.size())); //$NON-NLS-1$
 			if (changesTotal >= 0) {
 				json.put("total", Integer.valueOf(changesTotal)).put("truncated", Boolean.valueOf(changesTruncated)); //$NON-NLS-1$ //$NON-NLS-2$
 			}
@@ -209,6 +213,7 @@ final class Provisioning {
 		JsonArray prompts = new JsonArray();
 		trust.prompts().forEach(prompts::add);
 		operation.trustPrompts = prompts;
+		operation.trustPromptCount = trust.promptCount();
 		operation.trustedUnsigned = trustUnsigned && trust.prompted();
 	}
 

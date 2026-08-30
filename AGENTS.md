@@ -32,6 +32,8 @@ plugins/com.vogella.eclipse.mcp.jdt      Java model tools, declaration sweep and
 plugins/com.vogella.eclipse.mcp.ui       editor, view, perspective and layout tools, compare, screenshots, preference page, startup hook
 plugins/com.vogella.eclipse.mcp.pde      PDE tools
 plugins/com.vogella.eclipse.mcp.debug    breakpoint tools, debug session tools, session registry
+plugins/com.vogella.eclipse.mcp.git      EGit tools, checkout and pull request fetch
+plugins/com.vogella.eclipse.mcp.p2       provisioning tools, repositories, install, update, headless trust
 features/com.vogella.eclipse.mcp.feature
 tests/com.vogella.eclipse.mcp.core.tests    the tools, headless
 tests/com.vogella.eclipse.mcp.server.tests  the HTTP endpoint, driven by a real MCP client
@@ -404,14 +406,26 @@ Before adding a tool that runs project code or touches the installation, look fo
 
 **p2 prompts block a provisioning job, and a blocked job looks like a slow download.**
 The IDE's `UIServices` raises a modal dialog for unsigned content, and from a client that is indistinguishable from a slow mirror until the call times out.
-`HeadlessTrust` replaces it for the duration of a provisioning call: it answers rather than prompting, refuses by default, and records what it refused so the result says why.
-Do not make `trustUnsigned` default to true. The repository allowlist restricts where code comes from; trusting unsigned artifacts removes the remaining check on what that code is.
+`HeadlessTrust` replaces it for the duration of a provisioning call: it answers rather than prompting, and records what it was asked about so the result says why an install went through or did not.
+`trustUnsigned` defaults to true, and that was a reversal.
+It defaulted to false on the argument that the repository allowlist bounds where code comes from and trusting unsigned artifacts removes the remaining check on what that code is.
+Two things broke that argument.
+`eclipse_add_repository` lets a client configure a new site, so the allowlist never was the bound it was taken for: whoever can call these tools already decides what gets installed.
+And a locally built p2 repository is unsigned by definition, so the default made the self-update workflow these tools exist for impossible however the caller asked, which is worse than the risk it was refusing.
+What must stay is the part that makes an accepted install auditable rather than silent: `persistTrust` false so nothing reaches the IDE's permanent trust store, `trustAlways` never returned because p2 writes it into a preference and a switch flipped once is never flipped back, and every prompt recorded.
+Do not "simplify" `HeadlessTrust` by returning `trustAlways`, and do not stop recording.
+
+**The trust prompt list is capped, and the count is the honest number.**
+An SDK install asks about hundreds of artifacts, so `prompts` stops at `MAX_PROMPTS` while `promptCount` keeps counting, and the answer carries `trustPrompts`, `trustPromptsTotal` and `trustPromptsTruncated`.
+The list is evidence of what kind of content was accepted, not a manifest of it.
+The result used to also repeat the same array under `trustedContent` or `refusedTrust` depending on the outcome; naming a key after the intention hid what p2 had actually asked about when the operation then failed on trust, so there is one key whatever happened and `trustedUnsigned` carries the verdict.
 
 **The provisioning tools update the IDE that is running them.**
 If a bad build lands, the tools that would fix it are the tools that just broke.
 `eclipse_restart` therefore lives in the ui bundle and does not depend on the p2 bundle, so a half applied update can still be recovered, and every provisioning result carries the previous configuration timestamp so a human can revert from Installation History without the server.
 `eclipse_install` refuses repositories the IDE is not already configured with: adding one fetches and runs code from a new source, which is the user's decision and not the server's.
 Do not replace that allowlist with a single opt-in preference; a switch flipped once is never flipped back.
+It is friction on the way to a new source and not a security boundary, because `eclipse_add_repository` configures one through this same server; read it that way and do not build another guard on top of it, which is the mistake `trustUnsigned` made.
 
 **`SearchMatch.getResource()` lies about where a binary match lives.**
 For a match inside a jar it returns the project that owns the classpath entry, so the path is a bare project name with no file component and the project attribution is affirmatively wrong.

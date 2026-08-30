@@ -30,7 +30,12 @@ final class HeadlessTrust extends UIServices {
 
 	private final boolean trustUnsigned;
 
+	/** An SDK install asks about hundreds of artifacts; the list is evidence, not a manifest. */
+	private static final int MAX_PROMPTS = 25;
+
 	private final List<String> prompts = new ArrayList<>();
+
+	private int promptCount;
 
 	private volatile boolean prompted;
 
@@ -42,9 +47,21 @@ final class HeadlessTrust extends UIServices {
 		return prompted;
 	}
 
-	/** What p2 asked about, whether it was then trusted or refused. */
+	/** What p2 asked about, whether it was then trusted or refused, capped. */
 	synchronized List<String> prompts() {
 		return List.copyOf(prompts);
+	}
+
+	/** How many it asked about in total, which is usually more than the list holds. */
+	synchronized int promptCount() {
+		return promptCount;
+	}
+
+	private void record(String prompt) {
+		promptCount++;
+		if (prompts.size() < MAX_PROMPTS) {
+			prompts.add(prompt);
+		}
 	}
 
 	@Override
@@ -83,15 +100,14 @@ final class HeadlessTrust extends UIServices {
 		synchronized (this) {
 			if (unsignedDetail != null) {
 				for (String detail : unsignedDetail) {
-					prompts.add(trustUnsigned ? "unsigned: " + detail : "REFUSED, unsigned: " + detail);
+					record(trustUnsigned ? "unsigned: " + detail : "REFUSED, unsigned: " + detail);
 				}
 			}
 			for (Certificate certificate : certificates) {
-				prompts.add((trustUnsigned ? "certificate: " : "REFUSED, certificate: ") + describe(certificate));
+				record((trustUnsigned ? "certificate: " : "REFUSED, certificate: ") + describe(certificate));
 			}
 			for (PGPPublicKey key : keys) {
-				prompts.add((trustUnsigned ? "PGP key: " : "REFUSED, PGP key: ")
-						+ Long.toHexString(key.getKeyID()));
+				record((trustUnsigned ? "PGP key: " : "REFUSED, PGP key: ") + Long.toHexString(key.getKeyID()));
 			}
 		}
 		if (!trustUnsigned) {
@@ -117,7 +133,7 @@ final class HeadlessTrust extends UIServices {
 	public AuthenticationInfo getUsernamePassword(String location) {
 		prompted = true;
 		synchronized (this) {
-			prompts.add("credentials for " + location);
+			record("credentials for " + location);
 		}
 		return AUTHENTICATION_PROMPT_CANCELED;
 	}
