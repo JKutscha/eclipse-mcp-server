@@ -225,6 +225,9 @@ public final class ScreenshotTools {
 					    "outputPath": {"type":"string","description":"Absolute file to write. Defaults to a temporary file."},
 					    "includeBase64": {"type":"boolean","default":false,"description":"Also return the image inline. Large; prefer reading the file."},
 				    "highlights": {"type":"array","description":"Rectangles to draw onto the image after the capture, each {path?, bounds?, color?, label?, style?, padding?, lineWidth?, labelPosition?}: path is a widget path from eclipse_get_widget_tree relative to the capture target, bounds is 'x,y wxh' in points relative to the capture target, color is #rrggbb (default #ff0066, which reads on light and dark themes), label is drawn in a filled box beside the rectangle, style is outline (default) or fill (translucent). padding adds air around the rectangle IN POINTS, one number for every side or 'top,right,bottom,left', applied after the rectangle is resolved and before it is scaled, which is the only way to frame a widget loosely when the rectangle came from a path. lineWidth is the outline in pixels, 3 by default. labelPosition is above (default), below, left, right or inside, for keeping a label off a neighbouring element. The answer reports the padded rectangle under pointsInTarget and the pixels actually drawn under pixels.","items":{"type":"object","properties":{"path":{"type":"string"},"bounds":{"type":"string"},"color":{"type":"string"},"label":{"type":"string"},"style":{"type":"string","enum":["outline","fill"]},"padding":{"type":["integer","string"]},"lineWidth":{"type":"integer","minimum":1,"maximum":40},"labelPosition":{"type":"string","enum":["above","below","left","right","inside"]}},"additionalProperties":false}},
+				    "settle": {"type":"boolean","default":false,"description":"Wait for the UI to look idle before capturing, the same heuristic eclipse_wait_until_settled runs, and report it under 'settle'. IT IS A HEURISTIC: it drains the display queue and waits for the job manager, and it cannot see work on a plain background thread, so JDT's semantic highlighting can still land after the capture. Assert what you need rather than trusting it."},
+				    "settleTimeoutSeconds": {"type":"integer","default":10,"minimum":1,"maximum":120,"description":"Budget for 'settle'. Running out still captures, and the report says it did not settle."},
+				    "suppressCaret": {"type":"boolean","default":false,"description":"Take the text caret out of every StyledText under the target for the duration of the capture, and put it back afterwards. SWT draws and blinks the caret itself, so gtk-cursor-blink=false does not reach it, and two captures of a focused editor otherwise differ by the caret alone, which is enough to make a pixel comparison never agree. Reported under caretsSuppressed. Off by default, because a capture taken to look AT the caret must still show it."},
 				    "includeToolbar": {"type":"boolean","default":false,"description":"For a part, capture the whole part stack instead: the tabs and any sibling view sharing the stack. KNOWN GAP: it does NOT paint the CTabFolder's topRight children, which are the view toolbar, the view menu and the min and max buttons, and nothing in the answer says they are missing. To see those, capture target=shell and crop to the bounds eclipse_get_widget_tree reports for them."}
 					  },
 					  "additionalProperties": false
@@ -261,13 +264,22 @@ public final class ScreenshotTools {
 			// runnable, and it means no paint has been dispatched since the widgets
 			// this batch created came into existence.
 			boolean sameTurn = UiThread.onUiThread();
-			return onUi(() -> capture(target, part, shellTitle, activate, maxWidth, outputPath, includeBase64,
-					args.getBoolean("includeToolbar", false), highlights, sameTurn), JsonObject::toString); //$NON-NLS-1$
+			// before the UI hop, because the fence it posts has to be waited for from
+			// off the UI thread; inside an atomic batch it refuses and says why
+			JsonObject settled = args.getBoolean("settle", false) //$NON-NLS-1$
+					? UiSettle.settle(3, args.getInt("settleTimeoutSeconds", 10, 1, 120) * 1000L, 120) //$NON-NLS-1$
+					: null;
+			boolean suppressCaret = args.getBoolean("suppressCaret", false); //$NON-NLS-1$
+			return onUi(() -> {
+				JsonObject answer = capture(target, part, shellTitle, activate, maxWidth, outputPath, includeBase64,
+						args.getBoolean("includeToolbar", false), highlights, sameTurn, suppressCaret); //$NON-NLS-1$
+				return settled == null ? answer : answer.put("settle", settled); //$NON-NLS-1$
+			}, JsonObject::toString);
 		}
 
 		private static JsonObject capture(String target, String partId, String shellTitle, boolean activate,
 				int maxWidth, String outputPath, boolean includeBase64, boolean includeToolbar, Object highlights,
-				boolean sameTurn) {
+				boolean sameTurn, boolean suppressCaret) {
 			Display display = PlatformUI.getWorkbench().getDisplay();
 			Rectangle area;
 			// the bounds of what the caller named, which the answer reports even when
@@ -333,6 +345,13 @@ public final class ScreenshotTools {
 			if (screenUnreliable) {
 				printable.update();
 			}
+			// SWT draws and blinks the caret itself, so gtk-cursor-blink=false never
+			// reaches it and two captures of a focused editor differ by the caret
+			// alone. Taken out for the duration and put back in the finally below,
+			// because leaving an editor with no caret would be a far worse bug than
+			// the one this avoids
+			List<SuppressedCaret> carets = suppressCaret ? suppressCarets(printable) : List.of();
+			try {
 			Image image = new Image(display, area.width, area.height);
 			String method = "rootCapture"; //$NON-NLS-1$
 			int zoom = 100;
@@ -448,9 +467,69 @@ public final class ScreenshotTools {
 											Integer.valueOf(area.width), Integer.valueOf(area.height),
 											Integer.valueOf(zoom)));
 				}
+				if (!carets.isEmpty()) {
+					written.put("caretsSuppressed", Integer.valueOf(carets.size())) //$NON-NLS-1$
+							.put("caretNote", //$NON-NLS-1$
+									"The text caret was taken out of %d StyledText widgets for this capture and put back afterwards, so the image has no caret in it and two captures of the same state can be identical. SWT blinks the caret itself, which is why no window system setting stops it." //$NON-NLS-1$
+											.formatted(Integer.valueOf(carets.size())));
+				}
 				return written;
 			} finally {
 				image.dispose();
+			}
+			} finally {
+				restoreCarets(carets);
+			}
+		}
+
+		/** A StyledText and the caret taken off it, so it can be put back. */
+		private record SuppressedCaret(org.eclipse.swt.custom.StyledText text, org.eclipse.swt.widgets.Caret caret) {
+		}
+
+		/**
+		 * Takes the caret off every StyledText under {@code root}.
+		 * <p>
+		 * {@code setCaret(null)} rather than {@code Caret.setVisible(false)}: StyledText
+		 * manages caret visibility from setCaretLocations as the offset changes, so a
+		 * hidden caret comes back the moment anything moves it, while a null caret
+		 * clears the Canvas caret and StyledText's own carets array together and stays
+		 * gone until it is put back.
+		 */
+		private static List<SuppressedCaret> suppressCarets(Control root) {
+			if (root == null) {
+				return List.of();
+			}
+			List<SuppressedCaret> taken = new ArrayList<>();
+			collectCarets(root, taken);
+			return taken;
+		}
+
+		private static void collectCarets(Control control, List<SuppressedCaret> into) {
+			if (control instanceof org.eclipse.swt.custom.StyledText text && !text.isDisposed()) {
+				org.eclipse.swt.widgets.Caret caret = text.getCaret();
+				if (caret != null) {
+					into.add(new SuppressedCaret(text, caret));
+					text.setCaret(null);
+				}
+			}
+			if (control instanceof Composite composite && !composite.isDisposed()) {
+				for (Control child : composite.getChildren()) {
+					collectCarets(child, into);
+				}
+			}
+		}
+
+		/** Puts every caret back, whatever the capture did. */
+		private static void restoreCarets(List<SuppressedCaret> taken) {
+			for (SuppressedCaret entry : taken) {
+				try {
+					if (!entry.text().isDisposed() && !entry.caret().isDisposed()) {
+						entry.text().setCaret(entry.caret());
+					}
+				} catch (RuntimeException e) {
+					// an editor closed mid capture is not a reason to fail the answer,
+					// and a disposed StyledText has no caret to lose
+				}
 			}
 		}
 

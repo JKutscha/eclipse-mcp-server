@@ -1,0 +1,151 @@
+package com.vogella.eclipse.mcp.ui.internal;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+
+import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.swt.widgets.Display;
+import org.eclipse.ui.PlatformUI;
+
+import com.vogella.eclipse.mcp.core.json.JsonArray;
+import com.vogella.eclipse.mcp.core.json.JsonObject;
+
+/**
+ * Waits until the UI looks to have stopped working, and says what it could not
+ * see while deciding that.
+ * <p>
+ * THIS IS A HEURISTIC AND THE ANSWER SAYS SO. Two things are observable from
+ * outside: work queued with {@code asyncExec}, which a fence posted to the
+ * Display proves has drained, and the job manager, which reports what is
+ * running, waiting or sleeping. A third is not observable at all, and it is the
+ * one that matters most in practice: work on a plain background thread. JDT's
+ * presentation reconciler is a {@code Thread} rather than a {@code Job}, so
+ * neither mechanism here knows it exists, and semantic highlighting can still
+ * arrive after this has answered settled.
+ * <p>
+ * So this reduces flakiness and cannot remove it. A caller that needs to be
+ * right asserts the thing it cares about, the way a content assist scenario
+ * checks that the proposal rows are there rather than waiting for them to be.
+ */
+final class UiSettle {
+
+	/** Long enough that a busy UI thread is visible, short enough not to dominate a pass. */
+	private static final long FENCE_BUDGET_MILLIS = 250;
+
+	private UiSettle() {
+	}
+
+	/**
+	 * Runs rounds of fence-then-check until {@code quietPasses} consecutive ones
+	 * find nothing, or the budget runs out.
+	 *
+	 * @param quietPasses how many consecutive quiet rounds count as settled
+	 * @param timeoutMillis the whole budget, after which it answers unsettled
+	 * @param pauseMillis how long to wait between rounds, which is what gives
+	 *        work scheduled with a small delay a chance to appear
+	 */
+	static JsonObject settle(int quietPasses, long timeoutMillis, long pauseMillis) {
+		if (UiThread.onUiThread()) {
+			// a fence posted from the UI thread would be run by the very thread that
+			// is waiting for it, so it proves nothing and could not drain anything
+			// that is not already done
+			return new JsonObject().put("settled", Boolean.FALSE) //$NON-NLS-1$
+					.put("reason", //$NON-NLS-1$
+							"This call is already on the UI thread, which is what eclipse_run_script with atomic does. Nothing can drain the display queue from inside it, because the runnables waiting there are behind this one. Settle outside the atomic batch, before it starts.");
+		}
+		Display display = PlatformUI.getWorkbench().getDisplay();
+		long deadline = System.currentTimeMillis() + timeoutMillis;
+		long started = System.currentTimeMillis();
+		int rounds = 0;
+		int consecutive = 0;
+		long slowestFence = 0;
+		JsonObject jobs = null;
+		while (System.currentTimeMillis() < deadline) {
+			rounds++;
+			long fence = fence(display, deadline - System.currentTimeMillis());
+			slowestFence = Math.max(slowestFence, Math.max(fence, 0));
+			jobs = jobSnapshot();
+			boolean uiBusy = fence < 0 || fence > FENCE_BUDGET_MILLIS;
+			boolean jobsBusy = Boolean.TRUE.equals(jobs.remove("busy")); //$NON-NLS-1$
+			if (uiBusy || jobsBusy) {
+				consecutive = 0;
+			} else {
+				consecutive++;
+				if (consecutive >= quietPasses) {
+					return answer(true, rounds, consecutive, started, slowestFence, jobs, null);
+				}
+			}
+			sleep(pauseMillis);
+		}
+		return answer(false, rounds, consecutive, started, slowestFence, jobs,
+				"The budget ran out with %d of the %d consecutive quiet rounds needed. Something kept the UI thread or the job manager busy; jobs below is what it looked like at the end."
+						.formatted(Integer.valueOf(consecutive), Integer.valueOf(quietPasses)));
+	}
+
+	private static JsonObject answer(boolean settled, int rounds, int consecutive, long started, long slowestFence,
+			JsonObject jobs, String reason) {
+		return new JsonObject().put("settled", Boolean.valueOf(settled)) //$NON-NLS-1$
+				.put("rounds", Integer.valueOf(rounds)) //$NON-NLS-1$
+				.put("consecutiveQuietRounds", Integer.valueOf(consecutive)) //$NON-NLS-1$
+				.put("elapsedMillis", Long.valueOf(System.currentTimeMillis() - started)) //$NON-NLS-1$
+				.put("slowestFenceMillis", Long.valueOf(slowestFence)) //$NON-NLS-1$
+				.put("jobs", jobs) //$NON-NLS-1$
+				.put("reason", reason) //$NON-NLS-1$
+				.put("cannotSee", //$NON-NLS-1$
+						"Work on a plain background thread, which is neither a queued runnable nor a job. JDT's presentation reconciler is one of those, so semantic highlighting can arrive after this answers settled. Delayed work that has not been scheduled yet is invisible for the same reason. THIS IS A HEURISTIC: assert what you actually need rather than trusting it.");
+	}
+
+	/**
+	 * Posts a runnable to the Display and waits for it.
+	 * <p>
+	 * When it runs, everything queued before it has already run, which is the only
+	 * way to drain the queue from outside the UI thread. How long it took is also
+	 * the measurement: a fence that waits is a UI thread that was busy.
+	 *
+	 * @return the milliseconds it took, or -1 when it did not run in time
+	 */
+	private static long fence(Display display, long budgetMillis) {
+		if (budgetMillis <= 0) {
+			return -1;
+		}
+		CompletableFuture<Long> ran = new CompletableFuture<>();
+		long posted = System.currentTimeMillis();
+		display.asyncExec(() -> ran.complete(Long.valueOf(System.currentTimeMillis() - posted)));
+		try {
+			return ran.get(budgetMillis, TimeUnit.MILLISECONDS).longValue();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return -1;
+		} catch (Exception e) {
+			return -1;
+		}
+	}
+
+	/** What the job manager is doing, with a busy flag the caller removes before reporting. */
+	private static JsonObject jobSnapshot() {
+		JsonArray running = new JsonArray();
+		boolean busy = false;
+		for (Job job : Job.getJobManager().find(null)) {
+			int state = job.getState();
+			if (state == Job.NONE || job.isSystem()) {
+				continue;
+			}
+			// a sleeping job is scheduled for later and counts as busy: it is exactly
+			// the decoration-after-the-build case that a pixel comparison misses
+			busy = true;
+			if (running.size() < 20) {
+				running.add(new JsonObject().put("name", job.getName()) //$NON-NLS-1$
+						.put("state", state == Job.RUNNING ? "running" : state == Job.WAITING ? "waiting" : "sleeping")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+			}
+		}
+		return new JsonObject().put("busy", Boolean.valueOf(busy)).put("nonSystemJobs", running); //$NON-NLS-1$ //$NON-NLS-2$
+	}
+
+	private static void sleep(long millis) {
+		try {
+			Thread.sleep(millis);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
+	}
+}
