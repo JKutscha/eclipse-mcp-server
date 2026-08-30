@@ -111,16 +111,22 @@ public final class DismissDialogTool implements IMcpTool {
 		}
 		if (button == null) {
 			shell.close();
-			return result.put("dismissed", Boolean.TRUE).put("action", "closed"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+			return result.put("dismissed", Boolean.TRUE).put("action", "closed") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+					.put("shellClosed", Boolean.valueOf(shell.isDisposed())); //$NON-NLS-1$
 		}
 		Button target = findButton(shell, button);
 		if (target == null) {
 			return result.put("dismissed", Boolean.FALSE) //$NON-NLS-1$
 					.put("reason", "No button labelled '%s' on this dialog.".formatted(button)); //$NON-NLS-1$ //$NON-NLS-2$
 		}
+		// read the label before pressing: the button that closes the dialog disposes
+		// itself along with the shell, so reading it afterwards throws "Widget is
+		// disposed" and reported a completed press as a failed call
+		String pressed = label(target);
 		// a selection event, which is what a real click sends to the dialog's listeners
 		target.notifyListeners(SWT.Selection, new Event());
-		return result.put("dismissed", Boolean.TRUE).put("action", "pressed " + label(target)); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		return result.put("dismissed", Boolean.TRUE).put("action", "pressed " + pressed) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+				.put("shellClosed", Boolean.valueOf(shell.isDisposed())); //$NON-NLS-1$
 	}
 
 	private static Shell find(Display display, String title) {
