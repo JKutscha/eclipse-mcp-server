@@ -427,6 +427,12 @@ If a bad build lands, the tools that would fix it are the tools that just broke.
 Do not replace that allowlist with a single opt-in preference; a switch flipped once is never flipped back.
 It is friction on the way to a new source and not a security boundary, because `eclipse_add_repository` configures one through this same server; read it that way and do not build another guard on top of it, which is the mistake `trustUnsigned` made.
 
+**Read what the answer needs off a widget before the action that disposes it.**
+`eclipse_dismiss_dialog` built its success message as `"pressed " + label(target)` after `notifyListeners` had already run, and the button that closes a JFace dialog disposes itself along with the shell.
+Every press that actually worked therefore came back as `SWTException: Widget is disposed`, and the dialog was gone by the time the error arrived: a completed operation reported as a failed call, which is the one thing an answer must never do.
+The press was never the problem, so nothing in the tool looked wrong; the reporting was.
+This generalises past dialogs. Any tool whose action can dispose what it is about reads its labels, titles and bounds first, and reports disposal as a fact of its own, the way `shellClosed` now does, rather than discovering it by throwing.
+
 **`SearchMatch.getResource()` lies about where a binary match lives.**
 For a match inside a jar it returns the project that owns the classpath entry, so the path is a bare project name with no file component and the project attribution is affirmatively wrong.
 `JavaModelSupport.describeLocation` is the only place that should turn a match into path/project/library: it reports `origin` and puts the jar in `library` with path and project null.
