@@ -45,4 +45,16 @@ class CaptureForegroundTest {
 		assertTrue(schema.contains("ASKS for focus"), "got " + schema);
 		assertTrue(schema.contains("may refuse"), "got " + schema);
 	}
+
+	@Test
+	void theVisibilityToolSaysHowItAsked() {
+		IMcpTool visibility = TestFixture.tool("eclipse_set_ide_visibility");
+		String schema = visibility.getInputSchema();
+
+		// asking is not one thing: a plain SetForegroundWindow is refused on
+		// Windows to a process that is not already in front, so the answer has to
+		// say which route was taken before 'foreground' false means anything
+		assertTrue(schema.contains("foregroundMethod"), "got " + schema);
+		assertTrue(schema.contains("input queue"), "got " + schema);
+	}
 }

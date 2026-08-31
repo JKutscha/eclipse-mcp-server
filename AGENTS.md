@@ -562,6 +562,15 @@ The first run on Windows found one the reading had missed, which is the calibrat
 The rest were found by reading rather than by failing, which means the review is the record: shell selection in `eclipse_run_command`, the URL-to-path conversions above, CRLF line endings in `eclipse_edit_file`, a Windows drive letter read as a URI scheme in `eclipse_apply_css`, an unquoted flight recording path with a space in it, and the token file's access rights, which POSIX permissions cannot express on Windows and an ACL can.
 Prefer `FileLocations.isWindows()` over a fresh `os.name` test, and `Path.startsWith` over a string prefix, since path comparison is case insensitive on Windows and a text one is not.
 
+**`Shell.forceActive` is refused on Windows, and the refusal is silent.**
+It ends in `SetForegroundWindow`, which Windows grants only to a process that already owns the foreground; anyone else gets a returning call, a flashing taskbar button and no raise.
+So `eclipse_set_ide_visibility` reported focus while the terminal that made the call stayed in front, and a screen read then photographed that.
+`NativeForeground` attaches this thread's input queue to the queue owning the foreground for the length of the raise, which is the exception Windows itself documents, and detaches in a `finally`: a shared input queue left behind makes this IDE's keyboard state follow another process for good.
+While attached, input-state calls synchronize on the shared queue, so it never attaches to a window `IsHungAppWindow` reports as not responding; a frozen program in front costs the old taskbar flash rather than an IDE hung with it.
+It reaches `org.eclipse.swt.internal.win32.OS` by name through SWT's own class loader, the way `DisplayScaling` reaches DPIUtil, so the bundle stays cross platform.
+The attachment can be refused too, so `foreground` is still read back rather than promised, and `foregroundMethod` says which route was taken.
+Written on Linux and unverified on Windows.
+
 **Windows has two code pages and `native.encoding` reports the wrong one for a spawned process.**
 It is the ANSI code page, while cmd.exe and the tools it starts write the OEM one, so `echo äöü` came back from `eclipse_run_command` as `„”�á`: readable-looking, wrong, and silent.
 Only `chcp` knows the number, so `CommandRegistry` asks once and caches it.

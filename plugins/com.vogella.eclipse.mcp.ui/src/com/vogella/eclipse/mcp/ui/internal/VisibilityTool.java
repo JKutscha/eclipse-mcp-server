@@ -50,7 +50,7 @@ public final class VisibilityTool implements IMcpTool {
 				  "type": "object",
 				  "required": ["visible"],
 				  "properties": {
-				    "visible": {"type":"boolean","description":"False takes the IDE off the screen, true brings it back, unminimizes it and ASKS for focus. The window system may refuse the focus part, so the answer reports 'foreground' for what actually happened rather than promising it."},
+				    "visible": {"type":"boolean","description":"False takes the IDE off the screen, true brings it back, unminimizes it and ASKS for focus. The window system may refuse the focus part, so the answer reports 'foreground' for what actually happened rather than promising it, and 'foregroundMethod' for how it was asked: on Windows a plain request is refused to a process that is not already in front, so the raise falls back to attaching to the foreground thread's input queue."},
 				    "mode":    {"type":"string","enum":["hidden","minimized"],"default":"hidden","description":"How to take it off the screen. Ignored when visible is true."}
 				  },
 				  "additionalProperties": false
@@ -102,10 +102,22 @@ public final class VisibilityTool implements IMcpTool {
 				// says nothing. Reporting what actually happened is the difference
 				// between a caller that can check and one that photographs a browser.
 				boolean active = shell.getDisplay().getActiveShell() != null;
-				entry.put("foreground", Boolean.valueOf(active)); //$NON-NLS-1$
+				String method = "forceActive"; //$NON-NLS-1$
+				String nativeRefusal = null;
+				if (!active && NativeForeground.isSupported()) {
+					nativeRefusal = NativeForeground.raise(shell);
+					active = shell.getDisplay().getActiveShell() != null;
+					if (nativeRefusal == null) {
+						method = "attachThreadInput"; //$NON-NLS-1$
+					}
+				}
+				entry.put("foreground", Boolean.valueOf(active)) //$NON-NLS-1$
+						.put("foregroundMethod", method); //$NON-NLS-1$
 				if (!active) {
-					entry.put("foregroundNote", //$NON-NLS-1$
-							"Focus was requested and the window system did not grant it, which it is entitled to do: Windows refuses the foreground to a process that does not already own it, and most window managers do the same. The window is visible and unminimized, but something else is still in front, so a screen read would photograph that instead. eclipse_screenshot reports the same state as 'foreground'."); //$NON-NLS-1$
+					entry.put("foregroundNote", nativeRefusal != null //$NON-NLS-1$
+							? "Focus was requested, the window system did not grant it, and the native raise that works around the Windows foreground lock could not run: %s. The window is visible and unminimized, but something else is still in front, so a screen read would photograph that instead. eclipse_screenshot reports the same state as 'foreground'." //$NON-NLS-1$
+									.formatted(nativeRefusal)
+							: "Focus was requested and the window system did not grant it, which it is entitled to do: most window managers refuse the foreground to a process that does not already own it, and on Windows the input-queue attachment that works around it can be refused as well. The window is visible and unminimized, but something else is still in front, so a screen read would photograph that instead. eclipse_screenshot reports the same state as 'foreground'."); //$NON-NLS-1$
 				}
 			}
 			windows.add(entry);
