@@ -6,9 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -88,12 +90,27 @@ class FetchPullRequestToolTest {
 		if (api != null) {
 			api.stop(0);
 		}
-		if (root == null || !Files.exists(root)) {
-			return;
-		}
-		try (var walk = Files.walk(root)) {
-			for (Path path : walk.sorted(Comparator.reverseOrder()).toList()) {
-				Files.deleteIfExists(path);
+		delete(root);
+	}
+
+	/**
+	 * Deletes the temporary clone, retrying whatever is left over.
+	 * <p>
+	 * One walk is not enough: jgit's own background work writes a lock or a log
+	 * file into a directory the walk has already listed, and that directory then
+	 * fails to delete while everything around it succeeds, which fails the test
+	 * that happened to run last rather than anything that is wrong.
+	 */
+	private static void delete(Path directory) throws IOException {
+		for (int attempt = 0; directory != null && attempt < 5 && Files.exists(directory); attempt++) {
+			try (var walk = Files.walk(directory)) {
+				for (Path path : walk.sorted(Comparator.reverseOrder()).toList()) {
+					try {
+						Files.deleteIfExists(path);
+					} catch (DirectoryNotEmptyException e) {
+						// something appeared after the walk listed it, so the next attempt takes it
+					}
+				}
 			}
 		}
 	}
