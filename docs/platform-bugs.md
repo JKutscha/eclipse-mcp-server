@@ -310,3 +310,18 @@ Attempts to compose the stack (folder chrome plus per-child prints, with and wit
 For now `eclipse_screenshot` on a HiDPI monitor is trustworthy for `target: part` and `target: display`; a `part` capture already contains the whole `SourceViewer`, meaning the vertical ruler, the line numbers, the overview ruler, the squiggles and the caret, which is what a caller documenting editor drawing needs.
 `includeToolbar` and a `shell` capture keep the 2x limitation until the print path is understood.
 Nothing filed upstream yet.
+
+## `SmartImportJob` leaves auto-build switched off when an import fails
+
+Observed 2026-08-31 on 4.42 while replacing `eclipse_import_project` with the platform's own smart import (`org.eclipse.ui.ide`, `org.eclipse.ui.internal.wizards.datatransfer.SmartImportJob`).
+
+`run(IProgressMonitor)` reads `workspace.isAutoBuilding()`, switches auto-build off, and switches it back on near the end of the same `try` block.
+The `catch (Exception ex)` below that returns an error status without restoring it, and there is no `finally` anywhere in the file.
+So any exception in between, a `CoreException` out of project creation or anything a third party `ProjectConfigurator` throws, returns a failed import and leaves the workspace with auto-build off, silently and for good.
+`ImportProjectTool` restores what it found in its own `finally` rather than trusting the job.
+
+The same class also calls `PlatformUI.getWorkbench().getWorkingSetManager().addToWorkingSets(res, this.workingSets)` unconditionally in `toExistingOrNewProject`, on every project it creates, without checking whether any working set was asked for.
+Adding to zero working sets is a no-op, but the call still forces `PlatformUI.getWorkbench()`, so the class cannot run without a workbench even when no working set is involved.
+That is why this tool lives in the ui bundle and refuses headlessly instead of being testable in the core test run.
+
+Not filed upstream yet; a task description for both was handed to a session working in `eclipse.platform.ui`.

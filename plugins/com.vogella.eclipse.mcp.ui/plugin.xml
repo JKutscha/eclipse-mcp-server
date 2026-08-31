@@ -49,6 +49,7 @@
       <tool class="com.vogella.eclipse.mcp.ui.internal.CommandTools$ListCommands"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.CommandTools$Run"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.WindowTools"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.ImportProjectTool"/>
    </extension>
 
    <extension point="org.eclipse.ui.preferencePages">

@@ -349,6 +349,14 @@ It once reported the same four points for two projects that contributed to none 
 What is actually needed is `kind="java"` and `basedOn` on one element, which is far smaller to own than PDE's schema model.
 If a real case turns up that needs schema includes or inherited attributes, that is when this tradeoff is worth revisiting.
 
+**`eclipse_import_project` is the second discouraged dependency, and it is why the tool is not in core.**
+`SmartImportJob` is `x-internal` in `org.eclipse.ui.ide`, with no friends list at all, so it stands on weaker ground than `CleanUpConstants` does.
+It was taken because the hand written walk for `.project` files it replaced could not import a Maven or Gradle module that has no `.project` yet, which is the case a client hits first on a repository nobody has opened here before, and no public entry point drives the configurators.
+The detection is also better than what it replaced: `EclipseProjectConfigurator` collects `.project` files at any depth, where the old walk stopped at six.
+Two hazards of that class are handled rather than discovered.
+Its modal question about discarding the root project is reachable only when no directories to import were set, so the tool always sets them, from the proposals it has just read; `getImportProposals` runs detection only and writes nothing, which is what makes it the dry run as well.
+And it switches auto-build off for the duration and back on at the end of its try block, with no finally, so any exception leaves the workspace with auto-build off for good. The tool restores what it found. Both are recorded in `docs/platform-bugs.md`.
+
 **A hidden IDE must not be able to outlive the thing that can unhide it.**
 `eclipse_set_ide_visibility` can take the window off the screen and the taskbar, where no menu can bring it back, so `McpUiPlugin.stop` calls `VisibilityTool.restoreIfHidden`.
 Disabling or uninstalling the server must not be the moment the IDE becomes unrecoverable.
@@ -387,7 +395,7 @@ So the tool uses LTK's `DeleteResourcesDescriptor`, which passes `IResource`, wh
 `plugin.xml` and `Export-Package` are therefore not updated, the description says so, and the answer reports the evidence that will dangle.
 Do not "fix" this by driving the internal processor without deciding to own that dependency.
 
-**`eclipse_clean_up` takes a discouraged dependency on purpose, and it is the only one here.**
+**`eclipse_clean_up` takes a discouraged dependency on purpose, and it is one of two.**
 `CleanUpConstants` and the `*CleanUpCore` classes are x-friends to `org.eclipse.jdt.ui`, and the friends list does not include JDT-LS despite JDT-LS using them, so "JDT-LS does it" is evidence that it works rather than that it is supported.
 That dependency was a deliberate decision, not an oversight: there is no public alternative, reimplementing JDT's transformations is not an option, and the value is a whole class of tooling.
 It compiles with a discouraged-access warning and can break in any JDT release with no compile-time signal. `CleanUpRefactoring` was rejected as the entry point because it lives in `org.eclipse.jdt.ui` and would drag the UI in.
