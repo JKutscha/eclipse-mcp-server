@@ -422,6 +422,11 @@ A class named by a `bundleclass://<bundle>/<fqn>` URI in a `.e4xmi` is instantia
 `indexApplicationModel` walks the project for `.e4xmi` files, because unlike `plugin.xml` they live wherever the bundle put them, and records a `bundleclass` URI as evidence of kind `e4xmi`.
 "Documented as not covered" was not good enough for a tool that deletes: a gap in a report is a caveat, the same gap in a delete is data loss.
 
+**A registry names a nested class as `Outer$Inner`, and a lookup by the enclosing name found nothing.**
+`eclipse_delete` on `org.eclipse.ui.internal.handlers.WizardHandler` reported zero registry evidence with `plugin.xml` naming `WizardHandler$New`, `$Import` and `$Export` as default handlers, so the refusal would have let the file go and taken the New, Import and Export wizards with it.
+`RegistryIndex.add` therefore records evidence for a `$` name under every enclosing name as well, marked with `namedType`, because deleting the file deletes the nested class whatever the position names.
+The `Outer.Inner` spelling is not treated as evidence: the registry loads through `Bundle.loadClass`, which needs the binary name, so that form never worked at runtime.
+
 **Require-Bundle dependents are not consumers of a package.**
 The first version of the export-removal guard counted every bundle that requires the exporter, which on a platform bundle is dozens and refused almost every removal.
 `importedBy` is exact and blocks; `mightAlsoUseIt` lists the Require-Bundle dependents, says they may or may not use the package, and does not block.

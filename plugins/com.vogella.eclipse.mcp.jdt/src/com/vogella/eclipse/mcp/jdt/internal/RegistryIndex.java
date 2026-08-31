@@ -54,7 +54,17 @@ final class RegistryIndex {
 	 * read and the position can be reported but not judged.
 	 */
 	record Evidence(String kind, String file, String position, String schemaAttribute, String basedOn,
-			boolean schemaKnown) {
+			boolean schemaKnown, String namedType) {
+
+		Evidence(String kind, String file, String position, String schemaAttribute, String basedOn,
+				boolean schemaKnown) {
+			this(kind, file, position, schemaAttribute, basedOn, schemaKnown, null);
+		}
+
+		/** The same position, attributed to a type that encloses the one it names. */
+		Evidence naming(String nested) {
+			return new Evidence(kind, file, position, schemaAttribute, basedOn, schemaKnown, nested);
+		}
 	}
 
 	// the literal has to be the WHOLE argument. Without the trailing delimiter,
@@ -185,10 +195,27 @@ final class RegistryIndex {
 		// registry positions" for four real ones makes a refusal read as certainty
 		String key = (resource == null || resource.getLocation() == null ? evidence.file()
 				: resource.getLocation().toString()) + "|" + evidence.position(); //$NON-NLS-1$
-		if (!seen.computeIfAbsent(name.trim(), key0 -> new LinkedHashSet<>()).add(key)) {
+		String trimmed = name.trim();
+		if (!seen.computeIfAbsent(trimmed, key0 -> new LinkedHashSet<>()).add(key)) {
 			return;
 		}
-		byName.computeIfAbsent(name.trim(), key0 -> new ArrayList<>()).add(evidence);
+		byName.computeIfAbsent(trimmed, key0 -> new ArrayList<>()).add(evidence);
+		// a.b.Outer$Inner is registry evidence for a.b.Outer as well: deleting the
+		// outer type's file takes the nested class with it, and a plain lookup of the
+		// enclosing name once let eclipse_delete through on WizardHandler while
+		// plugin.xml still named WizardHandler$New as a handler
+		if (trimmed.indexOf('#') < 0) {
+			// keyed by the nested name too: three commands with defaultHandler
+			// WizardHandler$New, $Import and $Export share one xpath and are three
+			// positions, not one
+			String nestedKey = key + "|" + trimmed; //$NON-NLS-1$
+			for (int dollar = trimmed.lastIndexOf('$'); dollar > 0; dollar = trimmed.lastIndexOf('$', dollar - 1)) {
+				String enclosing = trimmed.substring(0, dollar);
+				if (seen.computeIfAbsent(enclosing, key0 -> new LinkedHashSet<>()).add(nestedKey)) {
+					byName.computeIfAbsent(enclosing, key0 -> new ArrayList<>()).add(evidence.naming(trimmed));
+				}
+			}
+		}
 	}
 
 	/**

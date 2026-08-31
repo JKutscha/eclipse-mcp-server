@@ -427,15 +427,31 @@ public final class ListDeclarationsTool implements IMcpTool {
 			throws CoreException {
 		JsonArray array = new JsonArray();
 		for (RegistryIndex.Evidence one : index.evidenceFor(name)) {
-			array.add(new JsonObject().put("kind", one.kind()) //$NON-NLS-1$
+			JsonObject entry = new JsonObject().put("kind", one.kind()) //$NON-NLS-1$
 					.put("file", one.file()) //$NON-NLS-1$
 					.put("xpathOrHeader", one.position()) //$NON-NLS-1$
 					.put("schemaAttribute", one.schemaAttribute()) //$NON-NLS-1$
 					.put("basedOn", one.basedOn()) //$NON-NLS-1$
-					.put("basedOnSatisfied", satisfies(member, one.basedOn(), monitor)) //$NON-NLS-1$
-					.put("schemaKnown", Boolean.valueOf(one.schemaKnown()))); //$NON-NLS-1$
+					.put("basedOnSatisfied", satisfies(named(member, one), one.basedOn(), monitor)) //$NON-NLS-1$
+					.put("schemaKnown", Boolean.valueOf(one.schemaKnown())); //$NON-NLS-1$
+			if (one.namedType() != null) {
+				entry.put("namedType", one.namedType()); //$NON-NLS-1$
+			}
+			array.add(entry);
 		}
 		return array;
+	}
+
+	/** The nested type a position names, so basedOn is checked against it rather than the enclosing type. */
+	private static IMember named(IMember member, RegistryIndex.Evidence one) {
+		if (one.namedType() == null || !(member instanceof IType type)) {
+			return member;
+		}
+		IType nested = type;
+		for (String segment : one.namedType().substring(type.getFullyQualifiedName().length() + 1).split("\\$")) { //$NON-NLS-1$
+			nested = nested.getType(segment);
+		}
+		return nested.exists() ? nested : member;
 	}
 
 	/**

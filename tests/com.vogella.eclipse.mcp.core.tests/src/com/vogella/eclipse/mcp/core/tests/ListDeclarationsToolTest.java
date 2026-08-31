@@ -103,6 +103,25 @@ class ListDeclarationsToolTest {
 	}
 
 	@Test
+	void aPositionNamingANestedTypeKeepsTheEnclosingTypeAlive() throws Exception {
+		fixtureProject();
+		Map<String, Object> outer = declaration("registry.Handlers");
+
+		assertEquals("live-via-registry", outer.get("registryStatus"));
+		// two nested classes at the same xpath are two positions, not one
+		assertEquals(2, ((List<?>) outer.get("registryEvidence")).size(), "got " + outer);
+		Map<String, Object> evidence = firstEvidence(outer);
+		assertEquals("registry.Handlers$New", evidence.get("namedType"));
+		// basedOn is checked against the nested type the position names, which is
+		// the one that extends AbstractMatcher
+		assertEquals(Boolean.TRUE, evidence.get("basedOnSatisfied"));
+
+		Map<String, Object> nested = declaration("registry.Handlers$New");
+		assertEquals("live-via-registry", nested.get("registryStatus"));
+		assertNull(firstEvidence(nested).get("namedType"));
+	}
+
+	@Test
 	void aTypeTestIsReportedWithoutChangingTheVerdict() throws Exception {
 		fixtureProject();
 		Map<String, Object> entry = declaration("registry.Tested");
@@ -271,6 +290,9 @@ class ListDeclarationsToolTest {
 				"package org.eclipse.core.runtime;\npublic interface IExecutableExtensionFactory {\n  Object create();\n}\n");
 		TestFixture.addType(javaProject, "registry", "Factory",
 				"package registry;\npublic class Factory implements org.eclipse.core.runtime.IExecutableExtensionFactory {\n  @Override public Object create() { return null; }\n}\n");
+		// registered through its nested classes only, the way WizardHandler$New is
+		TestFixture.addType(javaProject, "registry", "Handlers",
+				"package registry;\npublic class Handlers {\n  public static class New extends AbstractMatcher {\n    @Override public boolean matches() { return true; }\n  }\n  public static class Import extends AbstractMatcher {\n    @Override public boolean matches() { return true; }\n  }\n}\n");
 		TestFixture.addType(javaProject, "registry", "Tested",
 				"package registry;\npublic class Tested {\n}\n");
 		TestFixture.addType(javaProject, "registry", "Reflected",
@@ -349,6 +371,8 @@ class ListDeclarationsToolTest {
 				      <matcher class="registry.WrongSupertype"/>
 				      <matcher class="registry.AbstractMatcher"/>
 				      <matcher class="registry.Factory:someProduct"/>
+				      <matcher class="registry.Handlers$New"/>
+				      <matcher class="registry.Handlers$Import"/>
 				      <matcher class="registry.Matcher">
 				         <enablement>
 				            <instanceof value="registry.Tested"/>

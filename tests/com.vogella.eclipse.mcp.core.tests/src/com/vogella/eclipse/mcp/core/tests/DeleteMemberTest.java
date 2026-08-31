@@ -4,9 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.IJavaProject;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -78,6 +82,37 @@ class DeleteMemberTest {
 		assertEquals(Boolean.FALSE, results.get(2).get("deleted"), "got " + results.get(2));
 		assertFalse(project.getProject().getFile("src/example/One.java").exists());
 		assertTrue(project.getProject().getFile("src/example/Used.java").exists());
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void aRegistryPositionNamingANestedTypeRefusesTheEnclosingType() throws Exception {
+		IJavaProject project = holder("""
+				package example;
+				public class Holder {
+					public static class New { }
+				}
+				""");
+		IFile model = project.getProject().getFile("Application.e4xmi");
+		model.create(new ByteArrayInputStream("""
+				<?xml version="1.0" encoding="ASCII"?>
+				<application:Application xmlns:application="http://www.eclipse.org/ui/2010/UIModel/application">
+				  <addons xmi:id="_1" elementId="example.new" contributionURI="bundleclass://example/example.Holder$New"/>
+				</application:Application>
+				""".getBytes(StandardCharsets.UTF_8)), true, new NullProgressMonitor());
+
+		Map<String, Object> outer = TestFixture.callAndParse(TOOL,
+				Map.of("typeName", "example.Holder", "project", PROJECT, "dryRun", Boolean.FALSE));
+		assertEquals(Boolean.FALSE, outer.get("deleted"), "got " + outer);
+		List<Map<String, Object>> evidence = (List<Map<String, Object>>) outer.get("registryEvidence");
+		assertEquals(1, evidence.size(), "got " + outer);
+		assertEquals("example.Holder$New", evidence.get(0).get("namedType"));
+		assertTrue(project.getProject().getFile("src/example/Holder.java").exists());
+
+		Map<String, Object> nested = TestFixture.callAndParse(TOOL, Map.of("typeName", "example.Holder",
+				"memberName", "New", "project", PROJECT, "dryRun", Boolean.FALSE));
+		assertEquals(Boolean.FALSE, nested.get("deleted"), "got " + nested);
+		assertEquals(1, ((List<?>) nested.get("registryEvidence")).size(), "got " + nested);
 	}
 
 	@Test

@@ -49,7 +49,7 @@ public final class DeleteTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Deletes a Java type's source file, or with memberName a single field, method or nested type, as the last step of a dead code sweep. A member is removed through the Java model, so its javadoc goes with it rather than being left behind describing something that no longer exists. DELETES A FILE FROM THE WORKSPACE, and runs as a dry run unless dryRun is set to false. It refuses, unless force is passed, when anything still references the type, when a registry position names it, when its package is exported as public API, or when the member carries a framework injection annotation, and it reports all four either way. THE INJECTION CASE IS THE ONE THAT LOOKS SAFEST AND IS NOT: a field annotated @Reference, @Inject, @Autowired and their relatives is written by a framework at runtime and read by no Java, so every reference count and every text search agrees it is dead. Deleting two such @Reference fields, whose only purpose was to order declarative services components, once cost a night and surfaced three subsystems away as a workbench that would not start. It counts an e4 application model as a registry position: a class named by a bundleclass:// URI in a .e4xmi is instantiated by the workbench at every start and referenced from no Java, so it looks dead and is not. READ THIS LIMITATION: the deletion goes through LTK as a resource delete, and PDE's manifest participants are enabled on IType rather than on IResource, so plugin.xml class attributes and Export-Package are NOT updated. Whatever registryEvidence the answer reports is what will be left dangling and has to be fixed by hand. Use eclipse_list_declarations to find candidates and eclipse_find_references to confirm them."; //$NON-NLS-1$
+		return "Deletes a Java type's source file, or with memberName a single field, method or nested type, as the last step of a dead code sweep. A member is removed through the Java model, so its javadoc goes with it rather than being left behind describing something that no longer exists. DELETES A FILE FROM THE WORKSPACE, and runs as a dry run unless dryRun is set to false. It refuses, unless force is passed, when anything still references the type, when a registry position names it, when its package is exported as public API, or when the member carries a framework injection annotation, and it reports all four either way. THE INJECTION CASE IS THE ONE THAT LOOKS SAFEST AND IS NOT: a field annotated @Reference, @Inject, @Autowired and their relatives is written by a framework at runtime and read by no Java, so every reference count and every text search agrees it is dead. Deleting two such @Reference fields, whose only purpose was to order declarative services components, once cost a night and surfaced three subsystems away as a workbench that would not start. A position naming a nested type, Outer$Inner in plugin.xml or a bundleclass URI, counts for the enclosing type too, since deleting the file deletes the nested class, and such evidence carries namedType. It counts an e4 application model as a registry position: a class named by a bundleclass:// URI in a .e4xmi is instantiated by the workbench at every start and referenced from no Java, so it looks dead and is not. READ THIS LIMITATION: the deletion goes through LTK as a resource delete, and PDE's manifest participants are enabled on IType rather than on IResource, so plugin.xml class attributes and Export-Package are NOT updated. Whatever registryEvidence the answer reports is what will be left dangling and has to be fixed by hand. Use eclipse_list_declarations to find candidates and eclipse_find_references to confirm them."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -178,8 +178,7 @@ public final class DeleteTool implements IMcpTool {
 
 		JsonArray registry = new JsonArray();
 		for (RegistryIndex.Evidence one : evidence) {
-			registry.add(new JsonObject().put("kind", one.kind()).put("file", one.file()) //$NON-NLS-1$ //$NON-NLS-2$
-					.put("xpathOrHeader", one.position())); //$NON-NLS-1$
+			registry.add(describe(one));
 		}
 		// deleting the last type of a package leaves an Export-Package naming a
 		// package that no longer exists, which the next build reports against
@@ -257,6 +256,15 @@ public final class DeleteTool implements IMcpTool {
 		}
 	}
 
+	private static JsonObject describe(RegistryIndex.Evidence one) {
+		JsonObject entry = new JsonObject().put("kind", one.kind()).put("file", one.file()) //$NON-NLS-1$ //$NON-NLS-2$
+				.put("xpathOrHeader", one.position()); //$NON-NLS-1$
+		if (one.namedType() != null) {
+			entry.put("namedType", one.namedType()); //$NON-NLS-1$
+		}
+		return entry;
+	}
+
 	private static JsonObject failed(String typeName, String reason) {
 		return new JsonObject().put("type", typeName).put("deleted", Boolean.FALSE).put("error", reason); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 	}
@@ -274,16 +282,9 @@ public final class DeleteTool implements IMcpTool {
 			IProgressMonitor progress) throws McpToolException {
 		List<IMember> members;
 		try {
-			members = new ArrayList<>(JavaModelSupport.findMembers(type, memberName));
-			for (IType nested : type.getTypes()) {
-				if (nested.getElementName().equals(memberName)) {
-					members.add(nested);
-				}
-			}
+			members = JavaModelSupport.findMembers(type, memberName);
 		} catch (ToolInputException e) {
 			return McpToolResult.error(e.getMessage());
-		} catch (CoreException e) {
-			throw new McpToolException("Could not read the members of " + type.getFullyQualifiedName(), e); //$NON-NLS-1$
 		}
 		if (members.isEmpty()) {
 			return McpToolResult.error("'%s' has no member named '%s'." //$NON-NLS-1$
@@ -298,7 +299,11 @@ public final class DeleteTool implements IMcpTool {
 		String name = type.getFullyQualifiedName() + "#" + memberName; //$NON-NLS-1$
 
 		RegistryIndex index = RegistryIndex.build(progress);
-		List<RegistryIndex.Evidence> evidence = index.evidenceFor(name);
+		List<RegistryIndex.Evidence> evidence = new ArrayList<>(index.evidenceFor(name));
+		if (member instanceof IType nested) {
+			// a registry names a nested type as Outer$Inner, not as Outer#Inner
+			evidence.addAll(index.evidenceFor(nested.getFullyQualifiedName()));
+		}
 		PackageExports.Export export = new PackageExports().of(type.getJavaProject().getProject(),
 				type.getPackageFragment().getElementName());
 		// every reference counts here, including those in this same file: deleting a
@@ -307,8 +312,7 @@ public final class DeleteTool implements IMcpTool {
 		int references = countReferences(member, false, progress);
 		JsonArray registry = new JsonArray();
 		for (RegistryIndex.Evidence one : evidence) {
-			registry.add(new JsonObject().put("kind", one.kind()).put("file", one.file()) //$NON-NLS-1$ //$NON-NLS-2$
-					.put("xpathOrHeader", one.position())); //$NON-NLS-1$
+			registry.add(describe(one));
 		}
 		int flags;
 		try {

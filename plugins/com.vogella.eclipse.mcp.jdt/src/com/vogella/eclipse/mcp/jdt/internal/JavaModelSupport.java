@@ -240,6 +240,12 @@ final class JavaModelSupport {
 					members.add(field);
 				}
 			}
+			for (IType nested : type.getTypes()) {
+				available.add(nested.getElementName());
+				if (nested.getElementName().equals(memberName)) {
+					members.add(nested);
+				}
+			}
 		} catch (JavaModelException e) {
 			throw new McpToolException("Could not read the members of " + type.getFullyQualifiedName(), e); //$NON-NLS-1$
 		}
