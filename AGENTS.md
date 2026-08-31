@@ -227,6 +227,12 @@ So the guard cost the visibility rather than the capability, and it took the aud
 `directory` stays required, absolute and checked to exist. That is not a boundary and must not be described as one; it stops a command inheriting whatever working directory the IDE happens to have.
 The preference key and `CommandRoots` are gone rather than left unread, because a preference the page still shows and nothing enforces is worse than none.
 
+**`eclipse_revert_files` writes through the workspace so the discarded content survives.**
+`git checkout HEAD -- <file>` destroys the working copy with no way back.
+Writing the HEAD blob through `IFile.setContents` with `KEEP_HISTORY` puts what was discarded into Eclipse's local history instead, so a caller who reverted the wrong file can get it back from *Compare With > Local History*.
+That is the whole reason this tool exists rather than a `eclipse_run_command` invocation, and it is why the answer reports `localHistory` per file: a file outside the workspace is written directly and has no such safety net, and saying so is the difference between a caveat and a surprise.
+An untracked file is refused by name rather than deleted. It has no HEAD content, deleting it is unrecoverable, and it is the last thing a caller asking to revert would expect; `RevertFilesToolTest` asserts the file is still there afterwards rather than only that the call refused.
+
 **The reconciler is reached by name, and an unreadable one counts as busy.**
 `AbstractReconciler` starts as a job and then hands its work to a plain daemon thread, so neither the job manager nor a fence posted to the Display can see it, and semantic highlighting lands after everything observable has gone quiet.
 That was measured from outside before it was understood here: a harness saw two runs of one scenario differ by 1051 pixels of italics with every wait reporting idle.
