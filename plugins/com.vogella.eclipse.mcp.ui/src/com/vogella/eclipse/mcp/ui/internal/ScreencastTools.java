@@ -38,8 +38,19 @@ public final class ScreencastTools {
 				.put("intervalMillis", Integer.valueOf(session.intervalMillis())) //$NON-NLS-1$
 				.put("frames", Integer.valueOf(session.frames())) //$NON-NLS-1$
 				.put("frameSize", session.frameSize()) //$NON-NLS-1$
+				.put("downscaledTo", downscaled(session) ? Integer.valueOf(session.outputWidth()) : null) //$NON-NLS-1$
+				.put("resampled", Boolean.valueOf(resampled(session))) //$NON-NLS-1$
 				.put("zoom", Integer.valueOf(session.zoom())) //$NON-NLS-1$
 				.put("running", Boolean.valueOf(session.running())); //$NON-NLS-1$
+	}
+
+	private static boolean downscaled(Screencast.Session session) {
+		return session.frameWidth() > 0 && session.outputWidth() < session.frameWidth();
+	}
+
+	/** Whether the cap forces a fractional scale, which is what turns text mushy. */
+	private static boolean resampled(Screencast.Session session) {
+		return downscaled(session) && session.frameWidth() % session.outputWidth() != 0;
 	}
 
 	/** Starts recording and returns a session id. */
@@ -66,7 +77,7 @@ public final class ScreencastTools {
 					    "shellTitle":     {"type":"string","description":"Title of the shell to record, or a substring. Omit for the active shell."},
 					    "intervalMillis": {"type":"integer","default":500,"minimum":100,"maximum":10000,"description":"Time between frames. The paint itself is added on top, so the real spacing is reported per frame in the GIF."},
 					    "maxFrames":      {"type":"integer","default":120,"minimum":1,"maximum":1000,"description":"Recording stops on its own after this many frames."},
-					    "maxWidth":       {"type":"integer","default":800,"minimum":100,"maximum":4000,"description":"Downscale each frame to this width. A GIF of full HD frames is tens of megabytes."},
+					    "maxWidth":       {"type":"integer","minimum":100,"maximum":4000,"description":"Cap the frame width. Defaults to the target's own width, which keeps every frame pixel-exact. A cap below the target width resamples every frame, and unless the target width is a whole multiple of the cap the fraction softens all the text; the answer reports downscaledTo and resampled so that is never a surprise. A GIF of full HD frames is tens of megabytes, which is the only reason to cap."},
 					    "directory":      {"type":"string","description":"Absolute directory for the frames. Created when missing; defaults to a temporary directory."}
 					  },
 					  "additionalProperties": false
@@ -84,7 +95,9 @@ public final class ScreencastTools {
 			String shellTitle = args.getString("shellTitle"); //$NON-NLS-1$
 			int interval = args.getInt("intervalMillis", 500, 100, 10000); //$NON-NLS-1$
 			int maxFrames = args.getInt("maxFrames", 120, 1, 1000); //$NON-NLS-1$
-			int maxWidth = args.getInt("maxWidth", 800, 100, 4000); //$NON-NLS-1$
+			// 0 is no cap. It used to default to 800, which resampled every 1024 wide
+			// workbench shell by 0.78 and blurred all the text in every recording
+			int maxWidth = args.getInt("maxWidth", 0, 0, 4000); //$NON-NLS-1$
 			Path directory;
 			try {
 				String given = args.getString("directory"); //$NON-NLS-1$
@@ -121,9 +134,14 @@ public final class ScreencastTools {
 				if (session.frames() == 0) {
 					throw new IllegalStateException("The first frame could not be painted: " + session.stoppedBy()); //$NON-NLS-1$
 				}
+				String note = "Recording. Drive the IDE now, then call eclipse_stop_screencast with this sessionId. Native popups, menus and dialogs are not in the frames."; //$NON-NLS-1$
+				if (resampled(session)) {
+					note += " maxWidth %d is below the %d pixel wide target and not a whole fraction of it, so every frame is resampled and its text softened; pass maxWidth at or above %d, or leave it out, for pixel-exact frames." //$NON-NLS-1$
+							.formatted(Integer.valueOf(maxWidth), Integer.valueOf(session.frameWidth()),
+									Integer.valueOf(session.frameWidth()));
+				}
 				return describe(session).put("maxFrames", Integer.valueOf(maxFrames)) //$NON-NLS-1$
-						.put("note", //$NON-NLS-1$
-								"Recording. Drive the IDE now, then call eclipse_stop_screencast with this sessionId. Native popups, menus and dialogs are not in the frames."); //$NON-NLS-1$
+						.put("note", note); //$NON-NLS-1$
 			});
 		}
 	}

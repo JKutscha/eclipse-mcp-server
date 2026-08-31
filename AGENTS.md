@@ -560,6 +560,10 @@ Capture the image and look at it, and crop to bounds from `eclipse_get_widget_tr
 Three release cycles went into a fix whose premise was a crop of the wrong widgets: buttons that looked like one stack's toolbar belonged to another.
 The cross-check that settles which widget you are looking at is cheap and belongs before the first attempt, not after the second.
 
+A capture downscaled by a fraction is blurry, and it looks like a rendering problem rather than a parameter.
+`eclipse_start_screencast` defaulted to `maxWidth` 800, so every 1024 wide workbench shell was resampled by 0.78 and all the text in every recording went soft, while wizard frames under the cap stayed sharp in the same run.
+It now defaults to the target's own width, and both capture tools report when a cap forces a non-integer scale; `crispWidth` snaps to a whole divisor only when the result still fits under the cap.
+
 ## Releasing
 
 Run `gh workflow run release.yml`.

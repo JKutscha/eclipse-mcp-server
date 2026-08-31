@@ -82,6 +82,8 @@ public final class Screencast {
 		private int zoom = 100;
 		private String frameSize;
 
+		private volatile int frameWidth;
+
 		Session(String id, Control control, boolean composed, String target, int intervalMillis, int maxFrames,
 				int maxWidth, Path directory) {
 			this.id = id;
@@ -128,6 +130,19 @@ public final class Screencast {
 
 		public int zoom() {
 			return zoom;
+		}
+
+		public int frameWidth() {
+			return frameWidth;
+		}
+
+		/** The width the frames are written at, which is the painted width unless maxWidth caps it. */
+		public int outputWidth() {
+			return outputWidth(frameWidth);
+		}
+
+		private int outputWidth(int painted) {
+			return maxWidth <= 0 || painted <= maxWidth ? painted : Capture.crispWidth(painted, maxWidth);
 		}
 
 		public String frameSize() {
@@ -230,6 +245,7 @@ public final class Screencast {
 				data = painted.data();
 				zoom = painted.zoom();
 				frameSize = data.width + "x" + data.height; //$NON-NLS-1$
+				frameWidth = data.width;
 			} catch (RuntimeException | Error e) {
 				stop("error: " + e); //$NON-NLS-1$
 				return;
@@ -250,7 +266,7 @@ public final class Screencast {
 		private void encode(ImageData data, int index) {
 			try {
 				ImageData scaled = data;
-				int snapped = Capture.crispWidth(data.width, maxWidth);
+				int snapped = outputWidth(data.width);
 				if (data.width > snapped) {
 					scaled = data.scaledTo(snapped, Math.max(1, data.height * snapped / data.width));
 				}
