@@ -36,9 +36,24 @@ class SettleToolTest {
 		// the whole point of the tool: a caller that reads this must not come away
 		// believing a settled answer means the UI has finished
 		assertTrue(description.contains("HEURISTIC"), "got " + description);
-		assertTrue(description.contains("presentation reconciler"),
-				"it has to name the case it cannot see, got " + description);
+		// the blind spot has moved once already: the reconcilers used to be
+		// unobservable and are now checked, so what has to hold is that the
+		// description still names whatever is left rather than any particular case
+		assertTrue(description.contains("STILL CANNOT SEE"),
+				"it has to name what is left unobserved, got " + description);
+		assertTrue(description.contains("plain background thread"),
+				"and say concretely what that is, got " + description);
 		assertTrue(description.contains("assert"), "it has to point at asserting instead, got " + description);
+	}
+
+	@Test
+	void anUnreadableReconcilerCountsAsBusyRatherThanIdle() {
+		// the direction of that failure is the whole safety of reaching internals by
+		// name: a renamed field must make settling harder, never easier
+		String description = TestFixture.tool("eclipse_wait_until_settled").getDescription();
+
+		assertTrue(description.contains("counts as BUSY rather than idle"), "got " + description);
+		assertTrue(description.contains("never one that succeeds too early"), "got " + description);
 	}
 
 	@Test

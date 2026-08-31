@@ -227,7 +227,9 @@ public final class ScreenshotTools {
 				    "highlights": {"type":"array","description":"Rectangles to draw onto the image after the capture, each {path?, bounds?, color?, label?, style?, padding?, lineWidth?, labelPosition?}: path is a widget path from eclipse_get_widget_tree relative to the capture target, bounds is 'x,y wxh' in points relative to the capture target, color is #rrggbb (default #ff0066, which reads on light and dark themes), label is drawn in a filled box beside the rectangle, style is outline (default) or fill (translucent). padding adds air around the rectangle IN POINTS, one number for every side or 'top,right,bottom,left', applied after the rectangle is resolved and before it is scaled, which is the only way to frame a widget loosely when the rectangle came from a path. lineWidth is the outline in pixels, 3 by default. labelPosition is above (default), below, left, right or inside, for keeping a label off a neighbouring element. The answer reports the padded rectangle under pointsInTarget and the pixels actually drawn under pixels.","items":{"type":"object","properties":{"path":{"type":"string"},"bounds":{"type":"string"},"color":{"type":"string"},"label":{"type":"string"},"style":{"type":"string","enum":["outline","fill"]},"padding":{"type":["integer","string"]},"lineWidth":{"type":"integer","minimum":1,"maximum":40},"labelPosition":{"type":"string","enum":["above","below","left","right","inside"]}},"additionalProperties":false}},
 				    "settle": {"type":"boolean","default":false,"description":"Wait for the UI to look idle before capturing, the same heuristic eclipse_wait_until_settled runs, and report it under 'settle'. IT IS A HEURISTIC: it drains the display queue and waits for the job manager, and it cannot see work on a plain background thread, so JDT's semantic highlighting can still land after the capture. Assert what you need rather than trusting it."},
 				    "settleTimeoutSeconds": {"type":"integer","default":10,"minimum":1,"maximum":120,"description":"Budget for 'settle'. Running out still captures, and the report says it did not settle."},
-				    "suppressCaret": {"type":"boolean","default":false,"description":"Take the text caret out of every StyledText under the target for the duration of the capture, and put it back afterwards. SWT draws and blinks the caret itself, so gtk-cursor-blink=false does not reach it, and two captures of a focused editor otherwise differ by the caret alone, which is enough to make a pixel comparison never agree. Reported under caretsSuppressed. Off by default, because a capture taken to look AT the caret must still show it."},
+				    "settlePixels": {"type":"boolean","default":false,"description":"Capture repeatedly until two consecutive images are byte identical, and report it under 'pixelSettle'. THIS IS THE ONLY CHECK THAT CATCHES A REPAINT IN FLIGHT: 'settle' asks the display queue, the job manager and the reconcilers, and a paint already under way is none of those, so a whole-shell capture can come back with a few thousand scattered pixels wrong while settle honestly reports settled true. Comparing two captures does not need to know why. It costs one extra capture at least, and answers converged false rather than hanging when the screen genuinely never stops changing, which is what an animation or a progress bar does. suppressCaret is on by default for the same reason and is what stops a blinking caret making this never converge."},
+				    "settlePixelAttempts": {"type":"integer","default":4,"minimum":2,"maximum":10,"description":"How many captures 'settlePixels' may take before giving up and answering with the last one."},
+				    "suppressCaret": {"type":"boolean","default":true,"description":"Take the text caret out of every StyledText under the target for the duration of the capture, and put it back afterwards. SWT draws and blinks the caret itself, so gtk-cursor-blink=false does not reach it, and two captures of a focused editor otherwise differ by the caret alone, which is enough to make a pixel comparison never agree. Reported under caretsSuppressed. ON by default: the two failures are not symmetric. Leaving it off makes two captures differ by a caret and look like a real change, which is silent and misleading; leaving it on costs a caret in a capture taken to look at one, and the answer says caretsSuppressed so that explains itself. Pass false when the caret is the subject."},
 				    "includeToolbar": {"type":"boolean","default":false,"description":"For a part, capture the whole part stack instead: the tabs and any sibling view sharing the stack. KNOWN GAP: it does NOT paint the CTabFolder's topRight children, which are the view toolbar, the view menu and the min and max buttons, and nothing in the answer says they are missing. To see those, capture target=shell and crop to the bounds eclipse_get_widget_tree reports for them."}
 					  },
 					  "additionalProperties": false
@@ -269,12 +271,100 @@ public final class ScreenshotTools {
 			JsonObject settled = args.getBoolean("settle", false) //$NON-NLS-1$
 					? UiSettle.settle(3, args.getInt("settleTimeoutSeconds", 10, 1, 120) * 1000L, 120) //$NON-NLS-1$
 					: null;
-			boolean suppressCaret = args.getBoolean("suppressCaret", false); //$NON-NLS-1$
-			return onUi(() -> {
-				JsonObject answer = capture(target, part, shellTitle, activate, maxWidth, outputPath, includeBase64,
-						args.getBoolean("includeToolbar", false), highlights, sameTurn, suppressCaret); //$NON-NLS-1$
-				return settled == null ? answer : answer.put("settle", settled); //$NON-NLS-1$
-			}, JsonObject::toString);
+			boolean suppressCaret = args.getBoolean("suppressCaret", true); //$NON-NLS-1$
+			boolean settlePixels = args.getBoolean("settlePixels", false) && !sameTurn; //$NON-NLS-1$
+			int attempts = args.getInt("settlePixelAttempts", 4, 2, 10); //$NON-NLS-1$
+			// a known path for every attempt, because two captures are compared on the
+			// file they wrote and a temporary name chosen inside the capture would not
+			// be knowable here
+			String path = outputPath;
+			if (settlePixels && path == null) {
+				try {
+					path = Files.createTempFile("mcp-capture", ".png").toString(); //$NON-NLS-1$ //$NON-NLS-2$
+				} catch (IOException e) {
+					return McpToolResult.error("Could not create a file for the capture: " + e.getMessage()); //$NON-NLS-1$
+				}
+			}
+			String target0 = path;
+			Supplier<JsonObject> once = () -> capture(target, part, shellTitle, activate, maxWidth, target0,
+					includeBase64, args.getBoolean("includeToolbar", false), highlights, sameTurn, suppressCaret); //$NON-NLS-1$
+			if (!settlePixels) {
+				return onUi(once, answer -> (settled == null ? answer : answer.put("settle", settled)).toString()); //$NON-NLS-1$
+			}
+			JsonObject answer = null;
+			byte[] previous = null;
+			int taken = 0;
+			boolean converged = false;
+			for (int i = 0; i < attempts && !converged; i++) {
+				// each capture is its own UI hop on purpose: the point is to let
+				// whatever is painting get on with it between them, which cannot happen
+				// inside one
+				answer = onUiValue(once);
+				if (answer == null) {
+					return McpToolResult.error("The Eclipse UI is busy, try again."); //$NON-NLS-1$
+				}
+				taken++;
+				byte[] bytes = bytesOf(target0);
+				if (bytes != null && previous != null && java.util.Arrays.equals(bytes, previous)) {
+					converged = true;
+				}
+				previous = bytes;
+				if (!converged && i + 1 < attempts) {
+					pause();
+				}
+			}
+			JsonObject pixelSettle = new JsonObject().put("converged", Boolean.valueOf(converged)) //$NON-NLS-1$
+					.put("captures", Integer.valueOf(taken)); //$NON-NLS-1$
+			if (!converged) {
+				pixelSettle.put("note", //$NON-NLS-1$
+						"No two consecutive captures were identical within %d attempts, so the image returned is the last one and something on screen is still changing. An animation, a progress bar or a caret does this; suppressCaret is on by default, so a caret is the least likely of the three." //$NON-NLS-1$
+								.formatted(Integer.valueOf(attempts)));
+			}
+			answer.put("pixelSettle", pixelSettle); //$NON-NLS-1$
+			return McpToolResult.of((settled == null ? answer : answer.put("settle", settled)).toString()); //$NON-NLS-1$
+		}
+
+		/** Leaves the UI alone between two captures of a pixel settle. */
+		private static void pause() {
+			try {
+				Thread.sleep(120);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		}
+
+		/**
+		 * The written PNG, which is what two captures are compared on.
+		 * <p>
+		 * The file rather than the ImageData: the encoder is deterministic for
+		 * identical pixels, and the file is what the caller compares too.
+		 */
+		private static byte[] bytesOf(String path) {
+			try {
+				return Files.readAllBytes(Path.of(path));
+			} catch (IOException | RuntimeException e) {
+				return null;
+			}
+		}
+
+		/** One capture on the UI thread, as the object rather than as a result. */
+		private static JsonObject onUiValue(Supplier<JsonObject> work) {
+			CompletableFuture<JsonObject> pending = new CompletableFuture<>();
+			UiThread.exec(() -> {
+				try {
+					pending.complete(work.get());
+				} catch (RuntimeException e) {
+					pending.completeExceptionally(e);
+				}
+			});
+			try {
+				return pending.get(UI_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return null;
+			} catch (Exception e) {
+				return null;
+			}
 		}
 
 		private static JsonObject capture(String target, String partId, String shellTitle, boolean activate,

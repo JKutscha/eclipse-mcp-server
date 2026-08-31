@@ -227,6 +227,24 @@ So the guard cost the visibility rather than the capability, and it took the aud
 `directory` stays required, absolute and checked to exist. That is not a boundary and must not be described as one; it stops a command inheriting whatever working directory the IDE happens to have.
 The preference key and `CommandRoots` are gone rather than left unread, because a preference the page still shows and nothing enforces is worse than none.
 
+**The reconciler is reached by name, and an unreadable one counts as busy.**
+`AbstractReconciler` starts as a job and then hands its work to a plain daemon thread, so neither the job manager nor a fence posted to the Display can see it, and semantic highlighting lands after everything observable has gone quiet.
+That was measured from outside before it was understood here: a harness saw two runs of one scenario differ by 1051 pixels of italics with every wait reporting idle.
+`Reconcilers` reads it the way JDT's own performance tests do in `EditorTestHelper.joinReconciler`: `SourceViewer.fReconciler`, then `AbstractReconciler.fWorker`, then `isDirty` and `isActive` on the package-private worker, plus `JavaReconciler.fIninitalProcessDone`, whose spelling is a typo upstream and has to be matched exactly.
+That an Eclipse test suite does it this way is evidence the approach works, not that it is supported; every name is internal and can change in any release.
+So a reconciler that cannot be read is reported busy, never idle. The direction matters more than the reading: a renamed field then costs a settle that never succeeds, which is loud, instead of one that succeeds too early, which is silent and is the whole failure this exists to prevent.
+
+**`eclipse_wait_until_settled` is a heuristic and its own description is the guardrail.**
+It is honest about what it cannot observe, and a test asserts that wording rather than the behaviour, because the wording is what a model reads before deciding to trust it.
+The blind spot has already moved once, from the reconcilers to whatever plain background threads remain, so the test checks that something is still named rather than naming a particular case.
+`settlePixels` catches the one thing none of the three signals can: a repaint already in flight, which is neither queued, nor a job, nor a reconciler, and which showed up as a whole-shell capture wrong by a few thousand scattered pixels while settle honestly reported settled.
+Comparing two captures does not need to know why, which is exactly why it is worth having beside the mechanisms that do.
+
+**`suppressCaret` defaults to ON, and the two failures are not symmetric.**
+SWT draws and blinks the caret itself, so no window system setting reaches it, and two captures of a focused editor differ by the caret alone.
+Off, that reads as a real difference and is silent. On, a capture meant to show the caret loses it and the answer says `caretsSuppressed`, which explains itself.
+It shipped defaulting to false on the argument that a capture taken to look at the caret must show it; that argument weighed one case against nothing and ignored which failure a caller could diagnose.
+
 **Platform mismatch is read from `Eclipse-PlatformFilter`, not from the project name.**
 `PlatformFilters` parses the manifest header as an OSGi filter and matches it against `osgi.ws`, `osgi.os` and `osgi.arch`.
 The name heuristic is the fallback for projects without the header, and the reason string says which of the two was used.

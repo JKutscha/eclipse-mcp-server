@@ -14,14 +14,21 @@ import com.vogella.eclipse.mcp.core.json.JsonObject;
  * Waits until the UI looks to have stopped working, and says what it could not
  * see while deciding that.
  * <p>
- * THIS IS A HEURISTIC AND THE ANSWER SAYS SO. Two things are observable from
- * outside: work queued with {@code asyncExec}, which a fence posted to the
- * Display proves has drained, and the job manager, which reports what is
- * running, waiting or sleeping. A third is not observable at all, and it is the
- * one that matters most in practice: work on a plain background thread. JDT's
- * presentation reconciler is a {@code Thread} rather than a {@code Job}, so
- * neither mechanism here knows it exists, and semantic highlighting can still
- * arrive after this has answered settled.
+ * THIS IS A HEURISTIC AND THE ANSWER SAYS SO. Three things are observed: work
+ * queued with {@code asyncExec}, which a fence posted to the Display proves has
+ * drained; the job manager, which reports what is running, waiting or sleeping;
+ * and the text editors' reconcilers, through {@link Reconcilers}, which is the
+ * only one of the three that is not public API.
+ * <p>
+ * The reconciler is there because it was the case that hurt most: it starts as a
+ * job and hands over to a plain daemon thread, so it is invisible to the other
+ * two, and semantic highlighting landed after everything observable had gone
+ * quiet. Reading it costs a reflective reach into internals that can change in
+ * any release, which is why an unreadable reconciler counts as busy rather than
+ * idle.
+ * <p>
+ * What remains unobservable is any OTHER plain background thread, and work that
+ * has not been scheduled yet.
  * <p>
  * So this reduces flakiness and cannot remove it. A caller that needs to be
  * right asserts the thing it cares about, the way a content assist scenario
@@ -60,31 +67,39 @@ final class UiSettle {
 		int consecutive = 0;
 		long slowestFence = 0;
 		JsonObject jobs = null;
+		Reconcilers.State reconcilers = null;
 		while (System.currentTimeMillis() < deadline) {
 			rounds++;
-			long fence = fence(display, deadline - System.currentTimeMillis());
+			// one hop does both: the fence proves the queue drained, and while it is
+			// on the UI thread it also reads the reconcilers, which can only be asked
+			// there
+			Fenced fenced = fence(display, deadline - System.currentTimeMillis());
+			long fence = fenced.millis();
+			reconcilers = fenced.reconcilers();
 			slowestFence = Math.max(slowestFence, Math.max(fence, 0));
 			jobs = jobSnapshot();
 			boolean uiBusy = fence < 0 || fence > FENCE_BUDGET_MILLIS;
 			boolean jobsBusy = Boolean.TRUE.equals(jobs.remove("busy")); //$NON-NLS-1$
-			if (uiBusy || jobsBusy) {
+			boolean reconciling = reconcilers != null && reconcilers.isBusy();
+			if (uiBusy || jobsBusy || reconciling) {
 				consecutive = 0;
 			} else {
 				consecutive++;
 				if (consecutive >= quietPasses) {
-					return answer(true, rounds, consecutive, started, slowestFence, jobs, null);
+					return answer(true, rounds, consecutive, started, slowestFence, jobs, reconcilers, null);
 				}
 			}
 			sleep(pauseMillis);
 		}
-		return answer(false, rounds, consecutive, started, slowestFence, jobs,
+		return answer(false, rounds, consecutive, started, slowestFence, jobs, reconcilers,
 				"The budget ran out with %d of the %d consecutive quiet rounds needed. Something kept the UI thread or the job manager busy; jobs below is what it looked like at the end."
 						.formatted(Integer.valueOf(consecutive), Integer.valueOf(quietPasses)));
 	}
 
 	private static JsonObject answer(boolean settled, int rounds, int consecutive, long started, long slowestFence,
-			JsonObject jobs, String reason) {
+			JsonObject jobs, Reconcilers.State reconcilers, String reason) {
 		return new JsonObject().put("settled", Boolean.valueOf(settled)) //$NON-NLS-1$
+				.put("reconcilers", reconcilers == null ? null : reconcilers.describe()) //$NON-NLS-1$
 				.put("rounds", Integer.valueOf(rounds)) //$NON-NLS-1$
 				.put("consecutiveQuietRounds", Integer.valueOf(consecutive)) //$NON-NLS-1$
 				.put("elapsedMillis", Long.valueOf(System.currentTimeMillis() - started)) //$NON-NLS-1$
@@ -92,7 +107,7 @@ final class UiSettle {
 				.put("jobs", jobs) //$NON-NLS-1$
 				.put("reason", reason) //$NON-NLS-1$
 				.put("cannotSee", //$NON-NLS-1$
-						"Work on a plain background thread, which is neither a queued runnable nor a job. JDT's presentation reconciler is one of those, so semantic highlighting can arrive after this answers settled. Delayed work that has not been scheduled yet is invisible for the same reason. THIS IS A HEURISTIC: assert what you actually need rather than trusting it.");
+						"Any plain background thread other than a text editor's reconciler, and work that has not been scheduled yet. The reconcilers ARE checked, through internal fields that can change in any release, and an unreadable one counts as busy rather than idle; see the reconcilers block above. THIS IS STILL A HEURISTIC: assert what you actually need rather than trusting it.");
 	}
 
 	/**
@@ -104,20 +119,35 @@ final class UiSettle {
 	 *
 	 * @return the milliseconds it took, or -1 when it did not run in time
 	 */
-	private static long fence(Display display, long budgetMillis) {
+	/** What one fence came back with: how long it waited, and what it saw while there. */
+	private record Fenced(long millis, Reconcilers.State reconcilers) {
+	}
+
+	private static Fenced fence(Display display, long budgetMillis) {
 		if (budgetMillis <= 0) {
-			return -1;
+			return new Fenced(-1, null);
 		}
-		CompletableFuture<Long> ran = new CompletableFuture<>();
+		CompletableFuture<Fenced> ran = new CompletableFuture<>();
 		long posted = System.currentTimeMillis();
-		display.asyncExec(() -> ran.complete(Long.valueOf(System.currentTimeMillis() - posted)));
+		display.asyncExec(() -> {
+			long waited = System.currentTimeMillis() - posted;
+			Reconcilers.State state;
+			try {
+				state = Reconcilers.inspect();
+			} catch (RuntimeException | LinkageError e) {
+				// the reconciler probe reaches internals by name; losing it costs the
+				// third signal and must not cost the fence
+				state = null;
+			}
+			ran.complete(new Fenced(waited, state));
+		});
 		try {
-			return ran.get(budgetMillis, TimeUnit.MILLISECONDS).longValue();
+			return ran.get(budgetMillis, TimeUnit.MILLISECONDS);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			return -1;
+			return new Fenced(-1, null);
 		} catch (Exception e) {
-			return -1;
+			return new Fenced(-1, null);
 		}
 	}
 
