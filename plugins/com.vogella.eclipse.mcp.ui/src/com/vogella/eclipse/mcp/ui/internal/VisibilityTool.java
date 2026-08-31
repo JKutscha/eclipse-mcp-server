@@ -50,7 +50,7 @@ public final class VisibilityTool implements IMcpTool {
 				  "type": "object",
 				  "required": ["visible"],
 				  "properties": {
-				    "visible": {"type":"boolean","description":"False takes the IDE off the screen, true brings it back and gives it focus."},
+				    "visible": {"type":"boolean","description":"False takes the IDE off the screen, true brings it back, unminimizes it and ASKS for focus. The window system may refuse the focus part, so the answer reports 'foreground' for what actually happened rather than promising it."},
 				    "mode":    {"type":"string","enum":["hidden","minimized"],"default":"hidden","description":"How to take it off the screen. Ignored when visible is true."}
 				  },
 				  "additionalProperties": false
@@ -95,6 +95,19 @@ public final class VisibilityTool implements IMcpTool {
 			}
 			entry.put("visible", Boolean.valueOf(shell.isVisible())) //$NON-NLS-1$
 					.put("minimized", Boolean.valueOf(shell.getMinimized())); //$NON-NLS-1$
+			if (visible) {
+				// forceActive is a REQUEST. Windows refuses to hand the foreground to a
+				// process that does not already own it and flashes the taskbar button
+				// instead, and most window managers refuse too, so the call returning
+				// says nothing. Reporting what actually happened is the difference
+				// between a caller that can check and one that photographs a browser.
+				boolean active = shell.getDisplay().getActiveShell() != null;
+				entry.put("foreground", Boolean.valueOf(active)); //$NON-NLS-1$
+				if (!active) {
+					entry.put("foregroundNote", //$NON-NLS-1$
+							"Focus was requested and the window system did not grant it, which it is entitled to do: Windows refuses the foreground to a process that does not already own it, and most window managers do the same. The window is visible and unminimized, but something else is still in front, so a screen read would photograph that instead. eclipse_screenshot reports the same state as 'foreground'."); //$NON-NLS-1$
+				}
+			}
 			windows.add(entry);
 		}
 		hiddenByUs = !visible;
