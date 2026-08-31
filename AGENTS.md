@@ -550,8 +550,15 @@ The helper tries the URI form and decodes the raw one by hand when that fails.
 This was a whole class of bug rather than one: the configuration area, the install location, the workspace a restart is sent to, and the jars a target platform search reads were each written a different way, and three of the four were unusable on Windows.
 
 **This repository is developed and tested on Linux, so anything platform shaped is a guess until somebody runs it elsewhere.**
-The fixes so far were found by reading rather than by failing, which means the review is the record: shell selection and process output encoding in `eclipse_run_command`, the URL-to-path conversions above, CRLF line endings in `eclipse_edit_file`, a Windows drive letter read as a URI scheme in `eclipse_apply_css`, an unquoted flight recording path with a space in it, and the token file's access rights, which POSIX permissions cannot express on Windows and an ACL can.
+The first run on Windows found one the reading had missed, which is the calibration: a review catches the cases somebody thought to look for.
+The rest were found by reading rather than by failing, which means the review is the record: shell selection in `eclipse_run_command`, the URL-to-path conversions above, CRLF line endings in `eclipse_edit_file`, a Windows drive letter read as a URI scheme in `eclipse_apply_css`, an unquoted flight recording path with a space in it, and the token file's access rights, which POSIX permissions cannot express on Windows and an ACL can.
 Prefer `FileLocations.isWindows()` over a fresh `os.name` test, and `Path.startsWith` over a string prefix, since path comparison is case insensitive on Windows and a text one is not.
+
+**Windows has two code pages and `native.encoding` reports the wrong one for a spawned process.**
+It is the ANSI code page, while cmd.exe and the tools it starts write the OEM one, so `echo äöü` came back from `eclipse_run_command` as `„”�á`: readable-looking, wrong, and silent.
+Only `chcp` knows the number, so `CommandRegistry` asks once and caches it.
+Note this was reviewed and declared handled before it was run, and `native.encoding` is exactly the kind of answer that looks authoritative on a machine where the two code pages agree.
+Output is decoded per line and UTF-8 is tried first, because git and everything built for it write UTF-8 whatever the console is set to, and a build log mixes both writers.
 
 ## Verifying UI work
 

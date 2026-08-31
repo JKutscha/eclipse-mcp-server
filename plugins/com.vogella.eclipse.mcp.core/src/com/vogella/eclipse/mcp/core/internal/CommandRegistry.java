@@ -1,9 +1,10 @@
 package com.vogella.eclipse.mcp.core.internal;
 
-import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -15,11 +16,16 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
+
+import com.vogella.eclipse.mcp.core.FileLocations;
 
 /**
  * Runs external commands as jobs and keeps their output, so that a client polls
@@ -28,6 +34,11 @@ import org.eclipse.core.runtime.jobs.Job;
 public final class CommandRegistry {
 
 	/** How many finished commands stay queryable. */
+	/** The number in chcp's output, whose surrounding words are localised. */
+	private static final Pattern CODE_PAGE = Pattern.compile("\\d+"); //$NON-NLS-1$
+
+	private static Charset outputCharset;
+
 	private static final int HISTORY = 20;
 
 	/** Output lines kept per command. A build log is long and the useful part is at the end. */
@@ -182,12 +193,8 @@ public final class CommandRegistry {
 			try {
 				Process process = builder.start();
 				execution.process = process;
-				try (InputStream stream = process.getInputStream();
-						BufferedReader reader = new BufferedReader(new InputStreamReader(stream, outputCharset()))) {
-					String line;
-					while ((line = reader.readLine()) != null) {
-						execution.append(line);
-					}
+				try (InputStream stream = process.getInputStream()) {
+					readLines(stream, outputCharset(), execution::append);
 				}
 				int code = process.waitFor();
 				execution.finish(code == 0 ? "done" : "failed", code); //$NON-NLS-1$ //$NON-NLS-2$
@@ -207,16 +214,117 @@ public final class CommandRegistry {
 	}
 
 	/**
-	 * What a spawned process writes its output in.
+	 * Splits {@code stream} into lines and decodes each one on its own.
 	 * <p>
-	 * Not UTF-8 unconditionally: since JDK 18 the JVM's own default is UTF-8
-	 * everywhere, but a Windows console and the tools that write to it still use
-	 * the machine's ANSI or OEM code page, so decoding a Maven log as UTF-8 there
-	 * turns every non-ASCII byte into a replacement character. {@code native.encoding}
-	 * is the JVM's report of what the operating system actually uses, and it is
-	 * UTF-8 on the Linux and macOS installations this changes nothing for.
+	 * Per line rather than through one {@code InputStreamReader}, because the two
+	 * writers a build log mixes do not agree on an encoding, and a line comes from
+	 * one of them whole.
 	 */
-	static Charset outputCharset() {
+	public static void readLines(InputStream stream, Charset fallback, Consumer<String> sink) throws IOException {
+		ByteArrayOutputStream line = new ByteArrayOutputStream();
+		byte[] buffer = new byte[8192];
+		int read;
+		while ((read = stream.read(buffer)) != -1) {
+			for (int i = 0; i < read; i++) {
+				if (buffer[i] == '\n') {
+					sink.accept(decodeLine(line.toByteArray(), fallback));
+					line.reset();
+				} else {
+					line.write(buffer[i]);
+				}
+			}
+		}
+		if (line.size() > 0) {
+			sink.accept(decodeLine(line.toByteArray(), fallback));
+		}
+	}
+
+	/**
+	 * Decodes one line as UTF-8, falling back to {@code fallback} when it is not
+	 * valid UTF-8.
+	 * <p>
+	 * Git and everything else built for UTF-8 writes it whatever the console is set
+	 * to, so preferring it is what keeps those readable; the fallback is what the
+	 * console programs need. A pure ASCII line decodes the same either way, which is
+	 * almost every line of a build log.
+	 */
+	public static String decodeLine(byte[] bytes, Charset fallback) {
+		int end = bytes.length;
+		if (end > 0 && bytes[end - 1] == '\r') {
+			end--;
+		}
+		try {
+			// newDecoder reports malformed input, unlike the String constructor, which
+			// silently replaces it and would make the fallback unreachable
+			return StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes, 0, end)).toString();
+		} catch (CharacterCodingException e) {
+			return new String(bytes, 0, end, fallback);
+		}
+	}
+
+	/**
+	 * What a spawned process writes its output in when it is not UTF-8.
+	 * <p>
+	 * Windows has two code pages and this is the one nothing in the JVM reports:
+	 * {@code native.encoding} is the ANSI code page, while cmd.exe and the tools it
+	 * starts write the OEM one, so an umlaut from a Maven log arrived as three wrong
+	 * characters. Only {@code chcp} knows the number, so it is asked once and cached.
+	 * Everywhere else {@code native.encoding} is right and is UTF-8 anyway.
+	 */
+	static synchronized Charset outputCharset() {
+		if (outputCharset == null) {
+			outputCharset = FileLocations.isWindows() ? consoleCharset() : nativeCharset();
+		}
+		return outputCharset;
+	}
+
+	private static Charset consoleCharset() {
+		try {
+			Process process = new ProcessBuilder("cmd.exe", "/c", "chcp").redirectErrorStream(true).start(); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+			String reported;
+			try (InputStream stream = process.getInputStream()) {
+				// the code page is a number whatever language the rest of the line is in
+				reported = new String(stream.readAllBytes(), StandardCharsets.US_ASCII);
+			}
+			if (process.waitFor(10, TimeUnit.SECONDS) && process.exitValue() == 0) {
+				Charset charset = charsetOfCodePage(reported);
+				if (charset != null) {
+					return charset;
+				}
+			}
+			process.destroyForcibly();
+		} catch (IOException e) {
+			ILog.get().warn("Could not read the console code page, falling back to native.encoding", e); //$NON-NLS-1$
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
+		return nativeCharset();
+	}
+
+	/** The charset of the code page {@code chcp} reported, or null for one Java does not know. */
+	public static Charset charsetOfCodePage(String reported) {
+		Matcher matcher = CODE_PAGE.matcher(reported);
+		String page = null;
+		while (matcher.find()) {
+			page = matcher.group();
+		}
+		if (page == null) {
+			return null;
+		}
+		if ("65001".equals(page)) { //$NON-NLS-1$
+			return StandardCharsets.UTF_8;
+		}
+		for (String name : List.of("IBM" + page, "windows-" + page, "x-IBM" + page)) { //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+			try {
+				return Charset.forName(name);
+			} catch (IllegalArgumentException e) {
+				// try the next spelling
+			}
+		}
+		return null;
+	}
+
+	static Charset nativeCharset() {
 		String name = System.getProperty("native.encoding"); //$NON-NLS-1$
 		if (name == null || name.isBlank()) {
 			return StandardCharsets.UTF_8;
