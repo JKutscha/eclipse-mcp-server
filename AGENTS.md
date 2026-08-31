@@ -243,8 +243,11 @@ So a reconciler that cannot be read is reported busy, never idle. The direction 
 **`eclipse_wait_until_settled` is a heuristic and its own description is the guardrail.**
 It is honest about what it cannot observe, and a test asserts that wording rather than the behaviour, because the wording is what a model reads before deciding to trust it.
 The blind spot has already moved once, from the reconcilers to whatever plain background threads remain, so the test checks that something is still named rather than naming a particular case.
-`settlePixels` catches the one thing none of the three signals can: a repaint already in flight, which is neither queued, nor a job, nor a reconciler, and which showed up as a whole-shell capture wrong by a few thousand scattered pixels while settle honestly reported settled.
+`settlePixels` catches the one thing none of the three signals can: a repaint already in flight, which is neither queued, nor a job, nor a reconciler.
 Comparing two captures does not need to know why, which is exactly why it is worth having beside the mechanisms that do.
+Its two outcomes are a diagnosis and the description says so, because the case that motivated it turned out not to be the case it caught.
+A whole-window comparison differing by a few thousand scattered pixels was assumed here to be a paint in flight; it converged on the first pair every time, and the real cause was one part laid out a few pixels lower, dragging everything below it and looking like noise spread over the window.
+So `converged false` means the screen never stopped, and `converged true` with an image that still differs means it stopped at a different LAYOUT. Waiting cannot fix the second, because the waiting already worked.
 
 **`suppressCaret` defaults to ON, and the two failures are not symmetric.**
 SWT draws and blinks the caret itself, so no window system setting reaches it, and two captures of a focused editor differ by the caret alone.
