@@ -23,9 +23,11 @@ import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.ui.IWorkbench;
 import org.eclipse.ui.IWorkbenchPreferencePage;
+import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PlatformUI;
 
 import com.vogella.eclipse.mcp.server.McpEndpoint;
@@ -173,13 +175,39 @@ public class McpPreferencePage extends FieldEditorPreferencePage implements IWor
 	@Override
 	public boolean performOk() {
 		boolean result = super.performOk();
+		boolean enabled = McpPreferences.isEnabled();
 		McpServerJob.reconcile().addJobChangeListener(new JobChangeAdapter() {
 			@Override
 			public void done(IJobChangeEvent event) {
 				refreshLater();
+				if (enabled) {
+					reportStartFailure();
+				}
 			}
 		});
 		return result;
+	}
+
+	/**
+	 * Tells the user when the server they just enabled did not come up.
+	 * <p>
+	 * The status label says the same, but OK closes the page before the job has
+	 * finished, so without a dialog an occupied port looks like a server that
+	 * started. The startup hook stays silent on purpose; this is the one path where
+	 * a person is known to be sitting in front of the IDE.
+	 */
+	private static void reportStartFailure() {
+		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
+			McpServerService service = McpServerService.getInstance();
+			String error = service.getLastError();
+			if (service.isRunning() || error == null) {
+				return;
+			}
+			IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
+			Shell shell = window != null ? window.getShell() : PlatformUI.getWorkbench().getDisplay().getActiveShell();
+			MessageDialog.openError(shell, "MCP server not started", error
+					+ "\n\nThe port is probably held by another process, often a second Eclipse instance with the MCP server enabled on the same port. Choose a different port on the MCP preference page, or stop the other process, and press Apply again.");
+		});
 	}
 
 	private void refreshLater() {
