@@ -10,17 +10,24 @@ import java.util.Map;
 import org.eclipse.compare.CompareConfiguration;
 import org.eclipse.compare.CompareEditorInput;
 import org.eclipse.compare.CompareUI;
+import org.eclipse.compare.ISharedDocumentAdapter;
 import org.eclipse.compare.IStreamContentAccessor;
 import org.eclipse.compare.ITypedElement;
 import org.eclipse.compare.ResourceNode;
+import org.eclipse.compare.SharedDocumentAdapter;
 import org.eclipse.compare.structuremergeviewer.DiffNode;
 import org.eclipse.compare.structuremergeviewer.Differencer;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IAdaptable;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.Path;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.jface.text.IDocument;
 import org.eclipse.swt.graphics.Image;
+import org.eclipse.ui.IEditorInput;
+import org.eclipse.ui.texteditor.IDocumentProvider;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolResult;
@@ -29,13 +36,18 @@ import com.vogella.eclipse.mcp.core.WorkspaceSync;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
 /**
- * Opens Eclipse's compare editor on a workspace file.
+ * Opens Eclipse's compare editor on a workspace file, or the file's own editor with
+ * the difference drawn in when the unified diff preference is on.
  */
 public final class CompareTool implements IMcpTool {
 
 	private static final long UI_TIMEOUT_SECONDS = 15;
 
 	private static final int MAX_BYTES = 10 * 1024 * 1024;
+
+	private static final String COMPARE_QUALIFIER = "org.eclipse.compare"; //$NON-NLS-1$
+
+	private static final String UNIFIED_DIFF_KEY = "org.eclipse.compare.UnifiedDiff"; //$NON-NLS-1$
 
 	@Override
 	public String getName() {
@@ -44,7 +56,7 @@ public final class CompareTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Opens the Eclipse compare editor on a workspace file against another file, against content you supply, or against a Git revision, so a person can review a change side by side with syntax colouring and the structural Java compare instead of reading a patch in chat. Comparing against 'content' is the way to show a proposed edit before anything is written. Both sides are READ ONLY: this opens a view of a difference and never modifies a file. CHANGES WHAT THE IDE SHOWS. Comparing against a revision needs the org.eclipse.jgit bundle, which every Eclipse with EGit has and a bare Platform SDK does not."; //$NON-NLS-1$
+		return "Opens the Eclipse compare editor on a workspace file against another file, against content you supply, or against a Git revision, so a person can review a change side by side with syntax colouring and the structural Java compare instead of reading a patch in chat. Comparing against 'content' is the way to show a proposed edit before anything is written. Both sides are READ ONLY: this opens a view of a difference and never modifies a file. CHANGES WHAT THE IDE SHOWS. With the preference org.eclipse.compare.UnifiedDiff set, the file opens in its own editor instead and the difference is drawn into it; 'unifiedDiff' in the answer says which. Comparing against a revision needs the org.eclipse.jgit bundle, which every Eclipse with EGit has and a bare Platform SDK does not."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -109,7 +121,7 @@ public final class CompareTool implements IMcpTool {
 			} catch (CoreException | IOException e) {
 				return McpToolResult.error("Could not read '%s': %s".formatted(rightPath, e.getMessage())); //$NON-NLS-1$
 			}
-			rightElement = new ResourceNode(right);
+			rightElement = new FileNode(right);
 			rightDescription = right.getFullPath().toString();
 		} else if (content != null) {
 			rightBytes = content.getBytes(StandardCharsets.UTF_8);
@@ -148,7 +160,7 @@ public final class CompareTool implements IMcpTool {
 
 		ITypedElement rightSide = rightElement;
 		return UiThread.call(UI_TIMEOUT_SECONDS,
-				() -> open(new ResourceNode(left), rightSide, leftLabel, rightLabel, activate, report));
+				() -> open(new FileNode(left), rightSide, leftLabel, rightLabel, activate, report));
 	}
 
 	private static JsonObject open(ITypedElement left, ITypedElement right, String leftLabel, String rightLabel,
@@ -160,8 +172,13 @@ public final class CompareTool implements IMcpTool {
 		configuration.setRightEditable(false);
 		Input input = new Input(configuration, left, right);
 		input.setTitle("Compare %s and %s".formatted(left.getName(), rightLabel)); //$NON-NLS-1$
+		// the compare framework decides between the two presentations from this
+		// preference, and the answer says which one the caller is going to find
+		boolean unifiedDiff = Platform.getPreferencesService().getBoolean(COMPARE_QUALIFIER, UNIFIED_DIFF_KEY, false,
+				null);
 		CompareUI.openCompareEditor(input, activate);
-		return report.put("opened", Boolean.TRUE).put("editor", input.getTitle()); //$NON-NLS-1$ //$NON-NLS-2$
+		return report.put("opened", Boolean.TRUE).put("editor", input.getTitle()) //$NON-NLS-1$ //$NON-NLS-2$
+				.put("unifiedDiff", Boolean.valueOf(unifiedDiff)); //$NON-NLS-1$
 	}
 
 	private static IFile file(String path) {
@@ -204,6 +221,33 @@ public final class CompareTool implements IMcpTool {
 		@Override
 		protected Object prepareInput(IProgressMonitor monitor) {
 			return new DiffNode(Differencer.CHANGE, null, left, right);
+		}
+	}
+
+	/**
+	 * A workspace file that shares its editor's document. Without the adapter the
+	 * compare framework has no document key for the file, and the unified diff,
+	 * which is drawn into the file's own editor, silently falls back to the compare
+	 * editor.
+	 */
+	public static final class FileNode extends ResourceNode implements IAdaptable {
+
+		public FileNode(IFile file) {
+			super(file);
+		}
+
+		@Override
+		public <T> T getAdapter(Class<T> adapter) {
+			if (adapter == ISharedDocumentAdapter.class) {
+				return adapter.cast(new SharedDocumentAdapter() {
+					@Override
+					public void flushDocument(IDocumentProvider provider, IEditorInput documentKey, IDocument document,
+							boolean overwrite) {
+						// both sides are read only, so there is never anything to write back
+					}
+				});
+			}
+			return Platform.getAdapterManager().getAdapter(this, adapter);
 		}
 	}
 

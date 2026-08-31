@@ -1,18 +1,22 @@
 package com.vogella.eclipse.mcp.core.tests;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
+import org.eclipse.compare.ISharedDocumentAdapter;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.NullProgressMonitor;
+import org.eclipse.ui.IFileEditorInput;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import com.vogella.eclipse.mcp.core.McpToolResult;
+import com.vogella.eclipse.mcp.ui.internal.CompareTool;
 
 /**
  * The UI tools, as far as they can be reached without a workbench.
@@ -61,6 +65,19 @@ class UiToolsTest {
 				TestFixture.call(COMPARE,
 						Map.of("left", file.getFullPath().toString(), "right", "/" + PROJECT + "/missing.txt")),
 				"No file at the workspace path");
+	}
+
+	@Test
+	void theFileSideSharesItsEditorDocument() throws Exception {
+		IProject project = fixture.createProject(PROJECT);
+		IFile file = write(project, "a.txt", "one");
+
+		// the unified diff overlays the file's own editor and needs a document key
+		// for the file; a plain ResourceNode has none and falls back silently
+		ISharedDocumentAdapter adapter = new CompareTool.FileNode(file).getAdapter(ISharedDocumentAdapter.class);
+		assertNotNull(adapter);
+		assertTrue(adapter.getDocumentKey(new CompareTool.FileNode(file)) instanceof IFileEditorInput input
+				&& file.equals(input.getFile()));
 	}
 
 	@Test

@@ -1789,6 +1789,7 @@ Opens a workspace file in an editor and optionally reveals a line, so the person
 
 **Changes what the IDE shows**, writes nothing.
 Opens Eclipse's compare editor on a workspace file, against another file, against content you supply, or against a Git revision.
+With the preference `org.eclipse.compare.UnifiedDiff` set, the file opens in its own editor instead and the difference is drawn into it as line header code minings and annotations; `unifiedDiff` in the answer says which presentation the call went to.
 
 | Argument | Type | Default | Meaning |
 |---|---|---|---|
