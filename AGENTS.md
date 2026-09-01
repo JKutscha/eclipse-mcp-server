@@ -571,6 +571,12 @@ It reaches `org.eclipse.swt.internal.win32.OS` by name through SWT's own class l
 The attachment can be refused too, so `foreground` is still read back rather than promised, and `foregroundMethod` says which route was taken.
 Written on Linux and unverified on Windows.
 
+**A `build.properties` continuation is a backslash before whatever line ending the checkout has.**
+`eclipse_substitute_bundle` joined continuation lines by hand with `replace("\\\n", "")`, which a CRLF checkout defeats: the `bin.includes` value became `plugin.properties` and a bare `\`, and every entry after the first was lost.
+On Windows `Path.resolve("\\")` is the drive root, `Files.isDirectory` accepts it, and the pack walked `C:\` until it hit the recycle bin; on Linux the same value is a file that does not exist and was skipped without a word, which is why it never showed here.
+`binIncludes` now reads through `java.util.Properties`, which is what PDE does, `pack` refuses any root outside the project by name, and `copyTree` records a directory it cannot read under `unreadable` instead of ending the pack on a path with no relation to the request.
+`SubstituteBundlePackTest` packs a CRLF fixture and asserts every entry.
+
 **Windows has two code pages and `native.encoding` reports the wrong one for a spawned process.**
 It is the ANSI code page, while cmd.exe and the tools it starts write the OEM one, so `echo äöü` came back from `eclipse_run_command` as `„”�á`: readable-looking, wrong, and silent.
 Only `chcp` knows the number, so `CommandRegistry` asks once and caches it.

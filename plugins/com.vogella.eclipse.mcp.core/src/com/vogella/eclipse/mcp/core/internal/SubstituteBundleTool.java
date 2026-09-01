@@ -1,16 +1,21 @@
 package com.vogella.eclipse.mcp.core.internal;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystemNotFoundException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
@@ -544,15 +549,27 @@ public final class SubstituteBundleTool implements IMcpTool {
 		}
 
 		Files.createDirectories(jars);
-		int entries = pack(projectPath, outputFolder(projectPath), jar);
+		Packed packed;
+		try {
+			packed = pack(projectPath, jar);
+		} catch (IOException e) {
+			Files.deleteIfExists(jar);
+			return McpToolResult.error("Packing project '%s' from %s failed, and bundles.info was not changed: %s" //$NON-NLS-1$
+					.formatted(projectName, projectPath, e.getMessage()));
+		}
 		lines.set(index, substituted);
 		Files.write(bundlesInfo, lines, StandardCharsets.UTF_8);
 		record(configuration, symbolicName, original, substituted);
+		JsonArray unreadable = new JsonArray();
+		packed.unreadable().forEach(unreadable::add);
 		return McpToolResult.of(result.put("dryRun", Boolean.FALSE) //$NON-NLS-1$
-				.put("entries", Integer.valueOf(entries)) //$NON-NLS-1$
+				.put("entries", Integer.valueOf(packed.entries())) //$NON-NLS-1$
+				.put("unreadable", unreadable) //$NON-NLS-1$
 				.put("restartRequired", Boolean.TRUE) //$NON-NLS-1$
 				.put("note", //$NON-NLS-1$
-						"Restart with eclipse_restart for the IDE to run this jar. Until then it still runs the installed bundle. The original line is recorded, so action restore puts it back without you keeping it, and action status reports the substitution to any session that asks.") //$NON-NLS-1$
+						(packed.unreadable().isEmpty() ? "" //$NON-NLS-1$
+								: "THE JAR IS INCOMPLETE: the directories under unreadable could not be read and nothing below them was packed. ") //$NON-NLS-1$
+								+ "Restart with eclipse_restart for the IDE to run this jar. Until then it still runs the installed bundle. The original line is recorded, so action restore puts it back without you keeping it, and action status reports the substitution to any session that asks.") //$NON-NLS-1$
 				.toString());
 	}
 
@@ -639,45 +656,83 @@ public final class SubstituteBundleTool implements IMcpTool {
 				.toString());
 	}
 
+	/** What packing produced: the entries written and the directories it could not read. */
+	public record Packed(int entries, List<String> unreadable) {
+	}
+
 	/**
 	 * Packs the project the way PDE would: the compiled output, plus what
 	 * build.properties lists under bin.includes, which is where the manifest, the
-	 * plugin.xml and any css or icons live.
+	 * plugin.xml and any css or icons live. Every root it walks has to lie inside
+	 * the project; an entry that resolves anywhere else is refused by name.
 	 */
-	private static int pack(Path projectPath, Path output, Path jar) throws IOException {
-		List<String> includes = binIncludes(projectPath);
+	public static Packed pack(Path projectPath, Path jar) throws IOException {
+		Path project = projectPath.toAbsolutePath().normalize();
+		List<String> includes = binIncludes(project);
+		List<String> unreadable = new ArrayList<>();
 		int written = 0;
 		try (OutputStream stream = Files.newOutputStream(jar); JarOutputStream out = new JarOutputStream(stream)) {
+			Path output = inside(project, outputFolder(project), "the output folder"); //$NON-NLS-1$
 			if (Files.isDirectory(output)) {
-				written += copyTree(output, output, out);
+				written += copyTree(output, output, out, unreadable);
 			}
 			for (String include : includes) {
 				if (".".equals(include)) { //$NON-NLS-1$
 					continue;
 				}
-				Path source = projectPath.resolve(include);
+				Path source = inside(project, project.resolve(include), "bin.includes entry '" + include + "'"); //$NON-NLS-1$ //$NON-NLS-2$
 				if (Files.isDirectory(source)) {
-					written += copyTree(projectPath, source, out);
+					written += copyTree(project, source, out, unreadable);
 				} else if (Files.isRegularFile(source)) {
-					written += copyOne(projectPath, source, out);
+					written += copyOne(project, source, out);
 				}
 			}
 		}
-		return written;
+		return new Packed(written, List.copyOf(unreadable));
 	}
 
-	private static int copyTree(Path base, Path directory, JarOutputStream out) throws IOException {
-		int written = 0;
-		try (var walk = Files.walk(directory)) {
-			for (Path path : walk.filter(Files::isRegularFile).toList()) {
-				written += copyOne(base, path, out);
-			}
+	/**
+	 * Refuses a pack root outside the project. A stray value, a backslash left
+	 * by a continuation line say, resolves to the drive root on Windows, and
+	 * walking that from here is how a pack once failed on the recycle bin.
+	 */
+	private static Path inside(Path project, Path candidate, String what) throws IOException {
+		Path resolved = candidate.toAbsolutePath().normalize();
+		if (!resolved.startsWith(project)) {
+			throw new IOException("%s resolves to %s, which is outside the project at %s".formatted(what, resolved, //$NON-NLS-1$
+					project));
 		}
-		return written;
+		return resolved;
 	}
 
-	private static int copyOne(Path base, Path file, JarOutputStream out) throws IOException {
-		String name = base.relativize(file).toString();
+	/**
+	 * Walks one tree into the jar. A directory that cannot be read is recorded
+	 * and skipped rather than ending the pack, so the answer can say what is
+	 * missing instead of naming a path with no relation to the request.
+	 */
+	private static int copyTree(Path base, Path directory, JarOutputStream out, List<String> unreadable)
+			throws IOException {
+		int[] written = { 0 };
+		Files.walkFileTree(directory, new SimpleFileVisitor<>() {
+			@Override
+			public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+				if (attrs.isRegularFile()) {
+					written[0] += copyOne(base, file, out);
+				}
+				return FileVisitResult.CONTINUE;
+			}
+
+			@Override
+			public FileVisitResult visitFileFailed(Path file, IOException e) {
+				unreadable.add(file.toString());
+				return FileVisitResult.CONTINUE;
+			}
+		});
+		return written[0];
+	}
+
+	private static int copyOne(Path base, Path file, JarOutputStream out) {
+		String name = base.relativize(file).toString().replace('\\', '/');
 		try {
 			out.putNextEntry(new ZipEntry(name));
 			Files.copy(file, out);
@@ -690,25 +745,31 @@ public final class SubstituteBundleTool implements IMcpTool {
 		}
 	}
 
+	/**
+	 * Read through Properties, which is what PDE does: it joins a continuation
+	 * line whatever its line ending. A hand parser that only knew LF left a
+	 * bare backslash behind on a CRLF checkout, and lost every entry after it.
+	 */
 	private static List<String> binIncludes(Path projectPath) throws IOException {
-		Path properties = projectPath.resolve("build.properties"); //$NON-NLS-1$
-		if (!Files.isRegularFile(properties)) {
+		Path path = projectPath.resolve("build.properties"); //$NON-NLS-1$
+		if (!Files.isRegularFile(path)) {
 			return List.of("META-INF/", "plugin.xml"); //$NON-NLS-1$ //$NON-NLS-2$
 		}
-		String text = Files.readString(properties).replace("\\\n", ""); //$NON-NLS-1$ //$NON-NLS-2$
-		for (String line : text.split("\n")) { //$NON-NLS-1$
-			String stripped = line.strip();
-			if (stripped.startsWith("bin.includes")) { //$NON-NLS-1$
-				List<String> values = new ArrayList<>();
-				for (String value : stripped.substring(stripped.indexOf('=') + 1).split(",")) { //$NON-NLS-1$
-					if (!value.isBlank()) {
-						values.add(value.strip());
-					}
-				}
-				return values;
+		Properties properties = new Properties();
+		try (InputStream in = Files.newInputStream(path)) {
+			properties.load(in);
+		}
+		String value = properties.getProperty("bin.includes"); //$NON-NLS-1$
+		if (value == null) {
+			return List.of("META-INF/", "plugin.xml"); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		List<String> values = new ArrayList<>();
+		for (String entry : value.split(",")) { //$NON-NLS-1$
+			if (!entry.isBlank()) {
+				values.add(entry.strip());
 			}
 		}
-		return List.of("META-INF/", "plugin.xml"); //$NON-NLS-1$ //$NON-NLS-2$
+		return values;
 	}
 
 	/**
