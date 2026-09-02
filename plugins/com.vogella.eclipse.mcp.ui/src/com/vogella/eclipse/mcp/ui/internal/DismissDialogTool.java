@@ -69,6 +69,11 @@ public final class DismissDialogTool implements IMcpTool {
 		// asyncExec even though a modal dialog is up: a modal runs a nested event loop,
 		// so queued runnables still execute, and syncExec from here could deadlock
 		UiThread.exec(() -> {
+			if (pending.isDone()) {
+				// the wait below gave up: a dialog dismissed minutes later would be a
+				// surprise, and the caller can see it is still there and ask again
+				return;
+			}
 			try {
 				pending.complete(dismiss(shellTitle, button, dryRun));
 			} catch (RuntimeException e) {
@@ -79,8 +84,7 @@ public final class DismissDialogTool implements IMcpTool {
 			return McpToolResult.of(pending.get(UI_TIMEOUT_SECONDS, TimeUnit.SECONDS).toString());
 		} catch (TimeoutException e) {
 			pending.cancel(false);
-			return McpToolResult.error("The Eclipse UI did not process the request within %d seconds." //$NON-NLS-1$
-					.formatted(UI_TIMEOUT_SECONDS));
+			return McpToolResult.error(UiThread.TIMED_OUT.formatted(Long.valueOf(UI_TIMEOUT_SECONDS)));
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			return McpToolResult.error("The request was interrupted."); //$NON-NLS-1$

@@ -126,10 +126,23 @@ public final class RunScriptTool implements IMcpTool {
 		int passed = 0;
 		int failed = 0;
 		boolean stopped = false;
+		boolean outOfBudget = false;
+		// every step bounds its own wait, but three bounded waits in a row still
+		// outlast the call, and a script the server aborted answers nothing at all
+		int budgetSeconds = CallBudget.maxWaitSeconds();
+		long deadline = System.currentTimeMillis() + budgetSeconds * 1000L;
 		for (Step step : steps) {
 			if (stopped) {
 				results.add(new JsonObject().put("label", step.label()).put("tool", step.tool().getName()) //$NON-NLS-1$ //$NON-NLS-2$
 						.put("ran", Boolean.FALSE).put("reason", "An earlier step failed.")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+				continue;
+			}
+			if (System.currentTimeMillis() >= deadline || (monitor != null && monitor.isCanceled())) {
+				outOfBudget = true;
+				results.add(new JsonObject().put("label", step.label()).put("tool", step.tool().getName()) //$NON-NLS-1$ //$NON-NLS-2$
+						.put("ran", Boolean.FALSE).put("reason", //$NON-NLS-1$ //$NON-NLS-2$
+								"The script's budget of %d seconds ran out before this step." //$NON-NLS-1$
+										.formatted(Integer.valueOf(budgetSeconds))));
 				continue;
 			}
 			long started = System.currentTimeMillis();
@@ -168,7 +181,11 @@ public final class RunScriptTool implements IMcpTool {
 		return new JsonObject().put("total", Integer.valueOf(steps.size())) //$NON-NLS-1$
 				.put("passed", Integer.valueOf(passed)) //$NON-NLS-1$
 				.put("failed", Integer.valueOf(failed)) //$NON-NLS-1$
-				.put("stoppedEarly", Boolean.valueOf(stopped)) //$NON-NLS-1$
+				.put("stoppedEarly", Boolean.valueOf(stopped || outOfBudget)) //$NON-NLS-1$
+				.put("budgetExhausted", outOfBudget ? Boolean.TRUE : null) //$NON-NLS-1$
+				.put("budgetNote", !outOfBudget ? null //$NON-NLS-1$
+						: "The steps ran for longer than the %d seconds that fit inside the server's %d second tool call timeout, so the remaining ones were not started; run them in a second script." //$NON-NLS-1$
+								.formatted(Integer.valueOf(budgetSeconds), Integer.valueOf(CallBudget.callTimeoutSeconds())))
 				.put("atomic", Boolean.valueOf(atomic)) //$NON-NLS-1$
 				.put("steps", results) //$NON-NLS-1$
 				.put("note", atomic //$NON-NLS-1$

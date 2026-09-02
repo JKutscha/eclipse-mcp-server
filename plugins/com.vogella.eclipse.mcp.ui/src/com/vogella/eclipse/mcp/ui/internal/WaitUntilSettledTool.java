@@ -31,7 +31,7 @@ public final class WaitUntilSettledTool implements IMcpTool {
 				  "type": "object",
 				  "properties": {
 				    "quietRounds":    {"type":"integer","default":3,"minimum":1,"maximum":20,"description":"How many consecutive rounds must find the display queue drained and the job manager idle before this answers settled. More is slower and stricter."},
-				    "timeoutSeconds": {"type":"integer","default":10,"minimum":1,"maximum":120,"description":"The whole budget. Running out is answered as settled false with what it saw, never as an error, because 'it did not go quiet' is a result."},
+				    "timeoutSeconds": {"type":"integer","default":10,"minimum":1,"maximum":120,"description":"The whole budget. Running out is answered as settled false with what it saw, never as an error, because 'it did not go quiet' is a result. Capped below the server's tool call timeout, and the answer says 'clamped' when it was; call again to keep waiting."},
 				    "pauseMillis":    {"type":"integer","default":120,"minimum":10,"maximum":2000,"description":"How long to wait between rounds. This is what gives work scheduled with a small delay a chance to appear, so a very short pause makes settling easier and less meaningful."}
 				  },
 				  "additionalProperties": false
@@ -49,6 +49,6 @@ public final class WaitUntilSettledTool implements IMcpTool {
 		int pause = args.getInt("pauseMillis", 120, 10, 2000); //$NON-NLS-1$
 		// deliberately not on the UI thread: the whole mechanism is a fence posted
 		// from outside it
-		return McpToolResult.of(UiSettle.settle(rounds, timeout * 1000L, pause).toString());
+		return McpToolResult.of(UiSettle.settle(rounds, timeout * 1000L, pause, monitor).toString());
 	}
 }

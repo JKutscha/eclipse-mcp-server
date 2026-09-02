@@ -240,6 +240,20 @@ That was measured from outside before it was understood here: a harness saw two 
 That an Eclipse test suite does it this way is evidence the approach works, not that it is supported; every name is internal and can change in any release.
 So a reconciler that cannot be read is reported busy, never idle. The direction matters more than the reading: a renamed field then costs a settle that never succeeds, which is loud, instead of one that succeeds too early, which is silent and is the whole failure this exists to prevent.
 
+**The reconciler probe runs on the UI thread, so it is cached, budgeted and paced.**
+`Reconcilers` resolved every method and field on every probe, walking the class hierarchy with `getDeclaredMethod` and catching a miss per level, and with three 1 MB Java editors open one probe held the UI thread for five to seven seconds: 2199 of 2199 UI thread samples were inside it, half of them in `fillInStackTrace`.
+The lookups are now cached per class, misses included, the probe stops after `Reconcilers.BUDGET_MILLIS` and counts the editors it did not reach as busy, and `UiSettle` sleeps at least as long as the last probe took, so a slow probe stretches the pause rather than the freeze.
+The wait itself is capped by `CallBudget.maxWaitSeconds()` and stops when the monitor is cancelled, because four calls whose clients had given up kept posting fences for minutes; the answer carries `clamped` when the cap applied.
+
+**A UI request whose wait gave up is withdrawn, not left to run later.**
+`UiThread.run` timed out after fifteen seconds and left the runnable queued, so three `eclipse_close_editor` calls answered "did not process the request" and then closed the editors minutes later, when a retry found nothing to close.
+`completeFrom` skips the work when the future is already cancelled, and the message says the request will not run.
+`UiThread.timed` is the deliberate exception: `eclipse_run_workbench_command` reports `timedOut` and logs what the command went on to do, which needs the work to keep running.
+
+**A stack cut at `maxDepth` loses its outermost frames, a different number per sample.**
+`ThreadInfo` keeps the innermost frames, so one path through the event loop arrived in `eclipse_stop_sampling` as five roots that were the same path five times, and a 393 KB answer blew the client's result limit.
+`SamplingRegistry.align` roots each thread's tree at the outermost frame every truncated sample still shares and says so in `truncatedNote`; a run of frames with the same count is folded into `chain`; and frames on every sample are listed once under `onEveryStack` rather than heading `topByPresence`, where under a `frameFilter` they were five rows at 100 percent.
+
 **`eclipse_wait_until_settled` is a heuristic and its own description is the guardrail.**
 It is honest about what it cannot observe, and a test asserts that wording rather than the behaviour, because the wording is what a model reads before deciding to trust it.
 The blind spot has already moved once, from the reconcilers to whatever plain background threads remain, so the test checks that something is still named rather than naming a particular case.

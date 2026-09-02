@@ -4,8 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
+
+import org.eclipse.core.runtime.preferences.InstanceScope;
 
 import org.junit.jupiter.api.Test;
 
@@ -34,6 +37,35 @@ class RunScriptToolTest {
 	@org.junit.jupiter.api.BeforeEach
 	void createProject() throws Exception {
 		fixture.createProject(PROJECT);
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void stepsPastTheCallBudgetAreNotStarted() throws Exception {
+		// every step bounds its own wait, and three bounded waits in a row still
+		// outlast the call, after which the server aborts it and the caller gets
+		// nothing at all; with a 4 second timeout the budget is 1 second
+		String qualifier = "com.vogella.eclipse.mcp.server";
+		String key = "callTimeoutSeconds";
+		InstanceScope.INSTANCE.getNode(qualifier).putInt(key, 4);
+		try {
+			Map<String, Object> wait = Map.of("command", "sleep 3", "directory",
+					Files.createTempDirectory("mcp-script-budget").toString(), "wait", Boolean.TRUE, "timeoutSeconds",
+					Integer.valueOf(5));
+			Map<String, Object> result = TestFixture.callAndParse(TOOL, Map.of("stopOnFailure", Boolean.FALSE,
+					"steps", List.of(Map.of("tool", "eclipse_run_command", "arguments", wait, "label", "first"),
+							Map.of("tool", "eclipse_run_command", "arguments", wait, "label", "second"),
+							Map.of("tool", "eclipse_list_projects", "label", "third"))));
+
+			List<Map<String, Object>> steps = (List<Map<String, Object>>) result.get("steps");
+			assertEquals(Boolean.TRUE, steps.get(0).get("ran"), "got " + steps.get(0));
+			assertEquals(Boolean.FALSE, steps.get(2).get("ran"), "got " + steps.get(2));
+			assertTrue(String.valueOf(steps.get(2).get("reason")).contains("budget"), "got " + steps.get(2));
+			assertEquals(Boolean.TRUE, result.get("budgetExhausted"), "got " + result);
+			assertEquals(Boolean.TRUE, result.get("stoppedEarly"), "got " + result);
+		} finally {
+			InstanceScope.INSTANCE.getNode(qualifier).remove(key);
+		}
 	}
 
 	@Test

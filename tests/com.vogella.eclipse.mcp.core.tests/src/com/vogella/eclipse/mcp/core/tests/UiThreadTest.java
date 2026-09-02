@@ -66,6 +66,30 @@ class UiThreadTest {
 	}
 
 	@Test
+	void workWhoseWaitGaveUpIsNotRunLater() {
+		// three eclipse_close_editor calls once answered with a timeout and then
+		// closed the editors minutes later, when the UI thread got round to the
+		// queued runnables; the wait cancels the future, and that has to be enough
+		CompletableFuture<JsonObject> pending = new CompletableFuture<>();
+		pending.cancel(false);
+		boolean[] ran = { false };
+
+		UiThread.completeFrom(pending, () -> {
+			ran[0] = true;
+			return new JsonObject();
+		});
+
+		assertFalse(ran[0], "withdrawn work must not run");
+	}
+
+	@Test
+	void theTimeoutAnswerSaysTheWorkWasWithdrawn() {
+		String answer = UiThread.TIMED_OUT.formatted(Long.valueOf(15));
+
+		assertTrue(answer.contains("will not run later"), "got " + answer);
+	}
+
+	@Test
 	void aCapturedFailureIsDescribedByItsCause() {
 		String described = UiThread.failure(new ExecutionException(new Error("no more handles")));
 

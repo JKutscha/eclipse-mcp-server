@@ -1846,6 +1846,7 @@ Samples thread stacks at a fixed interval, to profile an operation or diagnose a
 Sampling runs on a daemon thread through `ThreadMXBean`, which needs neither the UI thread nor any workspace lock, so it keeps working while the IDE is frozen. That is the requirement, not a detail: a profiler that queues behind the freeze is useless for the case it exists for.
 
 The result is **aggregated, not dumped**: the frames where time was actually spent (`topBySelfTime`), the frames most often on the stack (`topByPresence`), and the samples merged into one call tree. A hundred samples of seventy frames is seven thousand lines, so the raw samples only come back on request.
+Frames on every sample are listed once under `onEveryStack` instead of heading `topByPresence`, a run of frames with the same count is folded into `chain`, and samples deeper than `maxDepth` are rooted at the outermost frame they still share, so one path through the event loop is one root.
 
 `ThreadMXBean` sampling is safepoint biased, so tight loops without safepoint polls are under-represented. Treat it as "where is the time going", not as an exact profiler.
 

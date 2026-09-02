@@ -5,6 +5,7 @@ import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -51,7 +52,7 @@ public final class SamplingRegistry {
 	 * entry in the aggregate and a saturated thread is indistinguishable from two
 	 * half-busy ones; without the state, a stall cannot be told from work.
 	 */
-	record Sample(long threadId, String threadName, Thread.State state, StackTraceElement[] stack) {
+	public record Sample(long threadId, String threadName, Thread.State state, StackTraceElement[] stack) {
 	}
 
 	/** One sampling run. */
@@ -108,6 +109,10 @@ public final class SamplingRegistry {
 
 		public int intervalMillis() {
 			return intervalMillis;
+		}
+
+		public int maxDepth() {
+			return maxDepth;
 		}
 
 		void run() {
@@ -290,7 +295,8 @@ public final class SamplingRegistry {
 	 */
 	public static FlameGraph.Builder flame(Session session, boolean includeIdle, String frameFilter) {
 		FlameGraph.Builder builder = FlameGraph.builder();
-		for (Sample sample : select(session, includeIdle, frameFilter).samples()) {
+		for (Sample sample : align(select(session, includeIdle, frameFilter).samples(), session.maxDepth())
+				.samples()) {
 			StackTraceElement[] stack = sample.stack();
 			List<String> frames = new ArrayList<>(stack.length);
 			// outermost first, which is bottom up in the picture
@@ -367,8 +373,8 @@ public final class SamplingRegistry {
 			}
 		}
 		result.put("topBySelfTime", top(self, topMethods, samples.size())); //$NON-NLS-1$
-		result.put("topByPresence", top(total, topMethods, samples.size())); //$NON-NLS-1$
-		result.put("tree", tree(samples, minSamples)); //$NON-NLS-1$
+		presence(total, samples.size(), topMethods, result);
+		tree(samples, minSamples, session.maxDepth(), result);
 		if (includeRaw) {
 			JsonArray raw = new JsonArray();
 			for (Sample entry : samples) {
@@ -468,6 +474,163 @@ public final class SamplingRegistry {
 		return array;
 	}
 
+	/**
+	 * Adds topByPresence, leaving out the frames on every sample and listing those
+	 * once under onEveryStack.
+	 * <p>
+	 * A frame on every stack is the trunk, not a finding: under a frameFilter the
+	 * list was five rows at 100 percent, the glue between the filter frame and the
+	 * event loop, and said nothing about where the time went.
+	 */
+	public static void presence(List<Sample> samples, int topMethods, JsonObject result) {
+		Map<String, Integer> total = new LinkedHashMap<>();
+		for (Sample entry : samples) {
+			Set<String> seen = new LinkedHashSet<>();
+			for (StackTraceElement element : entry.stack()) {
+				if (seen.add(frame(element))) {
+					total.merge(frame(element), 1, Integer::sum);
+				}
+			}
+		}
+		presence(total, samples.size(), topMethods, result);
+	}
+
+	private static void presence(Map<String, Integer> total, int samples, int topMethods, JsonObject result) {
+		JsonArray everywhere = new JsonArray();
+		if (samples > 1) {
+			for (Map.Entry<String, Integer> entry : new ArrayList<>(total.entrySet())) {
+				if (entry.getValue().intValue() == samples) {
+					everywhere.add(entry.getKey());
+					total.remove(entry.getKey());
+				}
+			}
+		}
+		result.put("topByPresence", top(total, topMethods, samples)); //$NON-NLS-1$
+		if (everywhere.size() > 0) {
+			result.put("onEveryStack", everywhere) //$NON-NLS-1$
+					.put("onEveryStackNote", //$NON-NLS-1$
+							"These %d frames were on every sample and are left out of topByPresence, which otherwise lists the trunk shared by all samples instead of the frames that tell them apart." //$NON-NLS-1$
+									.formatted(Integer.valueOf(everywhere.size())));
+		}
+	}
+
+	/** Adds the merged call tree, and what was done about samples cut at maxDepth. */
+	public static void tree(List<Sample> samples, int minSamples, int maxDepth, JsonObject result) {
+		Alignment aligned = align(samples, maxDepth);
+		result.put("tree", tree(aligned.samples(), minSamples)); //$NON-NLS-1$
+		if (aligned.truncated() > 0) {
+			result.put("truncatedSamples", Integer.valueOf(aligned.truncated())) //$NON-NLS-1$
+					.put("truncatedNote", aligned.note()); //$NON-NLS-1$
+		}
+	}
+
+	/**
+	 * Samples with their outer ends aligned, so that stacks cut at maxDepth merge
+	 * under one root.
+	 * <p>
+	 * A stack deeper than maxDepth loses its OUTERMOST frames, and a different
+	 * number of them per sample as the leaf side grows and shrinks, so one path
+	 * through the event loop arrived as five roots that were the same path five
+	 * times, and the tree was five times the size it should have been. Per thread,
+	 * the outermost frame every truncated sample still shares is taken as the root
+	 * and the frames outside it are dropped from every sample of that thread.
+	 */
+	private static Alignment align(List<Sample> samples, int maxDepth) {
+		Map<Long, List<Sample>> byThread = new LinkedHashMap<>();
+		for (Sample sample : samples) {
+			byThread.computeIfAbsent(Long.valueOf(sample.threadId()), id -> new ArrayList<>()).add(sample);
+		}
+		List<Sample> aligned = new ArrayList<>(samples.size());
+		List<String> anchors = new ArrayList<>();
+		int truncated = 0;
+		int unaligned = 0;
+		for (List<Sample> group : byThread.values()) {
+			List<Sample> cut = group.stream().filter(sample -> sample.stack().length >= maxDepth).toList();
+			if (cut.isEmpty()) {
+				aligned.addAll(group);
+				continue;
+			}
+			truncated += cut.size();
+			String anchor = anchor(cut);
+			if (anchor == null) {
+				unaligned += cut.size();
+				aligned.addAll(group);
+				continue;
+			}
+			anchors.add(anchor);
+			for (Sample sample : group) {
+				aligned.add(trimAt(sample, anchor));
+			}
+		}
+		String note = null;
+		if (truncated > 0) {
+			note = "%d samples were deeper than maxDepth %d and lost their outermost frames, a different number each. The tree is rooted per thread at the outermost frame every truncated stack of that thread still shares (%s), and the frames outside it were dropped from every sample of that thread so that they merge under one root. Raise maxDepth to see the outer frames." //$NON-NLS-1$
+					.formatted(Integer.valueOf(truncated), Integer.valueOf(maxDepth), String.join(", ", anchors)); //$NON-NLS-1$
+			if (unaligned > 0) {
+				note += " %d truncated samples share no outermost frame with the others of their thread and are merged as they are, which is what produces several roots for one path." //$NON-NLS-1$
+						.formatted(Integer.valueOf(unaligned));
+			}
+		}
+		return new Alignment(aligned, truncated, note);
+	}
+
+	private record Alignment(List<Sample> samples, int truncated, String note) {
+	}
+
+	/**
+	 * The outermost frame of one truncated sample that every truncated sample
+	 * contains, choosing the one nearest the leaf, which is the one from the
+	 * deepest stack and the one that trims the most.
+	 */
+	private static String anchor(List<Sample> cut) {
+		List<Set<String>> frames = new ArrayList<>(cut.size());
+		for (Sample sample : cut) {
+			Set<String> set = new HashSet<>();
+			for (StackTraceElement element : sample.stack()) {
+				set.add(frame(element));
+			}
+			frames.add(set);
+		}
+		Set<String> candidates = new LinkedHashSet<>();
+		for (Sample sample : cut) {
+			candidates.add(frame(sample.stack()[sample.stack().length - 1]));
+		}
+		String best = null;
+		int bestIndex = Integer.MAX_VALUE;
+		StackTraceElement[] first = cut.get(0).stack();
+		for (String candidate : candidates) {
+			if (!frames.stream().allMatch(set -> set.contains(candidate))) {
+				continue;
+			}
+			for (int i = 0; i < first.length; i++) {
+				if (frame(first[i]).equals(candidate)) {
+					if (i < bestIndex) {
+						bestIndex = i;
+						best = candidate;
+					}
+					break;
+				}
+			}
+		}
+		return best;
+	}
+
+	/** The sample without the frames outside {@code anchor}, or as it is when the anchor is not in it. */
+	private static Sample trimAt(Sample sample, String anchor) {
+		StackTraceElement[] stack = sample.stack();
+		for (int i = stack.length - 1; i >= 0; i--) {
+			if (frame(stack[i]).equals(anchor)) {
+				if (i == stack.length - 1) {
+					return sample;
+				}
+				StackTraceElement[] trimmed = new StackTraceElement[i + 1];
+				System.arraycopy(stack, 0, trimmed, 0, i + 1);
+				return new Sample(sample.threadId(), sample.threadName(), sample.state(), trimmed);
+			}
+		}
+		return sample;
+	}
+
 	/** Merges the samples into one call tree, outermost frame first. */
 	private static JsonArray tree(List<Sample> samples, int minSamples) {
 		Node root = new Node("");  //$NON-NLS-1$
@@ -504,7 +667,23 @@ public final class SamplingRegistry {
 					continue;
 				}
 				JsonObject json = new JsonObject().put("frame", node.frame).put("samples", node.count); //$NON-NLS-1$ //$NON-NLS-2$
-				JsonArray children = node.toJson(minSamples);
+				// a run of frames with one child each and the same count is one path
+				// with nothing to choose along it, forty nested objects for the launcher
+				// and the event loop on every UI thread profile; folded, it is one line
+				Node tail = node;
+				JsonArray chain = new JsonArray();
+				while (tail.children.size() == 1) {
+					Node only = tail.children.values().iterator().next();
+					if (only.count != tail.count) {
+						break;
+					}
+					chain.add(only.frame);
+					tail = only;
+				}
+				if (chain.size() > 0) {
+					json.put("chain", chain); //$NON-NLS-1$
+				}
+				JsonArray children = tail.toJson(minSamples);
 				if (children.size() > 0) {
 					json.put("children", children); //$NON-NLS-1$
 				}

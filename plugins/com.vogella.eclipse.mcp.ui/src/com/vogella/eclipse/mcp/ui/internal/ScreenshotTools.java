@@ -269,7 +269,7 @@ public final class ScreenshotTools {
 			// before the UI hop, because the fence it posts has to be waited for from
 			// off the UI thread; inside an atomic batch it refuses and says why
 			JsonObject settled = args.getBoolean("settle", false) //$NON-NLS-1$
-					? UiSettle.settle(3, args.getInt("settleTimeoutSeconds", 10, 1, 120) * 1000L, 120) //$NON-NLS-1$
+					? UiSettle.settle(3, args.getInt("settleTimeoutSeconds", 10, 1, 120) * 1000L, 120, monitor) //$NON-NLS-1$
 					: null;
 			boolean suppressCaret = args.getBoolean("suppressCaret", true); //$NON-NLS-1$
 			boolean settlePixels = args.getBoolean("settlePixels", false) && !sameTurn; //$NON-NLS-1$

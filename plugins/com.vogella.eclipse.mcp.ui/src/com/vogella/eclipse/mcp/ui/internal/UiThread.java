@@ -26,6 +26,9 @@ public final class UiThread {
 
 	static final String NO_WORKBENCH = "There is no running workbench."; //$NON-NLS-1$
 
+	/** The answer for a wait that gave up, which also says the work will not run later. */
+	public static final String TIMED_OUT = "The Eclipse UI did not process the request within %d seconds. The request was withdrawn and will not run later, so retry it once the UI is responsive; eclipse_start_sampling with threads ui shows what it is doing."; //$NON-NLS-1$
+
 	private UiThread() {
 	}
 
@@ -105,6 +108,12 @@ public final class UiThread {
 	 * a workbench, which is the only place the distinction is visible.
 	 */
 	public static void completeFrom(CompletableFuture<JsonObject> pending, Supplier<JsonObject> work) {
+		if (pending.isDone()) {
+			// the wait gave up and cancelled the future: an editor closed or a theme
+			// switched minutes after the answer said nothing happened is worse than
+			// the timeout
+			return;
+		}
 		try {
 			pending.complete(work.get());
 		} catch (Throwable e) {
@@ -125,7 +134,9 @@ public final class UiThread {
 	/**
 	 * The same, for a tool whose timeout is an answer rather than a failure. The
 	 * future is left uncancelled, because the work keeps running and cancelling
-	 * would only drop the record of what it went on to do.
+	 * would only drop the record of what it went on to do. Unlike {@link #run},
+	 * a timed request that has not started yet still runs later, which is what
+	 * the answer of eclipse_run_workbench_command says.
 	 */
 	static TimedOutcome timed(long timeoutSeconds, Supplier<JsonObject> work) {
 		if (onUiThread()) {
@@ -157,6 +168,9 @@ public final class UiThread {
 			}
 			CompletableFuture<T> pending = new CompletableFuture<>();
 			PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
+				if (pending.isDone()) {
+					return;
+				}
 				try {
 					pending.complete(work.call());
 				} catch (Throwable e) {
@@ -165,6 +179,9 @@ public final class UiThread {
 			});
 			try {
 				return pending.get(timeoutSeconds, TimeUnit.SECONDS);
+			} catch (TimeoutException e) {
+				pending.cancel(false);
+				throw e;
 			} catch (ExecutionException e) {
 				throw e.getCause() instanceof Exception cause ? cause : e;
 			}
@@ -192,9 +209,9 @@ public final class UiThread {
 		try {
 			return new Outcome(pending.get(timeoutSeconds, TimeUnit.SECONDS), null);
 		} catch (TimeoutException e) {
+			// cancelling is what makes the queued runnable skip the work, see completeFrom
 			pending.cancel(false);
-			return new Outcome(null, "The Eclipse UI did not process the request within %d seconds." //$NON-NLS-1$
-					.formatted(Long.valueOf(timeoutSeconds)));
+			return new Outcome(null, TIMED_OUT.formatted(Long.valueOf(timeoutSeconds)));
 		} catch (InterruptedException | ExecutionException e) {
 			return new Outcome(null, failure(e));
 		}

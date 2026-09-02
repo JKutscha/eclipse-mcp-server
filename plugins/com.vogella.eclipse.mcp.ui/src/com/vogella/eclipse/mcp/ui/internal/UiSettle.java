@@ -3,10 +3,12 @@ package com.vogella.eclipse.mcp.ui.internal;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.PlatformUI;
 
+import com.vogella.eclipse.mcp.core.CallBudget;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
@@ -33,6 +35,12 @@ import com.vogella.eclipse.mcp.core.json.JsonObject;
  * So this reduces flakiness and cannot remove it. A caller that needs to be
  * right asserts the thing it cares about, the way a content assist scenario
  * checks that the proposal rows are there rather than waiting for them to be.
+ * <p>
+ * The wait is bounded by the server's call timeout and stops when the call is
+ * cancelled. Four abandoned calls once kept posting fences for minutes after
+ * their clients had given up, each fence holding the UI thread for the length of
+ * a reconciler probe, and the IDE stuttered for as long as the longest of them
+ * had been asked to wait.
  */
 final class UiSettle {
 
@@ -50,8 +58,9 @@ final class UiSettle {
 	 * @param timeoutMillis the whole budget, after which it answers unsettled
 	 * @param pauseMillis how long to wait between rounds, which is what gives
 	 *        work scheduled with a small delay a chance to appear
+	 * @param monitor cancelled when the caller gave up, may be {@code null}
 	 */
-	static JsonObject settle(int quietPasses, long timeoutMillis, long pauseMillis) {
+	static JsonObject settle(int quietPasses, long timeoutMillis, long pauseMillis, IProgressMonitor monitor) {
 		if (UiThread.onUiThread()) {
 			// a fence posted from the UI thread would be run by the very thread that
 			// is waiting for it, so it proves nothing and could not drain anything
@@ -61,14 +70,28 @@ final class UiSettle {
 							"This call is already on the UI thread, which is what eclipse_run_script with atomic does. Nothing can drain the display queue from inside it, because the runnables waiting there are behind this one. Settle outside the atomic batch, before it starts.");
 		}
 		Display display = PlatformUI.getWorkbench().getDisplay();
+		long requested = timeoutMillis;
+		// the server aborts the call at its timeout and the loop would carry on
+		// without anyone to answer, posting fences into an IDE nobody is waiting on
+		timeoutMillis = Math.min(timeoutMillis, CallBudget.maxWaitSeconds() * 1000L);
+		String clamped = timeoutMillis < requested
+				? "Waited %d of the %d seconds asked for, because the server aborts any call that outlasts its %d second tool call timeout, which is set in Preferences > General > MCP Server. Call again to keep waiting." //$NON-NLS-1$
+						.formatted(Long.valueOf(timeoutMillis / 1000), Long.valueOf(requested / 1000),
+								Integer.valueOf(CallBudget.callTimeoutSeconds()))
+				: null;
 		long deadline = System.currentTimeMillis() + timeoutMillis;
 		long started = System.currentTimeMillis();
 		int rounds = 0;
 		int consecutive = 0;
 		long slowestFence = 0;
+		long slowestProbe = 0;
 		JsonObject jobs = null;
 		Reconcilers.State reconcilers = null;
 		while (System.currentTimeMillis() < deadline) {
+			if (monitor != null && monitor.isCanceled()) {
+				return answer(false, rounds, consecutive, started, slowestFence, slowestProbe, jobs, reconcilers,
+						"The call was cancelled before the UI settled.", clamped); //$NON-NLS-1$
+			}
 			rounds++;
 			// one hop does both: the fence proves the queue drained, and while it is
 			// on the UI thread it also reads the reconcilers, which can only be asked
@@ -77,6 +100,8 @@ final class UiSettle {
 			long fence = fenced.millis();
 			reconcilers = fenced.reconcilers();
 			slowestFence = Math.max(slowestFence, Math.max(fence, 0));
+			long probe = reconcilers == null ? 0 : reconcilers.probeMillis();
+			slowestProbe = Math.max(slowestProbe, probe);
 			jobs = jobSnapshot();
 			boolean uiBusy = fence < 0 || fence > FENCE_BUDGET_MILLIS;
 			boolean jobsBusy = Boolean.TRUE.equals(jobs.remove("busy")); //$NON-NLS-1$
@@ -86,26 +111,32 @@ final class UiSettle {
 			} else {
 				consecutive++;
 				if (consecutive >= quietPasses) {
-					return answer(true, rounds, consecutive, started, slowestFence, jobs, reconcilers, null);
+					return answer(true, rounds, consecutive, started, slowestFence, slowestProbe, jobs, reconcilers,
+							null, clamped);
 				}
 			}
-			sleep(pauseMillis);
+			// never let the probes take more of the UI thread than the pauses leave
+			// free: a slow probe stretches the pause rather than the freeze
+			sleep(Math.max(pauseMillis, probe));
 		}
-		return answer(false, rounds, consecutive, started, slowestFence, jobs, reconcilers,
+		return answer(false, rounds, consecutive, started, slowestFence, slowestProbe, jobs, reconcilers,
 				"The budget ran out with %d of the %d consecutive quiet rounds needed. Something kept the UI thread or the job manager busy; jobs below is what it looked like at the end."
-						.formatted(Integer.valueOf(consecutive), Integer.valueOf(quietPasses)));
+						.formatted(Integer.valueOf(consecutive), Integer.valueOf(quietPasses)),
+				clamped);
 	}
 
 	private static JsonObject answer(boolean settled, int rounds, int consecutive, long started, long slowestFence,
-			JsonObject jobs, Reconcilers.State reconcilers, String reason) {
+			long slowestProbe, JsonObject jobs, Reconcilers.State reconcilers, String reason, String clamped) {
 		return new JsonObject().put("settled", Boolean.valueOf(settled)) //$NON-NLS-1$
 				.put("reconcilers", reconcilers == null ? null : reconcilers.describe()) //$NON-NLS-1$
 				.put("rounds", Integer.valueOf(rounds)) //$NON-NLS-1$
 				.put("consecutiveQuietRounds", Integer.valueOf(consecutive)) //$NON-NLS-1$
 				.put("elapsedMillis", Long.valueOf(System.currentTimeMillis() - started)) //$NON-NLS-1$
 				.put("slowestFenceMillis", Long.valueOf(slowestFence)) //$NON-NLS-1$
+				.put("slowestProbeMillis", Long.valueOf(slowestProbe)) //$NON-NLS-1$
 				.put("jobs", jobs) //$NON-NLS-1$
 				.put("reason", reason) //$NON-NLS-1$
+				.put("clamped", clamped) //$NON-NLS-1$
 				.put("cannotSee", //$NON-NLS-1$
 						"Any plain background thread other than a text editor's reconciler, and work that has not been scheduled yet. The reconcilers ARE checked, through internal fields that can change in any release, and an unreadable one counts as busy rather than idle; see the reconcilers block above. THIS IS STILL A HEURISTIC: assert what you actually need rather than trusting it.");
 	}
