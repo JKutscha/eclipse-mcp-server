@@ -72,6 +72,10 @@ Pushing a `v<version>` tag runs the same workflow and additionally creates the G
 
 The setting takes effect immediately, and the server also starts on the next IDE startup while it stays enabled.
 
+The same three values can be given to one IDE start with `-pluginCustomization <file>`, as `com.vogella.eclipse.mcp.server/port=8645` and so on.
+They then become that process's defaults: the server starts on them, the preference page shows them as its defaults, and a value set on the page for the workspace still wins over them.
+That is what `releng/mcp-eclipse-ini.py` writes, see *Starting several IDEs*.
+
 The timeout bounds a single tool call. It is read per call, so raising it does not need a restart.
 Raise it when a workspace is large enough that a refreshing `eclipse_get_problems` or a build does not finish in 30 seconds.
 
@@ -171,7 +175,7 @@ The registry records which port belongs to which file, and every run cleans it: 
 Deleting a file is how a port is given back.
 `--list` shows the registry after that cleanup, `--cleanup` does only the cleanup.
 
-The file fills the **default** scope, so a workspace that set the port or the switch on its own preference page keeps that value, and the script says so when it finds one in the workspace's `.settings`.
+The file fills the **default** scope, so the preference page of that IDE shows its port as the default, and a workspace that set the port or the switch on its own page keeps that value; the script says so when it finds one in the workspace's `.settings`.
 The bearer token needs nothing: it is per user, so one token serves every instance, and each instance still writes its own `endpoint.json` under its workspace.
 A client is configured per instance, with that instance's URL and the shared token.
 

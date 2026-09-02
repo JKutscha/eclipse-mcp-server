@@ -143,6 +143,13 @@ A workspace token from an older build is adopted once and renamed to `token.migr
 The server never falls back to a different port when the configured one is taken; it stays down and records the reason in `McpServerService.getLastError()`, which the preference page shows.
 Silently moving to another port would break every configured client, which is worse than not starting.
 
+**The server's defaults are declared through a preference initializer, never written into the default scope.**
+Equinox loads a default node in a fixed order: the initializers, the bundle's `preferences.ini`, the product's `plugin_customization.ini`, then the command line's `-pluginCustomization` file, and later entries win.
+A `put` into the default node from ordinary code runs after all of that and replaces whatever the customization file set.
+`McpUiPlugin.getServerPreferenceStore` used to seed `enabled`, `port` and `callTimeoutSeconds` that way when the preference page was first opened, so an IDE started with `-pluginCustomization` on port 8645 showed 8642 on the page and moved there on OK, while the file on disk still said 8645 and the next start was fine again.
+`McpPreferenceInitializer` in the server bundle declares the three defaults, and `ServerDefaultsTest` writes a customized value the way Equinox does and asserts it survives the store.
+`releng/mcp-eclipse-ini.py` depends on this: it is how several IDEs get their ports without touching a workspace.
+
 **The tests must never write the real token, and the build is what stops them.**
 User scope is shared with the developer's own running IDE, and the server test bundle regenerates the token, so every `mvn verify` replaced the token that IDE was serving and orphaned its clients.
 `TokenStore.location()` honours `-Dcom.vogella.eclipse.mcp.tokenDirectory`, the surefire `argLine` in the root pom points the tests at `target/`, and a test fails if that redirect is ever lost.
