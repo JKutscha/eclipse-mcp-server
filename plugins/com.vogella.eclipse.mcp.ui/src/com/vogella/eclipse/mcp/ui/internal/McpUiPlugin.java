@@ -1,6 +1,5 @@
 package com.vogella.eclipse.mcp.ui.internal;
 
-import org.eclipse.core.runtime.preferences.DefaultScope;
 import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.eclipse.jface.preference.IPreferenceStore;
 import org.eclipse.ui.plugin.AbstractUIPlugin;
@@ -54,15 +53,17 @@ public class McpUiPlugin extends AbstractUIPlugin {
 		return plugin;
 	}
 
-	/** The store for the server bundle's preference node, with the defaults applied. */
+	/**
+	 * The store for the server bundle's preference node.
+	 * <p>
+	 * The defaults are not written here. They are declared by the server bundle's
+	 * preference initializer, which the preference service runs before it applies a
+	 * {@code -pluginCustomization} file; a write into the default scope from here
+	 * would run after that file and replace the port it set, so that opening the
+	 * page moved the server off the port the IDE was started with.
+	 */
 	public synchronized IPreferenceStore getServerPreferenceStore() {
 		if (serverPreferences == null) {
-			DefaultScope.INSTANCE.getNode(McpPreferences.QUALIFIER).putBoolean(McpPreferences.KEY_ENABLED,
-					McpPreferences.DEFAULT_ENABLED);
-			DefaultScope.INSTANCE.getNode(McpPreferences.QUALIFIER).putInt(McpPreferences.KEY_PORT,
-					McpPreferences.DEFAULT_PORT);
-			DefaultScope.INSTANCE.getNode(McpPreferences.QUALIFIER).putInt(McpPreferences.KEY_CALL_TIMEOUT_SECONDS,
-					McpPreferences.DEFAULT_CALL_TIMEOUT_SECONDS);
 			serverPreferences = new ScopedPreferenceStore(InstanceScope.INSTANCE, McpPreferences.QUALIFIER);
 		}
 		return serverPreferences;
