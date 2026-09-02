@@ -636,6 +636,16 @@ When verifying a freshly published release against the live site, remember that 
 A resolve that returns the previous version right after a release is almost always that cache, not a broken publish.
 `-Dtycho.p2.transport.min-cache-minutes=0` is not enough; delete the cache directory for the host.
 
+## Cursor Cloud specific instructions
+
+The Cloud Agent base image ships JDK 21 and no Maven, so a build needs a toolchain set up first.
+This repository's Cloud environment installs Temurin JDK 25 under `/opt/jdk25` and Maven 3.9 under `/opt/maven`, and puts both on `PATH` with `JAVA_HOME` through `/etc/profile.d`.
+The full `mvn clean verify` is the environment's install command, wrapped in `xvfb-run -a` because the Tycho surefire run starts a real Equinox and the SWT tools die without a display, exactly as `.github/workflows/build.yml` does.
+
+The one thing that is not obvious: the git tool tests build commits through JGit, and the Cloud VM inherits a global git config that turns on SSH commit signing (`commit.gpgsign=true`, `gpg.format=ssh`).
+JGit cannot produce an SSH signature and fails every git test with `UnsupportedSigningFormatException: Could not create the signature`, while GitHub Actions passes because its runner has no signing configured.
+Set `git config --global commit.gpgsign false` before building; the environment does this in its install command so the whole suite is green.
+
 ## Conventions
 
 Java 25, tabs for indentation, the Eclipse formatter defaults.
