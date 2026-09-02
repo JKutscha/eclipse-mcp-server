@@ -42,6 +42,11 @@ This is undocumented and should be documented whatever else is done.
 Each writes its own `endpoint.json`, and `releng/mcp-script.py --workspace <dir>` already reads it.
 The cost is a manual step per workspace and a client configuration per workspace, which is exactly what the request wants to remove.
 
+**Two instances on different ports, from outside.**
+`releng/mcp-eclipse-ini.py` removes the manual step on the IDE side without touching the plug-in: it picks a free port before the IDE starts, writes a `-pluginCustomization` file that switches the server on and names the port, and keeps a registry so the port stays with its workspace and is given back when the file is deleted.
+That is the A2 sticky range below, done by a launcher script instead of by the server, and it is what a user can run today.
+What it cannot do is register the running instances for a client, which is B and C.
+
 ## The sub-problems
 
 The feature decomposes into four questions, and the variants below are per question so they can be combined.

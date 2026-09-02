@@ -130,7 +130,7 @@ Requests without it are answered with `401`. The message says the token is stale
 Whether any of that reaches the caller is the client's decision, and Claude Code's is unhelpful: it renders every `401` as "requires re-authorization" and discards both the body and the challenge, so a stale token arrives as an authorization problem that no amount of authorizing fixes. Answering `200` with a JSON-RPC error would get the text through, and this server does not do it: a rejected credential has to be a `401`, and trading every other client's auth handling for one client's rendering is the wrong trade. The mitigation that works is the token not moving in the first place.
 
 **Which workspace answered.**
-The port is the same everywhere, so with two IDEs open the one that started first owns it and the second stays down.
+The port is the same everywhere, so with two IDEs open the one that started first owns it and the second stays down; see *Starting several IDEs* below for the way around that.
 `workspace` in the discovery file, and in the `401` message, names the workspace a server is serving, which is the only way to tell which IDE a client actually reached.
 An MCP client usually turns a rejected token into an empty tool list rather than an error, so a misconfigured client looks like an absent server; the `401` message is written to be readable when it does surface.
 This is a plain bearer token, not the MCP authorization specification, so there is no OAuth flow and nothing to discover: a client that can send a static header is enough.
@@ -144,6 +144,36 @@ For Claude Code:
 claude mcp add --transport http eclipse http://127.0.0.1:8642/mcp \
   --header "Authorization: Bearer $(jq -r .token <workspace>/.metadata/.plugins/com.vogella.eclipse.mcp.server/endpoint.json)"
 ```
+
+## Starting several IDEs
+
+Every IDE needs a port of its own, and `releng/mcp-eclipse-ini.py` chooses one before the IDE starts, so that nobody has to set it by hand.
+It writes a plug-in customization file that switches the server on and names the port, and Eclipse takes that file as `-pluginCustomization`:
+
+```bash
+eclipse -data ~/ws/swt -pluginCustomization "$(releng/mcp-eclipse-ini.py --workspace ~/ws/swt)"
+```
+
+Put that in a launcher script or a desktop entry per workspace and every start is unattended.
+`--print args` prints the whole `-pluginCustomization <file>` for a launcher that builds its command line, `--print port` just the number.
+`--name laptop` names the file instead of deriving it from the workspace, for an instance started without `-data`, and `--ini FILE` takes an explicit path.
+
+The port is sticky.
+An existing file keeps its port as long as that port is free, or is held by the MCP server of the same workspace, which is what happens when the script runs while that IDE is up.
+A port some other program has taken is replaced and the file rewritten, and lines that are not the server's own are preserved, so the file can carry other customizations too.
+
+Ports are handed out from `8642` upwards, the plug-in's default, and stay below `8700` while they can.
+After that the range up to `8999` is used, minus ports other software is known to sit on, `8743` among them because `mcp-test-ide.sh` defaults to it.
+Only when all of those are reserved or in use does the operating system choose.
+
+The files and a registry, `ports.json`, live in one folder outside every workspace: `--dir`, else `$ECLIPSE_MCP_INSTANCES`, else `~/.eclipse/com.vogella.eclipse.mcp.server/instances`.
+The registry records which port belongs to which file, and every run cleans it: an entry whose file is gone, or no longer names that port, is dropped once nothing listens on the port any more, and while something still does the port stays reserved.
+Deleting a file is how a port is given back.
+`--list` shows the registry after that cleanup, `--cleanup` does only the cleanup.
+
+The file fills the **default** scope, so a workspace that set the port or the switch on its own preference page keeps that value, and the script says so when it finds one in the workspace's `.settings`.
+The bearer token needs nothing: it is per user, so one token serves every instance, and each instance still writes its own `endpoint.json` under its workspace.
+A client is configured per instance, with that instance's URL and the shared token.
 
 ## MCP capabilities
 
