@@ -4,14 +4,24 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.jar.Attributes;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
+
+import javax.tools.ToolProvider;
 
 import org.eclipse.jdt.core.IClasspathEntry;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.JavaCore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import com.vogella.eclipse.mcp.core.McpToolResult;
 
@@ -22,6 +32,9 @@ class RunTestsToolTest {
 	private static final String PROJECT = "mcp-runtests-test";
 
 	private final TestFixture fixture = new TestFixture();
+
+	@TempDir
+	Path temporary;
 
 	@AfterEach
 	void deleteTestProjects() throws Exception {
@@ -72,6 +85,42 @@ class RunTestsToolTest {
 		@SuppressWarnings("unchecked")
 		List<String> types = (List<String>) result.get("testTypes");
 		assertTrue(types.contains("sample.SampleTest"), types.toString());
+	}
+
+	@Test
+	void aDryRunSelectsTheJUnit6RunnerForJUnit6() throws Exception {
+		IJavaProject project = withTests();
+		IClasspathEntry[] existing = project.getRawClasspath();
+		IClasspathEntry[] withPlatform6 = new IClasspathEntry[existing.length + 1];
+		withPlatform6[0] = JavaCore.newLibraryEntry(platformCommons6(), null, null);
+		System.arraycopy(existing, 0, withPlatform6, 1, existing.length);
+		project.setRawClasspath(withPlatform6, null);
+
+		Map<String, Object> result = TestFixture.callAndParse(TOOL,
+				Map.of("project", PROJECT, "dryRun", Boolean.TRUE));
+
+		assertEquals("org.eclipse.jdt.junit.loader.junit6", result.get("testKind"),
+				"JUnit 6 must use JDT's JUnit 6 runner rather than the incompatible JUnit 5 runner");
+	}
+
+	/** Builds a versionless Platform Commons JAR to exercise the manifest fallback. */
+	private org.eclipse.core.runtime.IPath platformCommons6() throws Exception {
+		Path source = temporary.resolve("src/org/junit/platform/commons/annotation/Testable.java"); //$NON-NLS-1$
+		Files.createDirectories(source.getParent());
+		Files.writeString(source, "package org.junit.platform.commons.annotation; public @interface Testable {}\n"); //$NON-NLS-1$
+		Path classes = temporary.resolve("classes"); //$NON-NLS-1$
+		assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null, "-d", classes.toString(), //$NON-NLS-1$ //$NON-NLS-2$
+				source.toString()));
+		Manifest manifest = new Manifest();
+		manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0"); //$NON-NLS-1$
+		manifest.getMainAttributes().putValue("Specification-Version", "6.0.0"); //$NON-NLS-1$ //$NON-NLS-2$
+		Path jar = temporary.resolve("junit-platform-commons.jar"); //$NON-NLS-1$
+		try (OutputStream output = Files.newOutputStream(jar); JarOutputStream archive = new JarOutputStream(output, manifest)) {
+			archive.putNextEntry(new JarEntry("org/junit/platform/commons/annotation/Testable.class")); //$NON-NLS-1$
+			Files.copy(classes.resolve("org/junit/platform/commons/annotation/Testable.class"), archive); //$NON-NLS-1$
+			archive.closeEntry();
+		}
+		return new org.eclipse.core.runtime.Path(jar.toString());
 	}
 
 	@Test

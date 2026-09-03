@@ -685,16 +685,108 @@ public final class RunTestsTool implements IMcpTool {
 	}
 
 	/**
-	 * Which JUnit the project is on, read from its own build path. JDT then supplies
-	 * the matching runner, so nothing here has to know about JUnit itself.
+	 * Selects the JDT runner from the project's JUnit Platform version.
 	 */
 	private static String testKind(IJavaProject javaProject) throws CoreException {
+		// Testable is the platform-commons annotation JDT itself keys the check on,
+		// so resolving it, rather than jupiter-api, matches the delegate exactly and
+		// gives the platform jar whose version decides junit5 versus junit6
+		IType testable = javaProject.findType("org.junit.platform.commons.annotation.Testable"); //$NON-NLS-1$
+		if (testable != null) {
+			return platformMajorVersion(testable) >= 6 ? "org.eclipse.jdt.junit.loader.junit6" //$NON-NLS-1$
+					: "org.eclipse.jdt.junit.loader.junit5"; //$NON-NLS-1$
+		}
 		if (javaProject.findType("org.junit.jupiter.api.Test") != null) { //$NON-NLS-1$
+			// jupiter present but platform-commons unresolved: keep the old behaviour
 			return "org.eclipse.jdt.junit.loader.junit5"; //$NON-NLS-1$
 		}
 		if (javaProject.findType("org.junit.Test") != null) { //$NON-NLS-1$
 			return "org.eclipse.jdt.junit.loader.junit4"; //$NON-NLS-1$
 		}
 		return "org.eclipse.jdt.junit.loader.junit3"; //$NON-NLS-1$
+	}
+
+	/**
+	 * Reads the JUnit Platform major version from the annotation's JAR name or manifest.
+	 */
+	private static int platformMajorVersion(IType testable) {
+		IPackageFragmentRoot root = (IPackageFragmentRoot) testable
+				.getAncestor(org.eclipse.jdt.core.IJavaElement.PACKAGE_FRAGMENT_ROOT);
+		if (root == null) {
+			return 0;
+		}
+		org.eclipse.core.runtime.IPath path = root.getPath();
+		String fileName = path.lastSegment();
+		if (fileName != null && fileName.endsWith(".jar")) { //$NON-NLS-1$
+			String prefix = "junit-platform-commons"; //$NON-NLS-1$
+			// junit-platform-commons-6.0.3.jar and junit-platform-commons_6.0.3.jar
+			if (fileName.startsWith(prefix + "-") || fileName.startsWith(prefix + "_")) { //$NON-NLS-1$ //$NON-NLS-2$
+				int major = majorOf(fileName.substring(prefix.length() + 1, fileName.length() - ".jar".length())); //$NON-NLS-1$
+				if (major > 0) {
+					return major;
+				}
+			}
+		}
+		// version-less name, e.g. a symlink called junit-platform-commons.jar: read
+		// the jar's own manifest, where the real version lives in that case. This
+		// stays on public API, unlike the internal PackageFragmentRoot.getManifest
+		// that CoreTestSearchEngine casts to, by opening the jar file on disk
+		java.io.File jar = toFile(root, path);
+		if (jar != null && jar.isFile()) {
+			try (java.util.jar.JarFile jarFile = new java.util.jar.JarFile(jar)) {
+				Manifest manifest = jarFile.getManifest();
+				if (manifest != null) {
+					// Specification-Version is set by JUnit, Bundle-Version by OSGi; both
+					// carry the same major, so either answers the junit5-or-6 question
+					String version = manifest.getMainAttributes().getValue("Specification-Version"); //$NON-NLS-1$
+					if (version == null) {
+						version = manifest.getMainAttributes().getValue("Bundle-Version"); //$NON-NLS-1$
+					}
+					int major = majorOf(version);
+					if (major > 0) {
+						return major;
+					}
+				}
+			} catch (java.io.IOException | RuntimeException e) {
+				// manifest unreadable: fall through to the junit5 default
+			}
+		}
+		return 0;
+	}
+
+	/**
+	 * Finds the archive behind a package fragment root.
+	 */
+	private static java.io.File toFile(IPackageFragmentRoot root, org.eclipse.core.runtime.IPath path) {
+		IResource resource = root.getResource();
+		if (resource != null && resource.getLocation() != null) {
+			return resource.getLocation().toFile();
+		}
+		// external jar: the path is already an absolute filesystem location
+		if (path != null && path.toFile().isFile()) {
+			return path.toFile();
+		}
+		return null;
+	}
+
+	/**
+	 * Reads the leading numeric segment, or zero when absent.
+	 */
+	private static int majorOf(String version) {
+		if (version == null || version.isEmpty()) {
+			return 0;
+		}
+		int end = 0;
+		while (end < version.length() && Character.isDigit(version.charAt(end))) {
+			end++;
+		}
+		if (end == 0) {
+			return 0;
+		}
+		try {
+			return Integer.parseInt(version.substring(0, end));
+		} catch (NumberFormatException e) {
+			return 0;
+		}
 	}
 }
