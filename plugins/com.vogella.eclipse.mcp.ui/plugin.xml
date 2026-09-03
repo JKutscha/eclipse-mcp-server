@@ -11,6 +11,7 @@
       <tool class="com.vogella.eclipse.mcp.ui.internal.WidgetTools$SelectTab"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.WidgetTools$ExpandRow"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.WaitUntilSettledTool"/>
+      <tool class="com.vogella.eclipse.mcp.ui.internal.PauseTool"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.ApplyCssTool"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.ThemeTools$ListThemes"/>
       <tool class="com.vogella.eclipse.mcp.ui.internal.ThemeTools$SetTheme"/>

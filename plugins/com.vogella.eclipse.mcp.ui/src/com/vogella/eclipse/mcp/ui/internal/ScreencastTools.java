@@ -9,6 +9,7 @@ import java.util.Map;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.swt.graphics.ImageData;
+import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
@@ -41,7 +42,59 @@ public final class ScreencastTools {
 				.put("downscaledTo", downscaled(session) ? Integer.valueOf(session.outputWidth()) : null) //$NON-NLS-1$
 				.put("resampled", Boolean.valueOf(resampled(session))) //$NON-NLS-1$
 				.put("zoom", Integer.valueOf(session.zoom())) //$NON-NLS-1$
+				.put("segments", Integer.valueOf(session.segments())) //$NON-NLS-1$
+				.put("caption", session.caption()) //$NON-NLS-1$
+				.put("crop", session.crop() == null ? null //$NON-NLS-1$
+						: "%d,%d %dx%d".formatted(Integer.valueOf(session.crop().x), Integer.valueOf(session.crop().y), //$NON-NLS-1$
+								Integer.valueOf(session.crop().width), Integer.valueOf(session.crop().height)))
 				.put("running", Boolean.valueOf(session.running())); //$NON-NLS-1$
+	}
+
+	/** {@code x,y widthxheight}, or {@code null} when that is not what was given. */
+	public static Rectangle parseBounds(String bounds) {
+		if (bounds == null) {
+			return null;
+		}
+		String[] parts = bounds.trim().split("[ ,x]+"); //$NON-NLS-1$
+		if (parts.length != 4) {
+			return null;
+		}
+		try {
+			int[] parsed = new int[4];
+			for (int i = 0; i < 4; i++) {
+				parsed[i] = Integer.parseInt(parts[i]);
+			}
+			return parsed[2] > 0 && parsed[3] > 0 ? new Rectangle(parsed[0], parsed[1], parsed[2], parsed[3]) : null;
+		} catch (NumberFormatException e) {
+			return null;
+		}
+	}
+
+	/** The union of the parts' bounds in the shell's client area, which is what a shell frame is drawn in. */
+	private static Rectangle unionOfParts(Display display, Shell shell, List<String> partIds) {
+		Rectangle union = null;
+		for (String id : partIds) {
+			Control control = ScreenshotTools.Capture.findPart(id, false);
+			if (control == null) {
+				throw new IllegalArgumentException(
+						"No part '%s', or it is not visible, so it cannot bound the recording.".formatted(id)); //$NON-NLS-1$
+			}
+			Rectangle inShell = display.map(control.getParent(), shell, control.getBounds());
+			union = union == null ? inShell : union.union(inShell);
+		}
+		return union;
+	}
+
+	private static List<String> stringList(Object value) {
+		List<String> result = new ArrayList<>();
+		if (value instanceof List<?> list) {
+			for (Object item : list) {
+				if (item != null && !String.valueOf(item).isBlank()) {
+					result.add(String.valueOf(item).trim());
+				}
+			}
+		}
+		return result;
 	}
 
 	private static boolean downscaled(Screencast.Session session) {
@@ -78,7 +131,12 @@ public final class ScreencastTools {
 					    "intervalMillis": {"type":"integer","default":500,"minimum":100,"maximum":10000,"description":"Time between frames. The paint itself is added on top, so the real spacing is reported per frame in the GIF."},
 					    "maxFrames":      {"type":"integer","default":120,"minimum":1,"maximum":1000,"description":"Recording stops on its own after this many frames."},
 					    "maxWidth":       {"type":"integer","minimum":100,"maximum":4000,"description":"Cap the frame width. Defaults to the target's own width, which keeps every frame pixel-exact. A cap below the target width resamples every frame, and unless the target width is a whole multiple of the cap the fraction softens all the text; the answer reports downscaledTo and resampled so that is never a surprise. A GIF of full HD frames is tens of megabytes, which is the only reason to cap."},
-					    "directory":      {"type":"string","description":"Absolute directory for the frames. Created when missing; defaults to a temporary directory."}
+					    "directory":      {"type":"string","description":"Absolute directory for the frames. Created when missing; defaults to a temporary directory."},
+					    "bounds":         {"type":"string","description":"Record only this region, as x,y widthxheight in points: for a shell in its client area, the coordinate system eclipse_get_widget_tree reports as boundsInShell, for a part relative to the part. Clipped to the target."},
+					    "parts":          {"type":"array","items":{"type":"string"},"description":"For a shell recording, record only the union of these parts' bounds, by part id, so a shell recording covers the editor area alone. The parts have to be visible. Cannot be combined with bounds."},
+					    "caption":        {"type":"string","description":"Text drawn along the bottom of every frame of this segment, white on a translucent dark bar, for a recording a person reads."},
+					    "resume":         {"type":"string","description":"Session id of a STOPPED screencast to continue in the same frame directory as one more segment, so screenshots can be taken between segments and still end up in one GIF. The target, interval and crop stay; maxFrames counts the new segment; caption replaces the previous segment's. The pause between the segments is shown as gapMillis."},
+					    "gapMillis":      {"type":"integer","default":1000,"minimum":0,"maximum":60000,"description":"With resume, how long the last frame of the previous segment stays before the new one starts."}
 					  },
 					  "additionalProperties": false
 					}"""; //$NON-NLS-1$
@@ -98,6 +156,46 @@ public final class ScreencastTools {
 			// 0 is no cap. It used to default to 800, which resampled every 1024 wide
 			// workbench shell by 0.78 and blurred all the text in every recording
 			int maxWidth = args.getInt("maxWidth", 0, 0, 4000); //$NON-NLS-1$
+			String caption = args.getString("caption"); //$NON-NLS-1$
+			String bounds = args.getString("bounds"); //$NON-NLS-1$
+			List<String> partIds = stringList(arguments.get("parts")); //$NON-NLS-1$
+			Rectangle requestedCrop = parseBounds(bounds);
+			if (bounds != null && requestedCrop == null) {
+				return McpToolResult.error("'bounds' has to be x,y widthxheight with a positive size, e.g. '0,120 900x600'."); //$NON-NLS-1$
+			}
+			if (requestedCrop != null && !partIds.isEmpty()) {
+				return McpToolResult.error("Pass either 'bounds' or 'parts', not both."); //$NON-NLS-1$
+			}
+			String resume = args.getString("resume"); //$NON-NLS-1$
+			if (resume != null) {
+				Screencast.Session previous = Screencast.getInstance().find(resume);
+				if (previous == null) {
+					return McpToolResult.error("No screencast with the id '%s' to resume.".formatted(resume)); //$NON-NLS-1$
+				}
+				if (previous.running()) {
+					return McpToolResult.error("Screencast '%s' is still running; stop it first.".formatted(resume)); //$NON-NLS-1$
+				}
+				int gap = args.getInt("gapMillis", 1000, 0, 60000); //$NON-NLS-1$
+				return UiThread.call(UI_TIMEOUT_SECONDS, () -> {
+					if (previous.control().isDisposed()) {
+						throw new IllegalStateException(
+								"The %s that screencast '%s' recorded has been disposed, so it cannot be resumed; start a new one." //$NON-NLS-1$
+										.formatted(previous.target(), resume));
+					}
+					int before = previous.frames();
+					Screencast.Session session = Screencast.getInstance().resume(PlatformUI.getWorkbench().getDisplay(),
+							previous, maxFrames, gap, caption);
+					if (session.frames() == before) {
+						throw new IllegalStateException("The first frame of the new segment could not be painted: " //$NON-NLS-1$
+								+ session.stoppedBy());
+					}
+					return describe(session).put("maxFrames", Integer.valueOf(session.maxFrames())) //$NON-NLS-1$
+							.put("resumedFrom", resume).put("framesBefore", Integer.valueOf(before)) //$NON-NLS-1$ //$NON-NLS-2$
+							.put("note", //$NON-NLS-1$
+									"Recording again into the same directory. eclipse_stop_screencast assembles every segment into one GIF, with the last frame before this segment held for %d ms." //$NON-NLS-1$
+											.formatted(Integer.valueOf(gap)));
+				});
+			}
 			Path directory;
 			try {
 				String given = args.getString("directory"); //$NON-NLS-1$
@@ -111,6 +209,7 @@ public final class ScreencastTools {
 				Control control;
 				String described;
 				boolean composed = false;
+				Rectangle crop = requestedCrop;
 				if ("shell".equals(target)) { //$NON-NLS-1$
 					Shell shell = ScreenshotTools.Capture.findShell(display, shellTitle);
 					if (shell == null) {
@@ -120,7 +219,13 @@ public final class ScreencastTools {
 					control = shell;
 					composed = shell.getChildren().length > 0;
 					described = "shell '" + shell.getText() + "'"; //$NON-NLS-1$ //$NON-NLS-2$
+					if (!partIds.isEmpty()) {
+						crop = unionOfParts(display, shell, partIds);
+					}
 				} else {
+					if (!partIds.isEmpty()) {
+						throw new IllegalArgumentException("'parts' bounds a shell recording; for a part, pass 'bounds' relative to it."); //$NON-NLS-1$
+					}
 					control = ScreenshotTools.Capture.findPart(part, false);
 					if (control == null) {
 						throw new IllegalArgumentException(
@@ -129,8 +234,14 @@ public final class ScreencastTools {
 					}
 					described = "part " + part; //$NON-NLS-1$
 				}
+				Rectangle own = composed ? ((Shell) control).getClientArea() : control.getBounds();
+				if (crop != null && Screencast.clampCrop(crop, own.width, own.height) == null) {
+					throw new IllegalArgumentException("The region %s lies entirely outside the %dx%d target." //$NON-NLS-1$
+							.formatted(bounds != null ? bounds : partIds.toString(), Integer.valueOf(own.width),
+									Integer.valueOf(own.height)));
+				}
 				Screencast.Session session = Screencast.getInstance().start(display, control, composed, described,
-						interval, maxFrames, maxWidth, directory);
+						interval, maxFrames, maxWidth, directory, crop, caption);
 				if (session.frames() == 0) {
 					throw new IllegalStateException("The first frame could not be painted: " + session.stoppedBy()); //$NON-NLS-1$
 				}

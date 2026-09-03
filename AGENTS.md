@@ -603,6 +603,9 @@ A JVM refuses `VirtualMachine.attach` on its own pid unless started with `jdk.at
 Keep `HotSwapAgent` free of dependencies and its one method stable, because the loaded copy cannot be replaced for the life of the JVM.
 Classes are loaded through the installed bundle before redefinition so a class not yet used still gets the new body on first use; without that a changed-since sweep would swap only what happened to be loaded and the rest would come up old from the jar later, silently.
 `HotCodeReplaceToolTest` attaches to the test JVM for real, since a test that mocked the attach would prove nothing about the one thing that can fail per environment.
+The compiler is part of the class's schema: javac names a lambda's synthetic method `lambda$paint$0` and the Eclipse compiler `lambda$0`, so a javac build of a class the IDE compiled with ecj is refused as having added a method.
+Compile a one-off class with the IDE's own `org.eclipse.jdt.core.compiler.batch` jar; eleven classes of the ui bundle then swapped atomically where the javac build of one of them was refused.
+
 
 ## Verifying UI work
 

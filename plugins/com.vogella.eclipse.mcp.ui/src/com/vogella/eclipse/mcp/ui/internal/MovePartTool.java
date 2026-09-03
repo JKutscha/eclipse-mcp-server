@@ -10,6 +10,7 @@ import org.eclipse.e4.core.contexts.IEclipseContext;
 import org.eclipse.e4.ui.model.application.MApplication;
 import org.eclipse.e4.ui.model.application.ui.MElementContainer;
 import org.eclipse.e4.ui.model.application.ui.MUIElement;
+import org.eclipse.e4.ui.model.application.ui.advanced.MArea;
 import org.eclipse.e4.ui.model.application.ui.advanced.MPlaceholder;
 import org.eclipse.e4.ui.model.application.ui.basic.MPart;
 import org.eclipse.e4.ui.model.application.ui.basic.MPartSashContainerElement;
@@ -18,6 +19,10 @@ import org.eclipse.e4.ui.model.application.ui.basic.MStackElement;
 import org.eclipse.e4.ui.model.application.ui.basic.MWindow;
 import org.eclipse.e4.ui.workbench.modeling.EModelService;
 import org.eclipse.e4.ui.workbench.modeling.EPartService;
+import org.eclipse.ui.IEditorPart;
+import org.eclipse.ui.IEditorReference;
+import org.eclipse.ui.IWorkbenchPage;
+import org.eclipse.ui.IWorkbenchPart;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PlatformUI;
 
@@ -46,7 +51,7 @@ public final class MovePartTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Moves a view into another stack, beside another stack, or out into a detached window, which is what dragging its tab does and what nothing else here can reach. CHANGES THE PERSPECTIVE LAYOUT, which Eclipse remembers across restarts, but writes nothing to the workspace. Use it to build the layout a screenshot or a CSS question needs: a stack with several tabs, a stack with exactly one, a narrow column that makes tabs overflow into the chevron, or a detached view, which is its own shell and is drawn by a different set of CSS selectors. The target is a part id or a stack id; position stack drops it into that stack, left, right, above and below split the target's stack in two, and detached opens a window. The answer lists under layout every stack of the active perspective with the parts in it, on success and on refusal alike, so one call is enough to see what can be addressed. It reports previousStack and previousIndex to move the part back, and eclipse_reset_perspective puts the whole perspective back. Only views can be moved: an editor belongs to the editor area."; //$NON-NLS-1$
+		return "Moves a view into another stack, beside another stack, or out into a detached window, which is what dragging its tab does and what nothing else here can reach. CHANGES THE PERSPECTIVE LAYOUT, which Eclipse remembers across restarts, but writes nothing to the workspace. Use it to build the layout a screenshot or a CSS question needs: a stack with several tabs, a stack with exactly one, a narrow column that makes tabs overflow into the chevron, or a detached view, which is its own shell and is drawn by a different set of CSS selectors. The target is a part id or a stack id; position stack drops it into that stack, left, right, above and below split the target's stack in two, and detached opens a window. The answer lists under layout every stack of the active perspective with the parts in it, on success and on refusal alike, so one call is enough to see what can be addressed. It reports previousStack and previousIndex to move the part back, and eclipse_reset_perspective puts the whole perspective back. An editor can be moved too, named by its editor id from eclipse_list_ui_targets or by a substring of its tab title, but only within the editor area: left, right, above or below another editor splits the area, which is how two editors are put side by side, and stack puts it into another editor stack; a view stack or a detached window is refused for an editor, and the editor area is refused for a view."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -56,8 +61,8 @@ public final class MovePartTool implements IMcpTool {
 				  "type": "object",
 				  "required": ["part"],
 				  "properties": {
-				    "part":       {"type":"string","description":"Id of the view to move, from eclipse_list_ui_targets."},
-				    "target":     {"type":"string","description":"Id of a part to move it to, or of a stack from the stacks this tool reports. Required unless position is detached."},
+				    "part":       {"type":"string","description":"Id of the view or editor to move, from eclipse_list_ui_targets. An editor can also be named by a substring of its tab title; when several editors match, the active one wins."},
+				    "target":     {"type":"string","description":"Id of a part to move it to, or of a stack from the stacks this tool reports. An editor id or tab title works here too. Required unless position is detached."},
 				    "position":   {"type":"string","enum":["stack","left","right","above","below","detached"],"default":"stack","description":"stack puts it in the target's stack as another tab; left, right, above and below put it in a new stack next to the target's; detached opens a window of its own."},
 				    "index":      {"type":"integer","minimum":0,"description":"Tab position within the stack, for position stack. Omit for last."},
 				    "ratio":      {"type":"integer","default":50,"minimum":10,"maximum":90,"description":"Percent of the target's area the new stack takes, for left, right, above and below."},
@@ -109,11 +114,12 @@ public final class MovePartTool implements IMcpTool {
 			return refused("This window has no e4 model to move parts in."); //$NON-NLS-1$
 		}
 
-		MPart part = partService.findPart(request.partId());
+		MPart part = resolvePart(partService, request.partId());
 		if (part == null) {
 			return refused("No open part '%s'. Use eclipse_list_ui_targets.".formatted(request.partId())) //$NON-NLS-1$
 					.put("layout", layout(modelService, modelWindow, request.maxResults())); //$NON-NLS-1$
 		}
+		boolean editor = inEditorArea(part);
 		// a view is a shared part the perspective holds through a placeholder, and it
 		// is the placeholder that sits in the stack; moving the part itself would move
 		// it out of every perspective at once
@@ -136,6 +142,10 @@ public final class MovePartTool implements IMcpTool {
 				.put("previousIndex", Integer.valueOf(previousIndex)); //$NON-NLS-1$
 
 		if ("detached".equals(request.position())) { //$NON-NLS-1$
+			if (editor) {
+				return refused("An editor cannot be detached; it stays inside the editor area.") //$NON-NLS-1$
+						.put("layout", layout(modelService, modelWindow, request.maxResults())); //$NON-NLS-1$
+			}
 			if (!(placed instanceof MPartSashContainerElement detachable)) {
 				return refused("'%s' cannot be detached.".formatted(request.partId())); //$NON-NLS-1$
 			}
@@ -147,6 +157,16 @@ public final class MovePartTool implements IMcpTool {
 			MPartStack targetStack = findStack(modelService, modelWindow, partService, request.target());
 			if (targetStack == null) {
 				return refused("No part or stack '%s' in the active perspective.".formatted(request.target())) //$NON-NLS-1$
+						.put("layout", layout(modelService, modelWindow, request.maxResults())); //$NON-NLS-1$
+			}
+			// the editor area is a shared MArea the compatibility layer owns; an editor
+			// outside it and a view inside it are both layouts the workbench does not
+			// render, so the boundary is refused rather than crossed
+			if (editor != inEditorArea(targetStack)) {
+				return refused(editor
+						? "'%s' is an editor and can only be placed within the editor area; name another editor or an editor stack as target." //$NON-NLS-1$
+								.formatted(request.partId())
+						: "'%s' is a view and cannot be placed in the editor area.".formatted(request.partId())) //$NON-NLS-1$
 						.put("layout", layout(modelService, modelWindow, request.maxResults())); //$NON-NLS-1$
 			}
 			if (targetStack == oldParentElement && "stack".equals(request.position()) && request.index() < 0) { //$NON-NLS-1$
@@ -243,6 +263,59 @@ public final class MovePartTool implements IMcpTool {
 		}
 	}
 
+	/**
+	 * The e4 part behind a view or editor id. Every compatibility editor carries the
+	 * same element id, so an editor is found through the workbench page instead, by
+	 * its editor id or a substring of its title, the active editor first.
+	 */
+	private static MPart resolvePart(EPartService partService, String id) {
+		MPart byId = partService.findPart(id);
+		if (byId != null) {
+			return byId;
+		}
+		IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
+		IWorkbenchPage page = window == null ? null : window.getActivePage();
+		if (page == null) {
+			return null;
+		}
+		IEditorPart active = page.getActiveEditor();
+		if (active != null && matches(active.getSite().getId(), active.getTitle(), id)) {
+			return modelOf(active);
+		}
+		for (IEditorReference reference : page.getEditorReferences()) {
+			if (matches(reference.getId(), reference.getTitle(), id)) {
+				IEditorPart opened = reference.getEditor(true);
+				MPart model = opened == null ? null : modelOf(opened);
+				if (model != null) {
+					return model;
+				}
+			}
+		}
+		return null;
+	}
+
+	private static boolean matches(String editorId, String title, String requested) {
+		return requested.equals(editorId) || (title != null && title.contains(requested));
+	}
+
+	private static MPart modelOf(IWorkbenchPart part) {
+		return part.getSite().getService(MPart.class);
+	}
+
+	/** Whether the element sits inside the shared editor area. */
+	private static boolean inEditorArea(MUIElement element) {
+		MUIElement current = element instanceof MPart part && part.getCurSharedRef() != null ? part.getCurSharedRef()
+				: element;
+		while (current != null) {
+			if (current instanceof MArea) {
+				return true;
+			}
+			MElementContainer<MUIElement> parent = current.getParent();
+			current = parent;
+		}
+		return false;
+	}
+
 	/** The stack a target names, whether the caller named the stack or a part in it. */
 	private static MPartStack findStack(EModelService modelService, MWindow window, EPartService partService,
 			String target) {
@@ -251,7 +324,7 @@ public final class MovePartTool implements IMcpTool {
 		if (!byId.isEmpty()) {
 			return byId.get(0);
 		}
-		MPart part = partService.findPart(target);
+		MPart part = resolvePart(partService, target);
 		if (part == null) {
 			return null;
 		}
@@ -288,6 +361,11 @@ public final class MovePartTool implements IMcpTool {
 	private static String idOf(MStackElement element) {
 		if (element instanceof MPlaceholder placeholder && placeholder.getRef() != null) {
 			return placeholder.getRef().getElementId();
+		}
+		// every compatibility editor has the same element id, so the tab title is
+		// the only thing that tells them apart in a layout listing
+		if (element instanceof MPart part && part.getTags().contains("Editor") && part.getLabel() != null) { //$NON-NLS-1$
+			return "editor '" + part.getLabel() + "'"; //$NON-NLS-1$ //$NON-NLS-2$
 		}
 		return element.getElementId();
 	}

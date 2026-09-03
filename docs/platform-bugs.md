@@ -325,3 +325,12 @@ Adding to zero working sets is a no-op, but the call still forces `PlatformUI.ge
 That is why this tool lives in the ui bundle and refuses headlessly instead of being testable in the core test run.
 
 Not filed upstream yet; a task description for both was handed to a session working in `eclipse.platform.ui`.
+
+## `Control.print` on GTK 3 leaves the printed widget unpainted on screen
+
+Observed 2026-09-03 on GTK 3.24 under Xvfb, reported by a session recording a demo headless: after `eclipse_start_screencast` had printed a PDE feature editor once, a root capture of that editor was 3 KB of section backgrounds where the capture a second earlier was 26 KB of tables, headings and buttons, and it stayed that way after the recording stopped until a tab switch forced a repaint.
+The frames themselves were fine.
+
+`Control.print` on GTK 3 (`org.eclipse.swt.widgets.Control`, the `else` branch of `print(GC)`) size-allocates the live top handle to satisfy `gtk_widget_draw`'s precondition and then draws it into the caller's cairo context; the on-screen copy is not invalidated afterwards, and under a window system with no compositor it shows whatever was left.
+`Screencast.paint` and the `Paintable` prints in `ScreenshotTools` queue `Control.redraw(0, 0, w, h, true)` after every print on GTK, which was verified to keep the root capture identical before, during and after a recording.
+Nothing filed upstream yet.

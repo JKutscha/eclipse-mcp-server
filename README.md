@@ -701,6 +701,13 @@ Reports a build started through `eclipse_build`, by `buildId`, or the most recen
 The answer has the same shape as the one above.
 The last 20 builds are kept; asking for an older id is an error, while asking before anything has been built returns `{"state":"none"}` rather than an error.
 
+### `eclipse_pause`
+
+Waits for `millis` and returns. Read-only.
+This is the pause between the steps of a screencast a person reads, and the honest form of what `eclipse_wait_until_settled` with `quietRounds` was being used for.
+The wait is capped at the call timeout less a margin and the answer says `clamped` when the cap applied, so a longer hold is several calls.
+Refused inside an atomic `eclipse_run_script`, where it would freeze the UI thread and nothing would repaint.
+
 ### `eclipse_wait_until_quiet`
 
 Waits until the auto-build, the manual build and the refresh jobs have finished and no other job is running, then answers what it waited for and how long each part took. Read-only.
@@ -1779,11 +1786,13 @@ Opens a workspace file in an editor and optionally reveals a line, so the person
 
 | Argument | Type | Default | Meaning |
 |---|---|---|---|
-| `path` | string, required | | Workspace path of the file. |
+| `path` | string, required | | Workspace path of the file, or an absolute path on disk for a file outside the workspace. |
 | `line` | integer | | Line to reveal, 1 based. |
 | `activate` | boolean | `true` | Bring the editor to the front. |
 
 `revealedLine` reports the line actually revealed, which is clamped to the end of the file.
+A path is tried as a workspace path first, then as a location a project contains, and only then as a file outside the workspace, which opens the way File > Open File does, through a file store in the default editor for the name; `external` in the answer says which it was.
+A `.target` file in a fixtures directory that is no project is the case this exists for.
 
 ### `eclipse_open_compare`
 
@@ -1886,6 +1895,11 @@ Records a shell or a part as PNG frames and assembles them into an animated GIF.
 | `maxFrames` | integer, 1 to 1000 | 120 | Recording stops on its own after this many frames. |
 | `maxWidth` | integer | 800 | Downscale each frame to this width. |
 | `directory` | string | temp | Where the frames go. |
+| `bounds` | string | | Record only this region, `x,y widthxheight` in points: in the shell's client area for a shell, relative to the part for a part. |
+| `parts` | array of string | | For a shell recording, only the union of these parts' bounds, so the recording covers the editor area alone. |
+| `caption` | string | | Text drawn along the bottom of every frame of the segment. |
+| `resume` | string | | Session id of a stopped screencast to continue as one more segment in the same directory. |
+| `gapMillis` | integer, 0 to 60000 | 1000 | With `resume`, how long the last frame before the gap is held. |
 | `sessionId` | string | most recent | `eclipse_stop_screencast` only. |
 | `gif` | boolean | `true` | Assemble the GIF; off leaves only the frames. |
 | `loop` | boolean | `true` | Loop the GIF. |
@@ -1897,6 +1911,14 @@ This is what shows a change in motion rather than before and after: a tab overfl
 Each frame is painted on the UI thread through `Control.print`, the path `eclipse_screenshot` falls back to on a compositing window manager, so it records what the IDE paints and not native popups, menus or dialogs, and a shell recording has no window decorations.
 The paint is the only part on the UI thread; scaling and encoding run on a thread of the session's own.
 2 to 5 frames a second is what a full shell sustains without slowing the IDE.
+
+**A recording a person reads is several segments with captions.**
+`resume` continues a stopped session: the target, interval and crop stay, `maxFrames` counts the new segment, `caption` replaces the previous one, and `eclipse_stop_screencast` assembles every segment into one GIF.
+Between segments the IDE can be photographed, rearranged or left alone; the wall clock time of the pause is not in the recording, the last frame before it is held for `gapMillis` instead.
+`bounds` and `parts` crop every frame, `parts` as the union of the named parts' bounds in the shell's client area, which is the coordinate system `eclipse_get_widget_tree` reports as `boundsInShell`; a region entirely outside the target is refused up front.
+`eclipse_pause` is the wait between steps.
+
+On GTK 3 `Control.print` leaves the printed widget unpainted on screen until something invalidates it, so every print here queues a redraw of what it printed; before that a root capture taken during or after a recording was a blank editor, with nothing in the answer to say so.
 
 Each frame stays in the GIF as long as it really did on screen, so a stall is visible as a held frame.
 `averagePaintMillis` is what one frame cost the UI thread, which is added to the interval between frames: a full shell on a HiDPI monitor paints in about half a second, a single part far faster.
@@ -2054,11 +2076,13 @@ It also **discards** whatever layout the perspective currently has, which may be
 ### `eclipse_move_part`
 
 Moves a view into another stack, beside one, or out into a window of its own. This is dragging a tab, without a mouse.
+An editor moves too, within the editor area: `left`, `right`, `above` or `below` another editor splits the area, which is how two editors are put side by side, and `stack` puts it into another editor stack.
+A view stack or a detached window is refused for an editor, and the editor area for a view, because the workbench renders neither.
 
 | Argument | Type | Default | Meaning |
 |---|---|---|---|
-| `part` | string, required | | Id of the view to move. |
-| `target` | string | | A part id or a stack id. Required unless `position` is `detached`. |
+| `part` | string, required | | Id of the view or editor to move. An editor can also be named by a substring of its tab title; the active editor wins a tie. |
+| `target` | string | | A part id, an editor id or tab title, or a stack id. Required unless `position` is `detached`. |
 | `position` | `stack` \| `left` \| `right` \| `above` \| `below` \| `detached` | `stack` | |
 | `index` | integer | last | Tab position, for `position: stack`. |
 | `ratio` | integer, 10 to 90 | 50 | Percent of the target's area the new stack takes, for the four splits. |
@@ -2454,6 +2478,13 @@ The debugger's hot code replace does the same thing for a program launched from 
 ```
 
 The limits are the JVM's, and they are the same ones the debugger has.
+They apply to what the compiler generated, not only to what the source says: a lambda compiles to a synthetic method whose name javac and the Eclipse compiler spell differently, so a class with a lambda compiled by javac is refused as having added a method when the running copy was built by Tycho or by the workspace builder, which both use the Eclipse compiler.
+The project's build output is therefore the safe source, and for a directory the batch compiler that ships in every IDE compiles a single file the same way:
+
+```bash
+java -jar <install>/plugins/org.eclipse.jdt.core.compiler.batch_*.jar -25 -proc:none -cp "$(ls <install>/plugins/*.jar | tr '\n' :)" -d out Foo.java
+```
+
 Only method bodies, the constant pool and attributes can change.
 A class whose fields, methods, signatures, supertypes or modifiers changed is refused with the JVM's own reason under `failed`, for example `UnsupportedOperationException: class redefinition failed: attempted to add a method`, and the class keeps running as it was.
 A batch is applied atomically; when it fails the classes are retried one by one so the answer can name the culprit, and `atomic` is then false.

@@ -498,6 +498,10 @@ public final class ScreenshotTools {
 						drawer.fillRectangle(0, 0, drawnWidth, drawnHeight);
 						if (composed == null) {
 							painted.print(drawer);
+							if (Screencast.GTK) {
+								Rectangle own2 = painted.getBounds();
+								painted.redraw(0, 0, own2.width, own2.height, true);
+							}
 						} else {
 							for (Paintable piece : composed) {
 								insidePieces[0] += piece.print(drawer, pieceZoom);
@@ -692,6 +696,9 @@ public final class ScreenshotTools {
 					gc.setBackground(background());
 					gc.fillRectangle(0, 0, w, h);
 					control.print(gc);
+					if (Screencast.GTK) {
+						control.redraw(0, 0, at.width, at.height, true);
+					}
 				}, at.width, at.height);
 				try {
 					target.drawImage(piece, at.x, at.y);
@@ -707,6 +714,9 @@ public final class ScreenshotTools {
 					gc.setBackground(gc.getDevice().getSystemColor(SWT.COLOR_MAGENTA));
 					gc.fillRectangle(0, 0, w, h);
 					control.print(gc);
+					if (Screencast.GTK) {
+						control.redraw(0, 0, at.width, at.height, true);
+					}
 				}, at.width, at.height);
 				try {
 					return countFiller(probe.getImageData(zoom));
