@@ -44,6 +44,7 @@ public final class ScreencastTools {
 				.put("zoom", Integer.valueOf(session.zoom())) //$NON-NLS-1$
 				.put("segments", Integer.valueOf(session.segments())) //$NON-NLS-1$
 				.put("caption", session.caption()) //$NON-NLS-1$
+				.put("captionPosition", session.caption() == null ? null : session.captionPosition()) //$NON-NLS-1$
 				.put("crop", session.crop() == null ? null //$NON-NLS-1$
 						: "%d,%d %dx%d".formatted(Integer.valueOf(session.crop().x), Integer.valueOf(session.crop().y), //$NON-NLS-1$
 								Integer.valueOf(session.crop().width), Integer.valueOf(session.crop().height)))
@@ -134,8 +135,9 @@ public final class ScreencastTools {
 					    "directory":      {"type":"string","description":"Absolute directory for the frames. Created when missing; defaults to a temporary directory."},
 					    "bounds":         {"type":"string","description":"Record only this region, as x,y widthxheight in points: for a shell in its client area, the coordinate system eclipse_get_widget_tree reports as boundsInShell, for a part relative to the part. Clipped to the target."},
 					    "parts":          {"type":"array","items":{"type":"string"},"description":"For a shell recording, record only the union of these parts' bounds, by part id, so a shell recording covers the editor area alone. The parts have to be visible. Cannot be combined with bounds."},
-					    "caption":        {"type":"string","description":"Text drawn along the bottom of every frame of this segment, white on a translucent dark bar, for a recording a person reads."},
-					    "resume":         {"type":"string","description":"Session id of a STOPPED screencast to continue in the same frame directory as one more segment, so screenshots can be taken between segments and still end up in one GIF. The target, interval and crop stay; maxFrames counts the new segment; caption replaces the previous segment's. The pause between the segments is shown as gapMillis."},
+					    "caption":        {"type":"string","description":"Text drawn on every frame of this segment, white on a dark bar, for a recording a person reads."},
+					    "captionPosition":{"type":"string","enum":["over","above","below"],"default":"over","description":"over draws the bar translucently over the bottom of the picture; above and below add an opaque bar of the bar's height to the frame outside the picture, so a cropped editor's page tabs stay readable. With resume, omitted keeps the previous segment's."},
+					    "resume":         {"type":"string","description":"Session id of a STOPPED screencast to continue in the same frame directory as one more segment, so screenshots can be taken between segments and still end up in one GIF, or 'latest' for the most recently stopped one, which is what a static scenario needs since ids count up per IDE session. The target, interval and crop stay; maxFrames counts the new segment; caption replaces the previous segment's. The pause between the segments is shown as gapMillis."},
 					    "gapMillis":      {"type":"integer","default":1000,"minimum":0,"maximum":60000,"description":"With resume, how long the last frame of the previous segment stays before the new one starts."}
 					  },
 					  "additionalProperties": false
@@ -157,6 +159,11 @@ public final class ScreencastTools {
 			// workbench shell by 0.78 and blurred all the text in every recording
 			int maxWidth = args.getInt("maxWidth", 0, 0, 4000); //$NON-NLS-1$
 			String caption = args.getString("caption"); //$NON-NLS-1$
+			String captionPosition = args.getString("captionPosition"); //$NON-NLS-1$
+			if (captionPosition != null
+					&& !List.of(Screencast.OVER, Screencast.ABOVE, Screencast.BELOW).contains(captionPosition)) {
+				return McpToolResult.error("'captionPosition' is over, above or below."); //$NON-NLS-1$
+			}
 			String bounds = args.getString("bounds"); //$NON-NLS-1$
 			List<String> partIds = stringList(arguments.get("parts")); //$NON-NLS-1$
 			Rectangle requestedCrop = parseBounds(bounds);
@@ -168,9 +175,12 @@ public final class ScreencastTools {
 			}
 			String resume = args.getString("resume"); //$NON-NLS-1$
 			if (resume != null) {
-				Screencast.Session previous = Screencast.getInstance().find(resume);
+				boolean latest = "latest".equalsIgnoreCase(resume) || "true".equalsIgnoreCase(resume); //$NON-NLS-1$ //$NON-NLS-2$
+				Screencast.Session previous = latest ? Screencast.getInstance().findLatestStopped()
+						: Screencast.getInstance().find(resume);
 				if (previous == null) {
-					return McpToolResult.error("No screencast with the id '%s' to resume.".formatted(resume)); //$NON-NLS-1$
+					return McpToolResult.error(latest ? "No stopped screencast to resume." //$NON-NLS-1$
+							: "No screencast with the id '%s' to resume.".formatted(resume)); //$NON-NLS-1$
 				}
 				if (previous.running()) {
 					return McpToolResult.error("Screencast '%s' is still running; stop it first.".formatted(resume)); //$NON-NLS-1$
@@ -184,13 +194,13 @@ public final class ScreencastTools {
 					}
 					int before = previous.frames();
 					Screencast.Session session = Screencast.getInstance().resume(PlatformUI.getWorkbench().getDisplay(),
-							previous, maxFrames, gap, caption);
+							previous, maxFrames, gap, caption, captionPosition);
 					if (session.frames() == before) {
 						throw new IllegalStateException("The first frame of the new segment could not be painted: " //$NON-NLS-1$
 								+ session.stoppedBy());
 					}
 					return describe(session).put("maxFrames", Integer.valueOf(session.maxFrames())) //$NON-NLS-1$
-							.put("resumedFrom", resume).put("framesBefore", Integer.valueOf(before)) //$NON-NLS-1$ //$NON-NLS-2$
+							.put("resumedFrom", previous.id()).put("framesBefore", Integer.valueOf(before)) //$NON-NLS-1$ //$NON-NLS-2$
 							.put("note", //$NON-NLS-1$
 									"Recording again into the same directory. eclipse_stop_screencast assembles every segment into one GIF, with the last frame before this segment held for %d ms." //$NON-NLS-1$
 											.formatted(Integer.valueOf(gap)));
@@ -241,7 +251,7 @@ public final class ScreencastTools {
 									Integer.valueOf(own.height)));
 				}
 				Screencast.Session session = Screencast.getInstance().start(display, control, composed, described,
-						interval, maxFrames, maxWidth, directory, crop, caption);
+						interval, maxFrames, maxWidth, directory, crop, caption, captionPosition);
 				if (session.frames() == 0) {
 					throw new IllegalStateException("The first frame could not be painted: " + session.stoppedBy()); //$NON-NLS-1$
 				}

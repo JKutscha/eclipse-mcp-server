@@ -1897,8 +1897,9 @@ Records a shell or a part as PNG frames and assembles them into an animated GIF.
 | `directory` | string | temp | Where the frames go. |
 | `bounds` | string | | Record only this region, `x,y widthxheight` in points: in the shell's client area for a shell, relative to the part for a part. |
 | `parts` | array of string | | For a shell recording, only the union of these parts' bounds, so the recording covers the editor area alone. |
-| `caption` | string | | Text drawn along the bottom of every frame of the segment. |
-| `resume` | string | | Session id of a stopped screencast to continue as one more segment in the same directory. |
+| `caption` | string | | Text drawn on every frame of the segment. |
+| `captionPosition` | `over` \| `above` \| `below` | `over` | `over` is translucent over the bottom of the picture; `above` and `below` add an opaque bar outside it. |
+| `resume` | string | | Session id of a stopped screencast to continue as one more segment in the same directory, or `latest` for the most recently stopped one. |
 | `gapMillis` | integer, 0 to 60000 | 1000 | With `resume`, how long the last frame before the gap is held. |
 | `sessionId` | string | most recent | `eclipse_stop_screencast` only. |
 | `gif` | boolean | `true` | Assemble the GIF; off leaves only the frames. |
@@ -1914,6 +1915,8 @@ The paint is the only part on the UI thread; scaling and encoding run on a threa
 
 **A recording a person reads is several segments with captions.**
 `resume` continues a stopped session: the target, interval and crop stay, `maxFrames` counts the new segment, `caption` replaces the previous one, and `eclipse_stop_screencast` assembles every segment into one GIF.
+`resume: latest` names the most recently stopped session, because ids count up per IDE session and a static scenario that wrote `screencast-1` appended its retry to the first attempt.
+A caption `over` the picture covers its bottom rows, which for a crop to an editor are the page tabs; `above` or `below` puts the bar outside the picture and adds its height to the frame.
 Between segments the IDE can be photographed, rearranged or left alone; the wall clock time of the pause is not in the recording, the last frame before it is held for `gapMillis` instead.
 `bounds` and `parts` crop every frame, `parts` as the union of the named parts' bounds in the shell's client area, which is the coordinate system `eclipse_get_widget_tree` reports as `boundsInShell`; a region entirely outside the target is refused up front.
 `eclipse_pause` is the wait between steps.

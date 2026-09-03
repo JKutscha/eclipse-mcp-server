@@ -19,7 +19,6 @@ import org.eclipse.swt.graphics.GC;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.graphics.ImageData;
 import org.eclipse.swt.graphics.ImageLoader;
-import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
@@ -77,6 +76,7 @@ public final class Screencast {
 		private ExecutorService encoder = newEncoder();
 		private final List<Long> timestamps = new ArrayList<>();
 		private volatile String caption;
+		private volatile String captionPosition = OVER;
 		private volatile Rectangle crop;
 		/** Wall clock time taken out between segments, so a pause is not a frame held for minutes. */
 		private long correction;
@@ -131,6 +131,10 @@ public final class Screencast {
 			return caption;
 		}
 
+		public String captionPosition() {
+			return captionPosition;
+		}
+
 		public Rectangle crop() {
 			return crop;
 		}
@@ -143,9 +147,10 @@ public final class Screencast {
 			return maxFrames;
 		}
 
-		void configure(Rectangle cropRegion, String text) {
+		void configure(Rectangle cropRegion, String text, String position) {
 			this.crop = cropRegion;
 			this.caption = text;
+			this.captionPosition = position == null ? OVER : position;
 		}
 
 		/**
@@ -154,9 +159,12 @@ public final class Screencast {
 		 * frames stay on screen for the time between them and a pause of minutes
 		 * would otherwise be a frame held for minutes.
 		 */
-		synchronized void resume(int extraFrames, int gapMillis, String text) {
+		synchronized void resume(int extraFrames, int gapMillis, String text, String position) {
 			if (running) {
 				return;
+			}
+			if (position != null) {
+				captionPosition = position;
 			}
 			long last = timestamps.isEmpty() ? startedAt : timestamps.get(timestamps.size() - 1).longValue();
 			long now = System.currentTimeMillis() - correction;
@@ -307,7 +315,7 @@ public final class Screencast {
 			}
 			ImageData data;
 			try {
-				Frame painted = paint(display, control, composed, crop, caption);
+				Frame painted = paint(display, control, composed, crop, caption, captionPosition);
 				data = painted.data();
 				zoom = painted.zoom();
 				frameSize = data.width + "x" + data.height; //$NON-NLS-1$
@@ -359,8 +367,16 @@ public final class Screencast {
 	 * under a compositing window manager while the children print fine.
 	 */
 	static Frame paint(Display display, Control printable, boolean composed) {
-		return paint(display, printable, composed, null, null);
+		return paint(display, printable, composed, null, null, OVER);
 	}
+
+	public static final String OVER = "over"; //$NON-NLS-1$
+
+	public static final String ABOVE = "above"; //$NON-NLS-1$
+
+	public static final String BELOW = "below"; //$NON-NLS-1$
+
+	private static final int CAPTION_PAD = 8;
 
 	/**
 	 * The part of a frame a crop keeps, as the intersection with the canvas, or
@@ -374,8 +390,13 @@ public final class Screencast {
 		return kept.width <= 0 || kept.height <= 0 ? null : kept;
 	}
 
-	/** Paints the control, keeps the crop region and draws the caption along the bottom. */
-	static Frame paint(Display display, Control printable, boolean composed, Rectangle crop, String caption) {
+	/**
+	 * Paints the control, keeps the crop region and draws the caption: over the
+	 * bottom of the picture, or on a bar added above or below it, which is what
+	 * keeps a cropped editor's page tabs readable.
+	 */
+	static Frame paint(Display display, Control printable, boolean composed, Rectangle crop, String caption,
+			String position) {
 		Frame full = paintWhole(display, printable, composed);
 		Rectangle own = composed ? ((Shell) printable).getClientArea() : printable.getBounds();
 		Capture.Size canvas = Capture.compositionSize(own.width, own.height);
@@ -385,12 +406,17 @@ public final class Screencast {
 			return new Frame(full.data(), full.zoom(), null);
 		}
 		Rectangle kept = region == null ? new Rectangle(0, 0, canvas.width(), canvas.height()) : region;
+		boolean outside = caption != null && !OVER.equals(position);
+		int bar = caption == null ? 0 : captionBarHeight(display, caption);
+		int added = outside ? bar : 0;
+		int pictureY = outside && ABOVE.equals(position) ? bar : 0;
 		Image framed = new Image(display, (gc, width, height) -> {
-			gc.drawImage(full.image(), -kept.x, -kept.y);
+			gc.drawImage(full.image(), -kept.x, pictureY - kept.y);
 			if (caption != null) {
-				drawCaption(gc, caption, width, height);
+				int barY = ABOVE.equals(position) && outside ? 0 : height - bar;
+				drawCaption(gc, caption, barY, width, bar, outside);
 			}
-		}, kept.width, kept.height);
+		}, kept.width, kept.height + added);
 		try {
 			return new Frame(framed.getImageData(full.zoom()), full.zoom(), null);
 		} finally {
@@ -399,16 +425,22 @@ public final class Screencast {
 		}
 	}
 
-	private static void drawCaption(GC gc, String caption, int width, int height) {
-		Point extent = gc.textExtent(caption);
-		int pad = 8;
-		int bar = extent.y + 2 * pad;
-		gc.setAlpha(180);
+	private static int captionBarHeight(Display display, String caption) {
+		GC probe = new GC(display);
+		try {
+			return probe.textExtent(caption).y + 2 * CAPTION_PAD;
+		} finally {
+			probe.dispose();
+		}
+	}
+
+	private static void drawCaption(GC gc, String caption, int y, int width, int bar, boolean opaque) {
+		gc.setAlpha(opaque ? 255 : 180);
 		gc.setBackground(gc.getDevice().getSystemColor(SWT.COLOR_BLACK));
-		gc.fillRectangle(0, height - bar, width, bar);
+		gc.fillRectangle(0, y, width, bar);
 		gc.setAlpha(255);
 		gc.setForeground(gc.getDevice().getSystemColor(SWT.COLOR_WHITE));
-		gc.drawText(caption, pad, height - bar + pad, SWT.DRAW_TRANSPARENT);
+		gc.drawText(caption, CAPTION_PAD, y + CAPTION_PAD, SWT.DRAW_TRANSPARENT);
 	}
 
 	private static Frame paintWhole(Display display, Control printable, boolean composed) {
@@ -455,11 +487,12 @@ public final class Screencast {
 
 	/** Starts recording and paints the first frame. UI thread only. */
 	public synchronized Session start(Display display, Control control, boolean composed, String target,
-			int intervalMillis, int maxFrames, int maxWidth, Path directory, Rectangle crop, String caption) {
+			int intervalMillis, int maxFrames, int maxWidth, Path directory, Rectangle crop, String caption,
+			String captionPosition) {
 		String id = "screencast-" + (++counter); //$NON-NLS-1$
 		Session session = new Session(id, control, composed, target, intervalMillis, maxFrames, maxWidth,
 				directory);
-		session.configure(crop, caption);
+		session.configure(crop, caption, captionPosition);
 		sessions.put(id, session);
 		while (sessions.size() > KEEP) {
 			String oldest = sessions.keySet().iterator().next();
@@ -471,10 +504,21 @@ public final class Screencast {
 
 	/** Continues a stopped session and paints the first frame of the new segment. UI thread only. */
 	public synchronized Session resume(Display display, Session session, int extraFrames, int gapMillis,
-			String caption) {
-		session.resume(extraFrames, gapMillis, caption);
+			String caption, String captionPosition) {
+		session.resume(extraFrames, gapMillis, caption, captionPosition);
 		session.tick(display);
 		return session;
+	}
+
+	/** The most recently started session that is no longer recording, or {@code null}. */
+	public synchronized Session findLatestStopped() {
+		Session latest = null;
+		for (Session session : sessions.values()) {
+			if (!session.running()) {
+				latest = session;
+			}
+		}
+		return latest;
 	}
 
 	public synchronized Session find(String id) {
