@@ -1,7 +1,9 @@
 package com.vogella.eclipse.mcp.jdt.internal;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.StringJoiner;
 
 import org.eclipse.core.resources.IFile;
@@ -135,14 +137,20 @@ final class JavaModelSupport {
 	 * projects that can see it, so a search bound to the gtk copy silently answers
 	 * nothing about the win32 and cocoa call sites. A workspace wide question has
 	 * to search every copy.
+	 * <p>
+	 * A copy is a distinct declaration, not a distinct project: {@code findType}
+	 * follows the build path, so every project that depends on the declaring one
+	 * answers with the same handle, and in a platform workspace that made one type
+	 * look declared 23 times.
 	 */
 	static List<IType> findTypes(String typeName, List<IJavaProject> projects, IProgressMonitor monitor)
 			throws ToolInputException, McpToolException {
 		List<IType> types = new ArrayList<>();
+		Set<String> seen = new HashSet<>();
 		for (IJavaProject project : projects) {
 			try {
 				IType type = project.findType(typeName);
-				if (type != null && type.exists() && !type.isBinary()) {
+				if (type != null && type.exists() && !type.isBinary() && seen.add(type.getHandleIdentifier())) {
 					types.add(type);
 				}
 			} catch (JavaModelException e) {

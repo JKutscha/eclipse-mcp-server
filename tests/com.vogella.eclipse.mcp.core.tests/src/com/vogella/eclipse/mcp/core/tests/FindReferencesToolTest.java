@@ -1,6 +1,7 @@
 package com.vogella.eclipse.mcp.core.tests;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -8,6 +9,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.eclipse.jdt.core.IJavaProject;
+import org.eclipse.jdt.core.IClasspathEntry;
+import org.eclipse.jdt.core.JavaCore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -170,6 +173,43 @@ class FindReferencesToolTest {
 				"both copies of the type have to be searched, got " + result);
 		List<String> declaredIn = (List<String>) result.get("declaredIn");
 		assertEquals(2, declaredIn.size(), "got " + declaredIn);
+	}
+
+	@Test
+	void countsADeclarationOnceHoweverManyProjectsReachIt() throws Exception {
+		// findType follows the build path, so every dependent of the declaring
+		// project answers with the same handle; that is one declaration, not many
+		IJavaProject lib = fixture.createJavaProject("mcp-declared-once-lib-test");
+		TestFixture.addType(lib, "example", "Loader", """
+				package example;
+				public class Loader {
+					public static boolean load(String name) { return true; }
+					boolean self() { return load("self"); }
+				}
+				""");
+		IJavaProject client = fixture.createJavaProject("mcp-declared-once-client-test");
+		client.setRawClasspath(append(client, JavaCore.newProjectEntry(lib.getPath())), null);
+		TestFixture.addType(client, "client", "User", """
+				package client;
+				public class User {
+					boolean a() { return example.Loader.load("client"); }
+				}
+				""");
+		TestFixture.build(lib.getProject());
+		TestFixture.build(client.getProject());
+
+		Map<String, Object> result = TestFixture.callAndParse("eclipse_find_references",
+				Map.of("typeName", "example.Loader", "memberName", "load"));
+
+		assertEquals(Integer.valueOf(2), result.get("total"), "got " + result);
+		assertNull(result.get("declaredIn"), "one declaration must not be reported as several: " + result);
+	}
+
+	private static IClasspathEntry[] append(IJavaProject project, IClasspathEntry entry) throws Exception {
+		IClasspathEntry[] existing = project.getRawClasspath();
+		IClasspathEntry[] result = java.util.Arrays.copyOf(existing, existing.length + 1);
+		result[existing.length] = entry;
+		return result;
 	}
 
 	@Test
