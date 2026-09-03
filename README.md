@@ -193,7 +193,7 @@ A p2 bundle pool would achieve the same sharing for genuinely separate installat
 
 Every tool returns a single text block containing pretty-printed JSON.
 Every list-returning tool honours `maxResults` and reports `total` and `truncated`, so the model can tell when it is seeing a partial answer.
-Read-only except the tools marked as changing something: `eclipse_organize_imports` and `eclipse_format` rewrite a file, `eclipse_build` runs builders, `eclipse_set_preference` writes configuration, `eclipse_set_project_state` opens and closes projects, `eclipse_write_file` creates and replaces files, `eclipse_set_target_platform` replaces what every plug-in project compiles against, `eclipse_set_theme` switches the theme the whole IDE is styled by, remembered across restarts by default, and `eclipse_install_bundle` replaces a bundle in the running framework.
+Read-only except the tools marked as changing something: `eclipse_organize_imports` and `eclipse_format` rewrite a file, `eclipse_build` runs builders, `eclipse_set_preference` writes configuration, `eclipse_set_project_state` opens and closes projects, `eclipse_write_file` creates and replaces files, `eclipse_set_target_platform` replaces what every plug-in project compiles against, `eclipse_set_theme` switches the theme the whole IDE is styled by, remembered across restarts by default, `eclipse_install_bundle` replaces a bundle in the running framework, and `eclipse_hot_code_replace` swaps the bytecode of classes inside the running JVM.
 
 ### `eclipse_list_projects`
 
@@ -2422,6 +2422,53 @@ The original line is recorded, so `action` `restore` needs nothing from the call
 `simpleconfigurator` matches a bundle on symbolic name plus version, so a line that keeps the installed version and only changes the path is read as a bundle already installed and the path is never looked at, which is a substitution that does nothing while every check on the file says it is in force.
 The version of the substituted jar is therefore written into the line.
 Ask `action` `status` for the `running` field, which reports what the framework has actually loaded rather than what the file says, and believe that one.
+
+### `eclipse_hot_code_replace`
+
+**Changes the running JVM.**
+Replaces the bytecode of classes the IDE is running with the class files a workspace project or a directory holds, in place and without a restart.
+This is the loop for putting a trace statement or a changed method body into a plug-in the IDE is running, this server included: edit, let the builder write the class file, hand the names over, and the next call runs the new body.
+The debugger's hot code replace does the same thing for a program launched from the IDE; this does it for the IDE itself.
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `project` | string | | Workspace Java project whose build output holds the new class files. Its `META-INF/MANIFEST.MF` names the installed bundle. |
+| `directory` | string | | Absolute path of a class file root such as `target/classes`, instead of `project`. |
+| `classes` | array of string | | Fully qualified names to replace. Omitted, every class file newer than the bundle's installation or than the last replace through this tool is taken. |
+| `includeNested` | boolean | `true` | Also replace the nested and anonymous classes beside each named class. |
+| `bundle` | string | project manifest | Installed bundle whose classes are replaced. Without one, every loaded class of that name is replaced whatever loaded it. |
+| `dryRun` | boolean | `false` | Report which class files would be used and change nothing. |
+| `java` | string | the IDE's JDK | Java executable for the one-off attach helper. |
+| `maxResults` | integer, 1 to 2000 | 200 | Cap on the classes taken when `classes` is omitted. |
+
+```json
+{"project":"com.vogella.eclipse.mcp.jdt","outputRoots":["/home/user/git/mcp/plugins/com.vogella.eclipse.mcp.jdt/bin"],
+ "bundle":"com.vogella.eclipse.mcp.jdt","bundleVersion":"0.2.0.202609031200","bundleInstalledAt":"2026-09-03T10:00:12Z",
+ "selection":"explicit","total":1,"truncated":false,"dryRun":false,
+ "agent":{"how":"helperProcess","helperMillis":812,"agentJar":"/home/user/workspace/.metadata/.plugins/com.vogella.eclipse.mcp.jdt/hotswap-agent.jar"},
+ "replaced":1,"atomic":true,
+ "redefined":[{"class":"com.vogella.eclipse.mcp.jdt.internal.GetClasspathTool","classFile":"/home/user/git/mcp/plugins/com.vogella.eclipse.mcp.jdt/bin/com/vogella/eclipse/mcp/jdt/internal/GetClasspathTool.class",
+               "classFileModified":"2026-09-03T10:41:05Z","sourceNewerThanClass":false,"wasLoaded":true,"bytes":9120,"owner":"com.vogella.eclipse.mcp.jdt"}],
+ "failed":[],
+ "notes":["Threads already inside a replaced method keep running its old body until it returns; static initializers do not run again.", "..."]}
+```
+
+The limits are the JVM's, and they are the same ones the debugger has.
+Only method bodies, the constant pool and attributes can change.
+A class whose fields, methods, signatures, supertypes or modifiers changed is refused with the JVM's own reason under `failed`, for example `UnsupportedOperationException: class redefinition failed: attempted to add a method`, and the class keeps running as it was.
+A batch is applied atomically; when it fails the classes are retried one by one so the answer can name the culprit, and `atomic` is then false.
+A thread already inside a replaced method finishes the old body, static initializers do not run again, and a class the installed bundle does not have cannot be added, so a new class, a new extension or a new dependency still needs `eclipse_install_bundle`, `eclipse_substitute_bundle` or an install.
+A restart puts the installed code back.
+
+The class files come from the project's build output, so save and let the builder run first; the tool waits for a build in flight and reports `sourceNewerThanClass` per class when the file is behind the source, which is what a call made before the builder wrote it looks like.
+With `classes` omitted the selection is every class file newer than the bundle's installation time or than the last replace through this tool, whichever is later, which is what "everything I changed since" means in practice; `changedSince` in the answer says which time was used.
+Every class is loaded through the installed bundle before it is redefined, so a class nobody had touched yet still gets the new body when it is first used, rather than the old one from the jar.
+Without a bundle to load through, only classes something has already loaded can be replaced, `wasLoaded` says which case applied, and `owner` names the bundle that holds each class.
+
+The first call loads a Java agent into the IDE.
+A JVM refuses to attach to itself, so a helper JVM is started from the JDK the IDE runs on, attaches by pid and loads the agent jar, which the tool writes into its own state location from the bundle's class files; that takes about a second and `agent` reports which route was taken.
+The helper needs the `jdk.attach` module, so on an IDE running on a jlinked JRE without it pass `java` pointing at a JDK.
+An IDE started with `-XX:-EnableDynamicAgentLoading` refuses agents outright, and the tool says so before starting anything; JDK 21 and later print a warning about dynamically loaded agents to the IDE's own stderr, which is expected.
 
 ## Contributing a tool
 
