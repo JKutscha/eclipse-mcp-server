@@ -245,11 +245,11 @@ public final class ScreenshotTools {
 			ToolArguments args = ToolArguments.of(arguments);
 			String part = args.getString("part"); //$NON-NLS-1$
 			String explicitTarget = args.getString("target"); //$NON-NLS-1$
-			// infer from whichever selector was given, so that passing shellTitle alone
-			// does not fail with "the target 'part' needs a 'part' id"
+			// infer from whichever selector was given, and with none at all capture the
+			// active shell, which is what the description promises
 			String shellSpec = args.getString("shell") != null ? args.getString("shell") : args.getString("shellTitle"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 			String target = explicitTarget != null ? explicitTarget
-					: shellSpec != null ? "shell" : "part"; //$NON-NLS-1$ //$NON-NLS-2$
+					: part != null ? "part" : "shell"; //$NON-NLS-1$ //$NON-NLS-2$
 			if ("part".equals(target) && part == null) { //$NON-NLS-1$
 				return McpToolResult.error("The target 'part' needs a 'part' id. Use eclipse_list_ui_targets."); //$NON-NLS-1$
 			}
