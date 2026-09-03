@@ -176,6 +176,10 @@ public final class ScreencastTools {
 			String resume = args.getString("resume"); //$NON-NLS-1$
 			if (resume != null) {
 				boolean latest = "latest".equalsIgnoreCase(resume) || "true".equalsIgnoreCase(resume); //$NON-NLS-1$ //$NON-NLS-2$
+				if (latest && !ClientSessions.canAssumeASingleClient()) {
+					return McpToolResult.error(
+							ClientSessions.ambiguousDefault("screencast", "resume", Screencast.getInstance().ids())); //$NON-NLS-1$ //$NON-NLS-2$
+				}
 				Screencast.Session previous = latest ? Screencast.getInstance().findLatestStopped()
 						: Screencast.getInstance().find(resume);
 				if (previous == null) {
