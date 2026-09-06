@@ -300,6 +300,11 @@ No test may run `eclipse_update` or `eclipse_install`, because a passing test wo
 `ProvisioningGuardsTest` asserts what a careless edit would silently drop: that they are registered, that `eclipse_update` still defaults to a dry run and still has `acknowledgeSelfUpdate`, and that the descriptions still announce what they do and that an unknown repository is refused rather than added.
 Note the asymmetry it documents rather than fixes: `eclipse_update` is a dry run by default and `eclipse_install` has no dry run at all.
 
+**A run mode launch has no debug target, and demanding one refused to terminate a living process.**
+`eclipse_debug_control` resolved an `IDebugTarget` before it looked at the action, so a launch started with `mode: run` answered "the program has ended; start a new one" while its pid was still running and its window still on the screen, and there was no way to end it through this server at all.
+Terminate acts on the `ILaunch`, which a run mode session has; only the stepping, suspending and evaluating actions need a target.
+`DebugSupport.noTarget` tells the two cases apart by asking whether a process is still running, because "launched in run mode" and "has ended" are the same absence of a target and opposite answers for the caller.
+
 **A call that outlives its timeout keeps its thread.**
 `McpToolAdapter` cancels the progress monitor first, which is what actually stops a cooperative tool; `Future.cancel(true)` only interrupts, and a tool blocked on the workspace lock or in native code keeps running whatever anyone does.
 Nothing can fix that, so `abandon` records those calls, logs them, and tells the next caller how many are outstanding.
@@ -545,12 +550,21 @@ No `about.mappings`, because its `{0}` build id token is substituted by PDE buil
 **Versions in `META-INF/MANIFEST.MF` and the Jetty imports are pinned to `[12.1.12,13)`.**
 `jetty-ee11-servlet` requires the Jetty core packages at that exact floor, and the IDE ships an older 12.1.x that would not satisfy it.
 
-**Capturing on a HiDPI monitor: `print` paints at the device scale.**
-Drawing into an image sized in points wrote a 2x picture into a 1x canvas and kept the top left quarter, silently.
-`ScreenshotTools` prints through an `ImageGcDrawer` and reads `getImageData(zoom)`.
-Correcting with a GC transform instead was tried and shipped and is wrong: it shrinks the paint into a quarter of a canvas that is still device sized.
-`capturedArea` is the pixels, `areaInPoints` the widget, `zoom` the ratio, and `scaleMismatch` fires when the three disagree, which is the check that would have caught the transform.
+**Capturing on a scaled display: the pixels are lost on the way in, and the two capture methods lose them differently.**
+`DeviceScale` owns both answers, because nothing in the result could tell them apart: on a 200% display every capture came back at the widget's size in points, at `zoom` 100, with `scaleFactor` 1.0 and every derived field agreeing, while three quarters of the screen's pixels had been thrown away.
+A root capture fills an `Image`, and `new Image(display, w, h)` allocates a 1:1 surface, so `GC.copyArea` downsamples as it copies; an image built from `ImageData` is scaled to the device zoom by SWT itself and takes the real pixels, and it is then read at that zoom, which is the opposite rule from the one below and the reason there are two read methods rather than one.
+A widget print goes through `gtk_widget_draw`, which paints in GTK's logical coordinates whatever surface it is given, so a device sized canvas alone leaves the picture at 1x in the corner; the cairo matrix is what GTK honours, and a device sized canvas plus a scale transform rasterises glyphs at the device resolution.
+That canvas is a plain image whose own zoom is 100, so it is read at 100 and reading it at the device zoom would resample what it already holds.
+Measured against the X server rather than reasoned about: on a 3200x2000 Xvfb screen with `GDK_SCALE=2`, the root capture is now pixel identical to `import -window root` (RMSE 0, where it was a 400x300 downsample), and the print is at RMSE 31.7 of the real pixels where upscaling a 1x print was at 67.8.
+Note `Shell.print` is not the same call: on X11 it grabs the root window's frame extents in device pixels, which is why it needs a device sized canvas and why the composed path avoids it anyway.
+Off GTK none of this happens. SWT scales its own drawing there and `Image` sizes are in points, so a device sized canvas would be doubled twice; those platforms keep the behaviour they had, and `zoom` is derived from the pixels that came back rather than promised, so a platform that still loses them says so through `deviceZoom` and `belowDeviceZoom` instead of reporting 100 as if it were the truth.
 Unpainted canvas is magenta, never white, because white is what the unstyled widgets of a broken dark theme look like.
+
+**`eclipse_get_widget_tree` reports three coordinate systems, and they are not interchangeable.**
+`bounds` is parent-relative and cannot be summed up the ancestor chain, because a Group offsets its children by its label.
+`boundsInShell` is measured from the shell's CLIENT area, which is what a shell capture shows.
+`boundsInDisplay` is the absolute screen position, which is the only one a synthetic click can use.
+A caller that had only the first two added the shell's own position to `boundsInShell`, landed short by the height of the window decorations, and reported it as a tree row whose bounds were one row out; the values were right and the missing third system was the bug.
 
 **A computed CSS value is read back off the widget, so it is not evidence that a rule ran.**
 `CSSEngine.retrieveCSSProperty` asks the property handler, and the SWT handlers answer from the widget's current colour or font, which means a `ToolBar` no rule matches reports the window system's grey exactly the way a themed one reports the theme's grey.

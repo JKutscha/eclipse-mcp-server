@@ -410,15 +410,17 @@ public final class Screencast {
 		int bar = caption == null ? 0 : captionBarHeight(display, caption);
 		int added = outside ? bar : 0;
 		int pictureY = outside && ABOVE.equals(position) ? bar : 0;
-		Image framed = new Image(display, (gc, width, height) -> {
-			gc.drawImage(full.image(), -kept.x, pictureY - kept.y);
+		Image framed = DeviceScale.paint(display, kept.width, kept.height + added, full.zoom(), (gc, width, height) -> {
+			// the frame already holds device pixels, so it is placed rather than
+			// drawn through the canvas' scale, while the caption is painted at it
+			DeviceScale.drawPixels(gc, full.image(), -kept.x, pictureY - kept.y, full.zoom());
 			if (caption != null) {
 				int barY = ABOVE.equals(position) && outside ? 0 : height - bar;
 				drawCaption(gc, caption, barY, width, bar, outside);
 			}
-		}, kept.width, kept.height + added);
+		});
 		try {
-			return new Frame(framed.getImageData(full.zoom()), full.zoom(), null);
+			return new Frame(DeviceScale.paintedData(framed, full.zoom()), full.zoom(), null);
 		} finally {
 			framed.dispose();
 			full.image().dispose();
@@ -450,7 +452,7 @@ public final class Screencast {
 		List<Paintable> pieces = composed ? Capture.paintablesOf((Shell) printable) : null;
 		Control backgroundSource = pieces != null && !pieces.isEmpty() ? pieces.get(0).control() : printable;
 		Color background = backgroundOf(backgroundSource);
-		Image image = new Image(display, (drawer, width, height) -> {
+		Image image = DeviceScale.paint(display, canvas.width(), canvas.height(), zoom, (drawer, width, height) -> {
 			drawer.setBackground(background);
 			drawer.fillRectangle(0, 0, width, height);
 			if (pieces == null) {
@@ -462,22 +464,22 @@ public final class Screencast {
 				return;
 			}
 			for (Paintable piece : pieces) {
-				Image part = new Image(display, (gc, w, h) -> {
+				Image part = DeviceScale.paint(display, piece.at().width, piece.at().height, zoom, (gc, w, h) -> {
 					gc.setBackground(backgroundOf(piece.control()));
 					gc.fillRectangle(0, 0, w, h);
 					piece.control().print(gc);
 					if (GTK) {
 						piece.control().redraw(0, 0, piece.at().width, piece.at().height, true);
 					}
-				}, piece.at().width, piece.at().height);
+				});
 				try {
-					drawer.drawImage(part, piece.at().x, piece.at().y);
+					DeviceScale.drawPixels(drawer, part, piece.at().x, piece.at().y, zoom);
 				} finally {
 					part.dispose();
 				}
 			}
-		}, canvas.width(), canvas.height());
-		return new Frame(image.getImageData(zoom), zoom, image);
+		});
+		return new Frame(DeviceScale.paintedData(image, zoom), zoom, image);
 	}
 
 	private static Color backgroundOf(Control control) {

@@ -31,7 +31,7 @@ public final class ControlTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Drives a suspended or running debug session: resume, stepOver, stepInto, stepReturn, suspend, resumeAll, terminate, disconnect or close. SUSPEND STOPS EVERY THREAD, and resume then refuses because several are suspended; resumeAll is the way back. CHANGES THE STATE OF THE DEBUGGED PROGRAM, and terminate KILLS THE PROCESS: that is Process.destroy, SIGTERM on Linux, where Equinox's shutdown hook still runs, and an immediate kill on Windows, and in neither case does the workbench save its workspace. 'close' is the orderly alternative for a debugged application that HAS a workbench: it stops the UI thread at a breakpoint, which JDI requires before any method can be invoked in it, evaluates an asyncExec of IWorkbench.close and resumes so that thread runs it, which is a real shutdown with a workspace save, and it falls back to terminate only if that does not finish in time. The breakpoint it sets is its own and is removed again. The answer says which of the two actually happened, because a measurement taken afterwards depends on it. After a step or a resume it waits for the next suspend (waitForSuspendSeconds) and reports the new location in the same answer, so stepping costs one call; timedOut on resume normally just means the program kept running. Stepping needs a suspended thread: name one with 'thread' or leave it to the only suspended thread, which is refused when several are stopped. Use eclipse_debug_launch to start something first."; //$NON-NLS-1$
+		return "Drives a suspended or running debug session: resume, stepOver, stepInto, stepReturn, suspend, resumeAll, terminate, disconnect or close. SUSPEND STOPS EVERY THREAD, and resume then refuses because several are suspended; resumeAll is the way back. CHANGES THE STATE OF THE DEBUGGED PROGRAM, and terminate KILLS THE PROCESS: that is Process.destroy, SIGTERM on Linux, where Equinox's shutdown hook still runs, and an immediate kill on Windows, and in neither case does the workbench save its workspace. 'close' is the orderly alternative for a debugged application that HAS a workbench: it stops the UI thread at a breakpoint, which JDI requires before any method can be invoked in it, evaluates an asyncExec of IWorkbench.close and resumes so that thread runs it, which is a real shutdown with a workspace save, and it falls back to terminate only if that does not finish in time. The breakpoint it sets is its own and is removed again. The answer says which of the two actually happened, because a measurement taken afterwards depends on it. After a step or a resume it waits for the next suspend (waitForSuspendSeconds) and reports the new location in the same answer, so stepping costs one call; timedOut on resume normally just means the program kept running. Stepping needs a suspended thread: name one with 'thread' or leave it to the only suspended thread, which is refused when several are stopped. A session launched in run mode has no debug target, so terminate is the only action that works on it and the others say so. Use eclipse_debug_launch to start something first."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -67,7 +67,13 @@ public final class ControlTool implements IMcpTool {
 
 		try {
 			DebugSessionRegistry.Session session = DebugSupport.requireSession(args.getString("sessionId")); //$NON-NLS-1$
-			IDebugTarget target = DebugSupport.target(session);
+			// terminate acts on the launch, which a run mode session has while it has
+			// no debug target at all. Demanding one up front refused to end a process
+			// that was still running, and the refusal said it had ended
+			IDebugTarget target = DebugSupport.liveTarget(session);
+			if (target == null && !action.equals("terminate")) { //$NON-NLS-1$
+				throw DebugSupport.noTarget(session);
+			}
 			IThread thread = null;
 			if (action.equals("close")) { //$NON-NLS-1$
 				return McpToolResult.of(GracefulClose
@@ -115,7 +121,10 @@ public final class ControlTool implements IMcpTool {
 	}
 
 	private String locationOf(DebugSessionRegistry.Session session) {
-		var target = DebugSupport.target(session);
+		var target = DebugSupport.liveTarget(session);
+		if (target == null) {
+			return null;
+		}
 		for (IThread candidate : DebugSupport.threads(target)) {
 			if (DebugSupport.isSuspended(candidate)) {
 				String location = DebugSupport.location(candidate);

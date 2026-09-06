@@ -20,10 +20,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 
+import com.vogella.eclipse.mcp.core.McpToolResult;
+
 /**
  * The whole loop in one go: launch a tiny main under the debugger with a
  * breakpoint in it, wait for the suspend, read a variable, evaluate an
- * expression, step, resume and terminate.
+ * expression, step, resume and terminate. And the same launch in run mode,
+ * where there is no debug target and only terminate applies.
  * <p>
  * Skipped cleanly when no JVM is registered with the IDE; a headless test
  * runtime sometimes has none.
@@ -41,6 +44,16 @@ class DebugLaunchEndToEndTest {
 					System.out.println(greeting + " " + answer);
 					int doubled = answer * 2;
 					System.out.println(doubled);
+				}
+			}
+			""";
+
+	private static final String IDLE_SOURCE = """
+			package sample;
+			public class Idle {
+				public static void main(String[] args) throws Exception {
+					System.out.println("idling");
+					Thread.sleep(120000);
 				}
 			}
 			""";
@@ -130,6 +143,50 @@ class DebugLaunchEndToEndTest {
 				+ resumed);
 
 		waitUntilTerminated(sessionId);
+	}
+
+	/**
+	 * A run mode launch has no debug target at all, and asking for one is what
+	 * made terminate refuse a process that was still running, with a message
+	 * saying it had ended.
+	 */
+	@Test
+	void aRunModeLaunchIsTerminatedRatherThanDeclaredEnded() throws Exception {
+		ensureDefaultVmInstall();
+		IJavaProject project = fixture.createJavaProject(PROJECT);
+		TestFixture.addType(project, "sample", "Idle", IDLE_SOURCE);
+		TestFixture.build(project.getProject());
+
+		Map<String, Object> launched = TestFixture.callAndParse("eclipse_debug_launch",
+				Map.of("project", PROJECT, "mainType", "sample.Idle", "mode", "run",
+						"waitForSuspendSeconds", Integer.valueOf(0)));
+		String sessionId = (String) launched.get("sessionId");
+		assertNotNull(sessionId, String.valueOf(launched));
+		assertTrue(runningProcess(sessionId), "the run mode launch never started a process: " + launched);
+
+		McpToolResult suspended = TestFixture.call("eclipse_debug_control",
+				Map.of("sessionId", sessionId, "action", "suspend"));
+		assertTrue(suspended.isError(), "there is nothing to suspend without a debug target: " + suspended.text());
+		assertTrue(suspended.text().contains("run mode"),
+				"the refusal should say why there is no target: " + suspended.text());
+
+		Map<String, Object> terminated = TestFixture.callAndParse("eclipse_debug_control",
+				Map.of("sessionId", sessionId, "action", "terminate"));
+		assertEquals("terminate", terminated.get("action"), String.valueOf(terminated));
+		waitUntilTerminated(sessionId);
+	}
+
+	/** Whether the launch has a live process yet, which it registers a moment later. */
+	private static boolean runningProcess(String sessionId) throws Exception {
+		for (int attempt = 0; attempt < 40; attempt++) {
+			Map<?, ?> session = (Map<?, ?>) ((List<?>) TestFixture
+					.callAndParse("eclipse_debug_status", Map.of("sessionId", sessionId)).get("sessions")).get(0);
+			if (session.get("pid") != null && !Boolean.TRUE.equals(session.get("terminated"))) {
+				return true;
+			}
+			Thread.sleep(500);
+		}
+		return false;
 	}
 
 	private static void assertLocation(Map<String, Object> state, String expectedFragment) {

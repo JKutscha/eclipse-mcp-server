@@ -212,6 +212,45 @@ public final class WidgetTools {
 		};
 	}
 
+	/**
+	 * Where a widget sits, in the shell's client coordinates and on the screen.
+	 * <p>
+	 * Both, because neither answers on its own. The parent-relative bounds cannot
+	 * be summed up the ancestor chain: a Group offsets its children by its label,
+	 * so the total misses by the trim of every composite on the way. And the shell
+	 * relative position is not where a synthetic click goes either, since it is
+	 * measured from the shell's client area while the window manager's title bar
+	 * sits above that; taking the two for the same thing lands a click one row off
+	 * and looks like the bounds themselves were wrong.
+	 */
+	private static void addPlacement(JsonObject json, Widget widget) {
+		Control parent = parentOf(widget);
+		Rectangle own = rectangleOf(widget);
+		if (own == null) {
+			return;
+		}
+		Display display = widget.getDisplay();
+		Shell shell = widget instanceof Control control ? control.getShell()
+				: parent == null ? null : parent.getShell();
+		if (shell == null) {
+			return;
+		}
+		// a shell's own bounds are already display coordinates, and mapping them
+		// from a parent it does not have would answer about the wrong window
+		Rectangle inShell = widget == shell ? new Rectangle(0, 0, own.width, own.height)
+				: parent == null ? null : display.map(parent, shell, own);
+		if (inShell == null) {
+			return;
+		}
+		json.put("boundsInShell", describe(inShell)) //$NON-NLS-1$
+				.put("boundsInDisplay", describe(widget == shell ? own : display.map(parent, null, own))); //$NON-NLS-1$
+	}
+
+	/** Bounds in the {@code x,y widthxheight} form every tool here reports. */
+	private static String describe(Rectangle rectangle) {
+		return rectangle.x + "," + rectangle.y + " " + rectangle.width + "x" + rectangle.height; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+	}
+
 	/** Whether a widget is a control or an item, because the two are not interchangeable. */
 	private static String kindOf(Widget widget) {
 		return widget instanceof Control ? "control" : "item"; //$NON-NLS-1$ //$NON-NLS-2$
@@ -227,7 +266,7 @@ public final class WidgetTools {
 
 		@Override
 		public String getDescription() {
-			return "Lists the SWT widget hierarchy of a part or a shell, with each widget's class, bounds, CSS id and CSS class, and the path that addresses it. Changes nothing. This is the answer to 'what am I actually looking at', which otherwise has to be inferred from a screenshot or from reading somebody else's source, and it is where the paths for eclipse_inspect_widget come from. Filter by class to ask a narrow question, such as which Trees a view contains and what their ids are. Paths are slash separated indices, which is deliberate: most SWT widgets have no stable name, while an index survives a resize and a restart in a way screen coordinates do not. Set includeItems to enumerate Items as well, the buttons of a toolbar above all: a ToolItem is not a Control, so it appears in no walk over the control hierarchy, while the CSS engine styles each one as its own element."; //$NON-NLS-1$
+			return "Lists the SWT widget hierarchy of a part or a shell, with each widget's class, bounds, CSS id and CSS class, and the path that addresses it. Changes nothing. This is the answer to 'what am I actually looking at', which otherwise has to be inferred from a screenshot or from reading somebody else's source, and it is where the paths for eclipse_inspect_widget come from. Filter by class to ask a narrow question, such as which Trees a view contains and what their ids are. Paths are slash separated indices, which is deliberate: most SWT widgets have no stable name, while an index survives a resize and a restart in a way screen coordinates do not. THREE COORDINATE SYSTEMS ARE REPORTED and they are not interchangeable: 'bounds' is relative to the widget's own parent and cannot be summed up the ancestor chain, since a Group offsets its children by its label; 'boundsInShell' is measured from the shell's CLIENT area, which is what a shell capture shows and what a highlight on one needs; 'boundsInDisplay' is absolute screen position, which is the only one a synthetic click or an external screen tool can use. The shell's title bar sits above its client area, so adding the shell's own position to boundsInShell lands short by the height of the window decorations, which reads as bounds that are one row out. Set includeItems to enumerate Items as well, the buttons of a toolbar above all: a ToolItem is not a Control, so it appears in no walk over the control hierarchy, while the CSS engine styles each one as its own element."; //$NON-NLS-1$
 		}
 
 		@Override
@@ -243,7 +282,7 @@ public final class WidgetTools {
 					    "filter":     {"type":"string","description":"Only report widgets whose simple class name contains this text, case insensitive, e.g. 'Tree' or 'ToolBar'. The walk still descends through everything."},
 				    "includeToolbar": {"type":"boolean","default":false,"description":"Start from the surrounding part stack rather than the part. A view's toolbar is built in the stack's CTabFolder, not in the part, so it is in no plain part tree at all; this is how to reach it."},
 					    "includeItems": {"type":"boolean","default":false,"description":"Also enumerate Items, which are not Controls and are therefore in no plain walk: ToolItems, CTabItems, TabItems, CoolItems, MenuItems and the columns of a Table or Tree. Their paths carry an i prefix, as in 2/i0, and that is the only way eclipse_inspect_widget can address one. Off by default because a Menu can be large."},
-				    "includeRows": {"type":"boolean","default":false,"description":"Also enumerate the rows of a Table or Tree, with an r prefixed path (0/r2) that eclipse_inspect_widget, eclipse_set_selection and eclipse_expand_row accept and, beside the row bounds, boundsInShell mapped to the shell so a row can be highlighted on a shell=popup screenshot. selected marks the row the widget has selected. ONLY THE ROWS THE TREE HAS CREATED ARE ROWS: the children of a collapsed node do not exist yet and have no path, so a view that comes up collapsed reports two or three entries and looks complete. Each tree row therefore carries childCount and expanded, and a collapsed node with children says so; open it with eclipse_expand_row and ask again. The children of an expanded node ARE reported, nested under its own path. Off by default because a big Table has many rows."},
+				    "includeRows": {"type":"boolean","default":false,"description":"Also enumerate the rows of a Table or Tree, with an r prefixed path (0/r2) that eclipse_inspect_widget, eclipse_set_selection and eclipse_expand_row accept and, beside the row bounds, boundsInShell mapped to the shell's client area so a row can be highlighted on a shell=popup screenshot, and boundsInDisplay for a click. selected marks the row the widget has selected. ONLY THE ROWS THE TREE HAS CREATED ARE ROWS: the children of a collapsed node do not exist yet and have no path, so a view that comes up collapsed reports two or three entries and looks complete. Each tree row therefore carries childCount and expanded, and a collapsed node with children says so; open it with eclipse_expand_row and ask again. The children of an expanded node ARE reported, nested under its own path. Off by default because a big Table has many rows."},
 				    "maxDepth":   {"type":"integer","default":6,"minimum":1,"maximum":30,"description":"How far down the widget hierarchy to walk. A whole workbench window is dozens of levels deep, so the default stops well short of it."},
 					    "maxResults": {"type":"integer","default":200,"minimum":1,"maximum":2000}
 					  },
@@ -297,13 +336,15 @@ public final class WidgetTools {
 			if (wanted) {
 				total[0]++;
 				if (into.size() < maxResults) {
-					into.add(CssStyling.describe(widget).put("path", path.isEmpty() ? "/" : path) //$NON-NLS-1$ //$NON-NLS-2$
+					JsonObject node = CssStyling.describe(widget).put("path", path.isEmpty() ? "/" : path) //$NON-NLS-1$ //$NON-NLS-2$
 							.put("kind", kindOf(widget)) //$NON-NLS-1$
 							.put("class", widget.getClass().getName()) //$NON-NLS-1$
 							.put("text", textOf(widget)) //$NON-NLS-1$
 							.put("bounds", bounds(widget)) //$NON-NLS-1$
 							.put("visible", widget instanceof Control control ? Boolean.valueOf(control.isVisible()) //$NON-NLS-1$
-									: null));
+									: null);
+					addPlacement(node, widget);
+					into.add(node);
 				}
 			}
 			if (depth >= maxDepth) {
@@ -388,8 +429,8 @@ public final class WidgetTools {
 							.put("selected", Boolean.valueOf(selected.contains(rows[i]))) //$NON-NLS-1$
 							.put("bounds", //$NON-NLS-1$
 									rowBounds.x + "," + rowBounds.y + " " + rowBounds.width + "x" + rowBounds.height) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-							.put("boundsInShell", //$NON-NLS-1$
-									inShell.x + "," + inShell.y + " " + inShell.width + "x" + inShell.height); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+							.put("boundsInShell", describe(inShell)) //$NON-NLS-1$
+							.put("boundsInDisplay", describe(table.getDisplay().map(table, null, rowBounds))); //$NON-NLS-1$
 					if (node) {
 						row.put("childCount", Integer.valueOf(children)) //$NON-NLS-1$
 								.put("expanded", Boolean.valueOf(expanded)); //$NON-NLS-1$

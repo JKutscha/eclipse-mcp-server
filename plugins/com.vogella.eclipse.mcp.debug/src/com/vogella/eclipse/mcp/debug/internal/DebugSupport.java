@@ -76,12 +76,54 @@ final class DebugSupport {
 		if (launchValue == null) {
 			throw new Refusal("Session %s has not come up yet.".formatted(session.id())); //$NON-NLS-1$
 		}
+		IDebugTarget live = liveTarget(session);
+		if (live != null) {
+			return live;
+		}
+		throw noTarget(session);
+	}
+
+	/** The session's live debug target, or {@code null} when it has none. */
+	static IDebugTarget liveTarget(Session session) {
+		ILaunch launchValue = session.launch();
+		if (launchValue == null) {
+			return null;
+		}
 		for (IDebugTarget candidate : launchValue.getDebugTargets()) {
 			if (!candidate.isTerminated() && !candidate.isDisconnected()) {
 				return candidate;
 			}
 		}
-		throw new Refusal("The program of session %s has ended; start a new one to continue." //$NON-NLS-1$
+		return null;
+	}
+
+	/** Whether a process of this launch is still running. */
+	static boolean running(Session session) {
+		ILaunch launchValue = session.launch();
+		if (launchValue == null) {
+			return false;
+		}
+		for (org.eclipse.debug.core.model.IProcess process : launchValue.getProcesses()) {
+			if (!process.isTerminated()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Why this session has no debug target. A launch in run mode never had one and
+	 * is still running, which is a different answer from a program that has ended,
+	 * and reporting the second for the first sent a caller looking for a process
+	 * that was very much alive.
+	 */
+	static Refusal noTarget(Session session) {
+		if (running(session)) {
+			return new Refusal(
+					"Session %s was launched in run mode, so it has no debug target: it can only be terminated, not suspended, stepped or evaluated in. Launch it again with mode 'debug' for those." //$NON-NLS-1$
+							.formatted(session.id()));
+		}
+		return new Refusal("The program of session %s has ended; start a new one to continue." //$NON-NLS-1$
 				.formatted(session.id()));
 	}
 
